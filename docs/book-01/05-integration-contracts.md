@@ -29,13 +29,13 @@
 | `first_item_type_discovered` | `item_type_id`, `shelter_xp_awarded`, `action_id` | A1 | A4, A5 |
 | `shelter_entered` | `origin_scene_id`, `destination_scene_id` | A1 | A3, A4, A5 |
 | `time_advanced` | `game_hours`, `delta_hours` | A1 | A3 рост, A4 потребление / таймер квестов, A5 часы |
-| `crop_harvested` | `plot_id`, `item_type_id`, `quantity`, `action_id` | A3 | A1 inventory, A4 quests, A5 |
+| `crop_harvested` | `plot_id`, `item_type_id`, `quantity`, `action_id`, `inventory_transaction_id` | A3 | A4 quests, A5 UI |
 | `resident_recruited` | `resident_id`, `contract_version`, `action_id` | A4 | A1 progression, A3 need aggregates, A5 |
 | `quest_completed` | `quest_id`, `action_id` | A4 | A1 rewards, A5 |
 | `parcel_claimed` | `parcel_id`, `action_id` | A1 | A3, A4, A5 |
 | `game_state_loaded` | `save_version` | A1 | A2–A5 refresh views |
 
-**Важный момент:** кто именно создаёт предмет при сборе картофеля: **A3 просит A1-InventoryService добавить урожай в контейнер; затем A3 сообщает `crop_harvested`**, а A1 не выдаёт предмет вторично из события. Аналогично A2 при смерти врага не создаёт награду двумя путями.
+**Сбор урожая — одна транзакция:** A3 просит A1-InventoryService добавить урожай. Только после успешной транзакции A3 публикует `crop_harvested` с её `inventory_transaction_id`; событие является уведомлением и не добавляет предмет повторно. При неуспешном добавлении событие не публикуется. Аналогично A2 не создаёт лут параллельно награде A1.
 
 ## 3. Общий формат ID
 
@@ -67,13 +67,14 @@ CropState
 ResidentState
   resident_id, dialogue_state, signed_rules_version
   home_id, job_id, food_need, status
+  # MVP: job_id — только сохранённое назначение; автоматическое выполнение работы/потребление пищи — P1
 
 QuestState
   quest_id, state, objective_progress
   started_at_game_hour, expires_at_game_hour, reward_action_id
 ```
 
-Точные поля, типы Godot Resources и сериализация **согласуются на G0**. Все значения, которых нет в книге, остаются `game_balance`.
+Точные поля, типы Godot Resources и сериализация **согласуются на G0**. Все значения, которых нет в книге, остаются `game_balance`. QA продвигает игровые часы только тестовой командой общего GameClock; отдельные таймеры фермы/квестов запрещены.
 
 ## 5. Инварианты между модулями
 
@@ -108,7 +109,7 @@ A1 хранит `save_version` и записывает единый файл; к
 Этот JSON — **образец контракта**, не существующее сохранение и не доказательство канонических стартовых значений.
 
 ### CI и test stubs
-- A1 готовит mock EventBus, GameClock, InventoryService, ProgressionService, SceneRouter. Агенты тестируют свои сцены/системы автономно на mock-сервисах.
+- A1 готовит mock EventBus, GameClock, InventoryService, ProgressionService, SceneRouter. QA-only метод `GameClock.advance_for_test(hours: float)` доступен только тестовому запуску; в релизной сборке его нет. Все игровые таймеры читают один GameClock. Агенты тестируют свои сцены/системы автономно на mock-сервисах.
 - Сборка тестируется в Godot headless. Интеграционные сцены с настоящими API собирает A1.
 - A5 проверяет E2E-01—05; каждый агент отвечает за unit/integration тесты собственных модулей.
 - **Ни один агент не использует чужую сцену как редактируемый шаблон**: подключать через инстанцирование и публичный API.
@@ -117,4 +118,4 @@ A1 хранит `save_version` и записывает единый файл; к
 
 Если не хватает события / типа / команды: создать Issue `[CONTRACT] Что нужно изменить и зачем`, приложить минимальный пример и связанные FR; A1 принимает, меняет версию, уведомляет заинтересованных и только после этого происходит интеграция. Не создавать параллельные реализации того же API.
 
-**G0 принят** только после согласования названий событий, API и структуры сохранений всеми пятью агентами. Пока документ имеет статус **DRAFT**, а не «утверждено».
+**G0 принят** только после согласования scope, открытых технических решений, событий, API и структуры сохранений всеми пятью агентами и явного утверждения владельца проекта. До этого контракт остаётся **DRAFT**, реализация по нему не начинается.
