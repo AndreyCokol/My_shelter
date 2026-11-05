@@ -43,7 +43,7 @@ DomainEvent := {
 
 **Смысл полей:** `event_type` — вид уведомления, `event_id` — уникальный факт, `action_id` — ключ идемпотентности команды, `state_revision` — версия авторитетного состояния. **Нельзя** называть `event_id` типом события как в старом EventBus. Предлагаемый интерфейс: `EventBus.publish_after_commit(event: DomainEvent)`. Слушатель события не выдаёт награду повторно.
 
-**Повтор команды:** тот же `action_id` + тот же fingerprint запроса возвращает записанный результат, без мутаций; тот же `action_id` + другой payload/контекст → `ACTION_CONFLICT`. Новый игровой клик, сознательно создающий новую покупку, получает новый `action_id`; UI не должен путать его с повторной доставкой одного клика. Для предотвращения однократных сюжетных наград дополнительно проверять устойчивый `reward_id`/ `enemy_id`, а не только `action_id`.
+**Повтор команды:** тот же `action_id` + тот же fingerprint запроса возвращает записанный результат, без мутаций; тот же `action_id` + другой payload/контекст → `ACTION_CONFLICT`. Новый игровой клик, сознательно создающий новую покупку, получает новый `action_id`; UI не должен путать его с повторной доставкой одного клика. Поле `expected_state_revision` передавать для конфликтующих UI-операций с ресурсами/сейвами; для частых боевых тиков/движения его можно не требовать, чтобы естественный ход Clock не вызывал постоянные ложные `STALE_REVISION`. Для предотвращения однократных сюжетных наград дополнительно проверять устойчивый `reward_id`/ `enemy_id`, а не только `action_id`.
 
 ## 3. Публичные фасады и владельцы
 
@@ -57,7 +57,7 @@ DomainEvent := {
 | `ProgressionService` | A1 | `apply_combat_reward_once(action_id,combat_receipt)`, `register_first_item_type(action_id,type_id)` |
 | `FarmService` | A3 | `try_till/plant/water/harvest(action_id,plot_id,...)`, `plan_time_advance(from,to)` |
 | `CombatService` | A2 | `resolve_attack(attack_id,attacker,target,weapon)`, `get_combat_snapshot()` |
-| `ResidentService` | A4 | `try_accept_contract(action_id,resident_id,version)`, `plan_recruitment(action_id,resident_ids,food_rule_id)`, `try_assign_job(action_id,resident_id,job_id)` |
+| `ResidentService` | A4 | `try_accept_contract(action_id,resident_id,version)`, `plan_recruitment(action_id,resident_ids,food_rule_id,food_selection?)`, `try_assign_job(action_id,resident_id,job_id)` |
 | `QuestService` | A4 | `get_active_quests()`, `plan_quest_progress(tentative_state)` |
 | `UILayer/ViewModels` | **A5** | `render_snapshot()`; UI triggers commands and displays `message_key`; **does not mutate game data** |
 
@@ -113,6 +113,8 @@ arrival_food_requirement := {
 
 Конфиг/формула `needed_units = units_per_resident × количество заявленных жителей` — пример общего правила. Более сложная структура допускается через версию `food_rule_id`. **Никаких 2 картофелин как обязательной нормы.** Можно тестировать `units_per_resident = 1` и `3` как фикстуры; это не утверждение реального баланса.
 
+**Выбор еды:** если пользователь выбирает конкретные стеки, `food_selection` содержит количество каждого допустимого `type_id` и проходит проверку суммарной нормы; если выбор автоматический, A1 применяет детерминированный порядок `accepted_food_type_ids` из версионированного правила. Квитанция сохраняет фактический состав резерва по типам; другие запасы и зарезервированные единицы нельзя использовать одновременно. При `reserve_mode=reserve` они недоступны остальным покупкам/операциям до явного освобождения по правилу; при `consume` — списываются один раз.
+
 **Поток:** A4 фиксирует информированное добровольное согласие, NPC остаётся `AWAITING_SUPPLIES`; A1 проверяет конфиг и доступный food container; в **одном commit** создаёт уникальный резерв с `reservation_receipt_id`, переводит уникальных NPC в `RECRUITED`, обновляет Q07 и выдаёт награды. Нехватка еды → никакого частичного списания и заселения. Повтор того же action/попытка с другим action после успеха не повторяет эффект; для нескольких NPC в batch — все-or-none, для отдельного человека отдельная транзакция. P0 сохраняет `job_id`, но регулярные голод/труд — P1.
 
 ## 7. События P0 после commit
@@ -129,7 +131,7 @@ arrival_food_requirement := {
 | `crop_stage_changed` | plot_id, old_stage, new_stage | A3 |
 | `crop_harvested` | plot_id, type_id, quantity, inventory_receipt_id | A3/A1 |
 | `resident_contract_accepted` | resident_id, contract_version | A4 |
-| `arrival_food_reserved` | reservation_receipt_id, food_rule_id, quantity | A1 |
+| `arrival_food_reserved` | reservation_receipt_id, food_rule_id, items:[{type_id,quantity}], total_units | A1 |
 | `resident_recruited` | resident_id, reservation_receipt_id | A4/A1 |
 | `quest_completed` | quest_id, reward_receipt_id | A4/A1 |
 | `state_loaded` | schema_version, state_revision | A1 |
