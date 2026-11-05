@@ -59,6 +59,7 @@ DomainEvent := {
 | `ProgressionService` | A1 | `apply_combat_reward_once(action_id,combat_receipt)`, `register_first_item_type(action_id,type_id)` |
 | `FarmService` | A3 | `try_till/plant/water/harvest(action_id,plot_id,...)`, `plan_time_advance(from,to)` |
 | `CombatService` | A2 | `resolve_attack(attack_id,attacker,target,weapon)`, `get_combat_snapshot()` |
+| `WorldResourceService` | A2 | `plan_claim_resource(action_id,resource_node_id)`, `get_resource_snapshot()`; A1 atomically adds reward and persists cooldown |
 | `ResidentService` | A4 | `try_accept_contract(action_id,resident_id,version)`, `plan_recruitment(action_id,resident_ids,food_rule_id,food_selection?)`, `try_assign_job(action_id,resident_id,job_id)` |
 | `QuestService` | A4 | `get_active_quests()`, `plan_quest_progress(tentative_state)` |
 | `UILayer/ViewModels` | **A5** | `render_snapshot()`; UI triggers commands and displays `message_key`; **does not mutate game data** |
@@ -119,11 +120,18 @@ arrival_food_requirement := {
 
 **Поток:** A4 фиксирует информированное добровольное согласие, NPC остаётся `AWAITING_SUPPLIES`; A1 проверяет конфиг и доступный food container; в **одном commit** создаёт уникальный резерв с `reservation_receipt_id`, переводит уникальных NPC в `RECRUITED`, обновляет Q07 и выдаёт награды. Нехватка еды → никакого частичного списания и заселения. Повтор того же action/попытка с другим action после успеха не повторяет эффект; для нескольких NPC в batch — все-or-none, для отдельного человека отдельная транзакция. P0 сохраняет `job_id`, но регулярные голод/труд — P1.
 
+### 6.1. Возобновляемый источник для защиты от softlock (P0)
+
+A2 предусматривает **как минимум один доступный узел обычных семян/ресурсов** за пределами необязательных квестов. Конфигурация `resource_respawn_minutes: int > 0` (первый кандидат: 1440 игровых минут, не утверждённый баланс). `resource_node_id` имеет устойчивую идентичность, `next_available_game_minute` сохраняется в `world_states`. A2 формирует план `plan_claim_resource`, A1 атомарно проводит Inventory + обновление cooldown + событие после commit. После повторного входа в город узел не восстанавливается досрочно. При заполненном инвентаре нет потери предмета или незаконного обновления cooldown. Это **обычный восполняемый ресурс**, а не повторяемая уникальная сюжетная награда.
+
+**Проигрыш в P0:** A2 возвращает героя на зафиксированную безопасную точку/чекпойнт через A1 SceneRouter, с корректным восстановлением состояния боя, без удаления кампании и без повторного System unlock. Инвентарь и одноразовые rewards сохраняются по ранее завершённым транзакциям; нестандартный штраф не вводить без принятой настройки баланса.
+
 ## 7. События P0 после commit
 
 | event_type | Минимальные поля payload | Владелец факта |
 |---|---|---|
 | `enemy_defeated` | enemy_id, enemy_type_id, weapon_type_id, is_system_weapon | A2 + A1 commit |
+| `world_resource_claimed` | resource_node_id, item_type_id, quantity, next_available_game_minute | A2/A1 commit |
 | `system_unlocked` | reward_id, skill_id | A1 |
 | `scene_changed` | from_scene_id, to_scene_id, return_point_id | A1 |
 | `item_transferred` | instance_id, type_id, quantity, from_id, to_id | A1 |
