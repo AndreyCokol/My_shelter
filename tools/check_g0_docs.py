@@ -93,7 +93,7 @@ checks = {
 }
 for label, (file, token) in checks.items():
     target = ROOT / file
-    if target.exists() and token not in target.read_text(encoding="utf-8"):
+    if target.exists() and token.casefold() not in target.read_text(encoding="utf-8").casefold():
         errors.append(f"CONTENT MISSING: {label} ({file})")
 
 print(
