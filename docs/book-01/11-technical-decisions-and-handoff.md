@@ -18,6 +18,7 @@
 | TD-10 | Local JSON `schema_version=1`, `ruleset_version`, coherent snapshot+receipts, backup/recovery | Контракт-кандидат 05; реальная Windows durability и ошибки файлов **NOT_RUN** | A1, A0 audit |
 | TD-11 | Q01/Q02 короткий onboarding, Q03–Q07 опциональны для sandbox core | **Принята концепция владельца**, конкретные quest predicates утверждаются при ревью A4 | A4+A5 |
 | TD-12 | **Весь пространственный осколок LATER**; никакие связанные сцены/квесты не брать в G1a–G5 | **OWNER APPROVED** | A4+A5 |
+| TD-13 | Один повторяемый resource node с сохраняемым cooldown (`resource_respawn_minutes=1440` как кандидат), безопасный respawn героя после поражения | **ANTI-SOFTLOCK DESIGN CANDIDATE**, реальный баланс позже | A1+A2+A3+A5 |
 
 **Пояснение:** числа в TD-06..08 — практические **первоначальные значения для разработки и UX-исследования**, а не новая жёсткая норма. Число «2 картофелины» из старых PR **не возвращается** в требования: формула food rule может дать итог 2 для двух NPC при параметре 1, но при другом balance — иной результат.
 
