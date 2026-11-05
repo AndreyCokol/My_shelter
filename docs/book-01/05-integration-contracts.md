@@ -17,16 +17,18 @@ ItemTypeId := String                   # стабильный ключ ката�
 ItemInstanceId := String               # ID партии/стека
 GameMinute := int >= 0                 # единый источник времени
 StateRevision := int >= 0              # монотонно возрастает
+ResourceRevision := { key: String, revision: int >= 0 }  # версия конкретной записи/контейнера
 
 CommandRequest := {
   action_id: ActionId,
   command_type: StringName,
-  context: { scene_id, actor_id, expected_resource_revision? }, # для конфликтующих действий
+  context: { scene_id, actor_id, expected_resource_revisions? }, # [{key,revision}, ...]
   payload: Dictionary
 }
 CommandResult := {
   ok: bool, code: ErrorCode, action_id: ActionId,
   state_revision: int, data: Dictionary, message_key: String
+  # STALE_REVISION: data содержит conflict_keys или UI заново запрашивает snapshot
 }
 ErrorCode :=
   OK | ALREADY_APPLIED | ACTION_CONFLICT |
@@ -45,7 +47,7 @@ DomainEvent := {
 
 **Повтор команды:** тот же `action_id` + тот же fingerprint **семантических** параметров запроса возвращает записанный результат, без мутаций; тот же `action_id` + иная целевая операция/payload → `ACTION_CONFLICT`. `expected_resource_revision` и другие служебные сведения о пересылке не должны менять fingerprint уже исполненного действия. Новый осознанный клик на покупку получает новый `action_id`; повтор доставки старого клика сохраняет ID. Для однократных наград проверять ещё устойчивый `reward_id`/`enemy_id`, а не только `action_id`.
 
-**Optimistic concurrency:** `state_revision` — монотонный номер общего snapshot для уведомлений/сохранений. Он может меняться при обычном ходе Clock. Для подтверждения расхода/перемещения использовать **версию затронутого ресурса** (`inventory_revision`, `resident_revision`, `offer_revision` по конкретному контексту), а не безусловное равенство всему `state_revision`; clock-only update не делает кнопку магазина устаревшей. Возвращать `STALE_REVISION` лишь при действительном конфликте необходимой части состояния. UI после такого ответа получает свежий snapshot.
+**Optimistic concurrency:** `state_revision` — монотонный номер общего snapshot для уведомлений/сохранений. Он может меняться при обычном ходе Clock. `CampaignSnapshot.resource_revisions` — словарь **ключ ресурса → его ревизия**, например `inventory:player`, `offer:system_seed`, `resident:npc_alice`. Для расхода/перемещения клиент передаёт `context.expected_resource_revisions=[{key,revision}, ...]` для **всех затронутых и показанных ему в подтверждении сущностей**, а координатор сравнивает их перед мутацией. Иначе покупка может ошибочно пройти на устаревшем ассортименте/ресурсе. Clock-only изменение общего `state_revision` **не** делает кнопку магазина устаревшей. Возвращать `STALE_REVISION` только при конфликте конкретной сущности; UI получает свежий snapshot. В MVP можно использовать ревизии по контейнеру и NPC, без дорогостоящей полной распределённой MVCC.
 
 ## 3. Публичные фасады и владельцы
 
@@ -71,7 +73,7 @@ DomainEvent := {
 1. **Одна операция — один эффект.** Нельзя выдавать награду, XP, посылку, жителей или создавать урожай дважды при повторе, reload или двойной подписке.
 2. **Состояние меняет владелец через coordinator:** A2 — подтверждение попадания/смерти, A3 — поле/постройка, A4 — согласие/квест. A1 — XP, кошелёк, инвентарь, квитанции, единое состояние и commit. **Не делать доменную запись в EventBus listener.**
 3. **Cross-domain action** (сбор→инвентарь; еда→житель; покупка→предмет; убийство→XP/квест) имеет единый validate/plan/commit. Невозможно частично списать еду и не заселить NPC; ошибка переполнения не может «убрать» урожай.
-4. **Ревизия UI:** если изменилась важная для операции версия ресурса, вернуть `STALE_REVISION` с обновляемым snapshot, не применять старый выбор. **Обычный тик игрового Clock сам по себе не основание для отказа**.
+4. **Ревизия UI:** если изменилась важная для операции версия одной из затронутых сущностей, вернуть `STALE_REVISION` и обновляемый snapshot, не применять старый выбор. **Обычный тик игрового Clock сам по себе не основание для отказа**.
 5. **Отрицательные значения:** количество, деньги, прогресс и таймеры валидируются; есть ID типов и экземпляров, не используем отображаемое имя как ключ.
 6. **Одноразовые награды:** сериализуются `claimed_parcel_ids`, `discovered_item_type_ids`, `completed_actions`, `recruited_resident_ids`, `reward_ids`, применённые задания.
 
@@ -154,6 +156,7 @@ UI A5 переполучает snapshot после `state_loaded`. EventBus list
 {
   "schema_version": 1, "ruleset_version": "g0-candidate",
   "save_id": "slot-01", "state_revision": 0, "game_time_minutes": 0,
+  "resource_revisions": {"inventory:player": 0},
   "scene": {"current_scene_id": "hospital", "return_scene_id": null, "last_outside_position": null},
   "player": {"state": {}}, "wallet": {"system_coins": 0},
   "shelter": {"state": {}, "discovered_item_type_ids": [], "claimed_parcel_ids": []},
