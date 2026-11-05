@@ -17,6 +17,7 @@
 | [08-g0-decision-record.md](08-g0-decision-record.md) | **11 утверждённых продуктовых решений** и остающиеся технические проверки |
 | [09-sandbox-gameplay-design.md](09-sandbox-gameplay-design.md) | Свободный игровой цикл и способы продолжать игру без сюжетного задания |
 | [10-qa-acceptance-matrix.md](10-qa-acceptance-matrix.md) | Contract tests, E2E, негативные сценарии и независимый A0 audit |
+| [11-technical-decisions-and-handoff.md](11-technical-decisions-and-handoff.md) | Делегированные инженерные кандидаты: InputMap, Godot, время, ресурсы, G1a и ownership/claims |
 
 **Второй контракт `07-contract-spec-proposal.md` из старого PR #5 не является действующим документом и не должен одновременно нормативно применяться с 05.** Исторический кандидат 07 консолидирован в 05; нумерация 07 намеренно не используется для сохранения истории.
 
