@@ -1,0 +1,27 @@
+name: G0 documentation consistency
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - docs/**
+      - tools/check_g0_docs.py
+      - .github/workflows/g0-docs.yml
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/**
+      - tools/check_g0_docs.py
+      - .github/workflows/g0-docs.yml
+  workflow_dispatch:
+
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Markdown links, tables and normative G0 documents
+        run: python3 tools/check_g0_docs.py

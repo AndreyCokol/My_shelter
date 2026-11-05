@@ -1,121 +1,188 @@
-# Контракты интеграции A1–A5 (проектная спецификация, G0)
+# 05 — Единый контракт модулей, состояния и сохранений
 
-**Версия контракта:** 0.1-DRAFT. **Владелец:** A1. Только первая книга. Цель — изолированная параллельная разработка без редактирования чужих сцен и скриптов.
+**Контракт:** `v1.0-CANDIDATE` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
-Этот документ описывает **предлагаемый интерфейс**, не готовый API. На Gate G0 A1 реализует адаптеры/заглушки, A2–A5 подтверждают использование. После G0 изменение публичной сигнатуры — через PR и уведомление всех затронутых агентов.
+## 1. Основное правило и границы
 
-## 1. Схема ответственности
+Игровые взаимодействия и UI — **команды**, которые могут изменять состояние. **События** только уведомляют об уже зафиксированном факте. UI A5 читает snapshots и вызывает публичные команды; **никаких прямых присваиваний** `xp`, `money`, `crop`, `resident` или `quest`. Публичные команды обрабатывает `GameCoordinator` A1 последовательно, включая команды A2–A4 по согласованным доменным протоколам.
 
-| Общие операции | Единственный владелец | Вызовы остальных |
-|---|---|---|
-| Роутинг сцен, текущая позиция игрока, вход/выход из убежища | A1 | `SceneRouter.request_transition(...)` |
-| Игровое время, ускорение/пауза, tick | A1 | `GameClock.get_hours()`, событие `time_advanced` |
-| Две прогрессии и обнаруженные виды предметов | A1 | `ProgressionService.apply_*(...)`, событие прогрессии |
-| Инвентарь, хранилища, расход монет, одноразовая награда | A1 | `InventoryService.try_transfer(...)`, `RewardService.grant_once(...)` |
-| Персонаж, враги, боевые столкновения, физический лут | A2 | Публикация `enemy_defeated`, запросы инвентаря A1 |
-| Поля, урожай, картофель, погреб, здания, цены на фермерские объекты | A3 | `FarmService`, `BuildingService`, через A1 часы и инвентарь |
-| Принятие контракта, NPC, квестовые флаги и логику жителей | A4 | `ResidentService`, `QuestService`; транзакции A1 |
-| HUD, диалоги как визуальное окно, системные панели, art & E2E | A5 | Чтение публичных snapshot/событий; вызов `try_* / request_*`, никакого прямого изменения данных |
-| Сохранение/загрузка всех модулей | A1 | Модули A2–A4 реализуют `export_state()/import_state(data)` |
+Архитектура — **модульный монолит Godot, без внешних БД, серверов и event sourcing**. A2/A3/A4 владеют собственным доменным состоянием, A1 владеет общим state/commit/Clock/Inventory/Save. A5 владеет всем UI. A0 только ревьюит, если не назначена отдельная задача на патч.
 
-## 2. События (предварительный контракт)
-
-Предлагаемый интерфейс `EventBus.emit_event(event_id: StringName, payload: Dictionary)`. События **уведомляют**; состояние изменяет только система-владелец. Каждое одноразовое действие обрабатывается через сервис с `action_id` для идемпотентности. Ни один слушатель не должен повторно выдавать награду при уведомлении.
-
-| `event_id` | Поля `payload` (минимум) | Производитель | Подписчики |
-|---|---|---|---|
-| `enemy_defeated` | `enemy_id`, `enemy_type_id`, `is_system_weapon`, `action_id` | A2 | A1 XP/rewards, A4 квесты, A5 HUD |
-| `item_transferred` | `item_instance_id`, `item_type_id`, `from_id`, `to_id`, `action_id` | A1 | A1 discovery, A3 storage, A4 квесты |
-| `first_item_type_discovered` | `item_type_id`, `shelter_xp_awarded`, `action_id` | A1 | A4, A5 |
-| `shelter_entered` | `origin_scene_id`, `destination_scene_id` | A1 | A3, A4, A5 |
-| `time_advanced` | `game_hours`, `delta_hours` | A1 | A3 рост, A4 потребление / таймер квестов, A5 часы |
-| `crop_harvested` | `plot_id`, `item_type_id`, `quantity`, `action_id`, `inventory_transaction_id` | A3 | A4 quests, A5 UI |
-| `resident_recruited` | `resident_id`, `contract_version`, `action_id` | A4 | A1 progression, A3 need aggregates, A5 |
-| `quest_completed` | `quest_id`, `action_id` | A4 | A1 rewards, A5 |
-| `parcel_claimed` | `parcel_id`, `action_id` | A1 | A3, A4, A5 |
-| `game_state_loaded` | `save_version` | A1 | A2–A5 refresh views |
-
-**Сбор урожая — одна транзакция:** A3 просит A1-InventoryService добавить урожай. Только после успешной транзакции A3 публикует `crop_harvested` с её `inventory_transaction_id`; событие является уведомлением и не добавляет предмет повторно. При неуспешном добавлении событие не публикуется. Аналогично A2 не создаёт лут параллельно награде A1.
-
-## 3. Общий формат ID
-
-- `item_type_id`, `crop_type_id`, `building_type_id`, `enemy_type_id` — **устойчивые** строковые ID из данных.
-- `item_instance_id`, `resident_id`, `enemy_id` — уникальные ID экземпляров, сохраняемые между загрузками там, где сущность постоянна.
-- `action_id` — уникальное описание **совершённой** операции, сохраняемое вместе с её результатом; повтор операции с тем же ID возвращает уже записанный результат.
-- **Никаких имён как ID:** «Алис» и «Сергей» — отображаемый текст, не машинный идентификатор. Для сюжетного NPC — например `npc_alice`, `npc_pirr`.
-
-## 4. Начальные модели (без канонизации игрового баланса)
+## 2. Примитивы и конверты (кандидат на G0)
 
 ```text
-GameState
-  story_flags: Set[StringName]
-  current_scene_id: StringName
-  last_outside_position: Vector2
-  save_version: int
+ActionId := String                     # устойчивый уникальный ID операции; НЕ frame/time
+EntityId := String                     # ID экземпляра; уникальный в рамках campaign
+ItemTypeId := String                   # стабильный ключ каталога, напр. crop.potato
+ItemInstanceId := String               # ID партии/стека
+GameMinute := int >= 0                 # единый источник времени
+StateRevision := int >= 0              # монотонно возрастает
+ResourceRevision := { key: String, revision: int >= 0 }  # версия конкретной записи/контейнера
 
-PlayerState
-  health, level, xp, stats, unlocked_skills
+CommandRequest := {
+  action_id: ActionId,
+  command_type: StringName,
+  context: { scene_id, actor_id, expected_resource_revisions? }, # [{key,revision}, ...]
+  payload: Dictionary
+}
+CommandResult := {
+  ok: bool, code: ErrorCode, action_id: ActionId,
+  state_revision: int, data: Dictionary, message_key: String
+  # STALE_REVISION: data содержит conflict_keys или UI заново запрашивает snapshot
+}
+ErrorCode :=
+  OK | ALREADY_APPLIED | ACTION_CONFLICT |
+  INVALID_ARGUMENT | INVALID_STATE | NOT_FOUND |
+  INSUFFICIENT_RESOURCES | CAPACITY_EXCEEDED |
+  REQUIRES_CONSENT | NOT_IN_SAFE_AREA | PAUSED |
+  STALE_REVISION | TRANSFER_FORBIDDEN | SAVE_FAILED | UNAVAILABLE
 
-ShelterState
-  area, level, xp, coins, discovered_item_type_ids
-  parcels_claimed, placed_buildings, storage_registry
-
-CropState
-  plot_id, crop_type_id, stage
-  planted_at_game_hour, last_watered_at_game_hour, ready_at, spoil_at
-
-ResidentState
-  resident_id, dialogue_state, signed_rules_version
-  home_id, job_id, food_need, status
-  # MVP: job_id — только сохранённое назначение; автоматическое выполнение работы/потребление пищи — P1
-
-QuestState
-  quest_id, state, objective_progress
-  started_at_game_hour, expires_at_game_hour, reward_action_id
-```
-
-Точные поля, типы Godot Resources и сериализация **согласуются на G0**. Все значения, которых нет в книге, остаются `game_balance`. QA продвигает игровые часы только тестовой командой общего GameClock; отдельные таймеры фермы/квестов запрещены.
-
-## 5. Инварианты между модулями
-
-1. Только A1 пишет `character_xp` и `shelter_xp`; отдельные `shelter_xp` за впервые обнаруженный `item_type_id` выдаются один раз.
-2. **Одна операция — одна выдача** предмета, монет, XP, посылки, жителя, результата задания.
-3. Таймеры A3 и A4 считают **игровые часы A1**, а не локальные таймеры UI.
-4. Ведро воды, семена, урожай, покупка используют общие транзакции предметов; никакого отрицательного количества.
-5. Сюжетный квест не открывает механику повторно, если флаг уже установлен.
-6. A2 создаёт визуальный объект врага; A1 начисляет награду по событию, A4 отслеживает убитого для квестов, A5 показывает текст.
-7. После загрузки состояние NPC, урожая, предметов и квестов согласовано; UI перерисовывается из данных.
-
-## 6. Сохранения и интеграция
-
-A1 хранит `save_version` и записывает единый файл; каждый владелец модуля предоставляет сериализацию **без NodePath и ссылок на узлы сцен**:
-
-```json
-{
-  "save_version": 1,
-  "game_time": 0,
-  "story_flags": [],
-  "current_scene": "hospital",
-  "player": {},
-  "inventory": {},
-  "shelter": {},
-  "crops": {},
-  "residents": {},
-  "quests": {},
-  "completed_actions": []
+DomainEvent := {
+  event_id: String, event_type: StringName, action_id: ActionId,
+  game_minute: int, state_revision: int, payload: Dictionary
 }
 ```
 
-Этот JSON — **образец контракта**, не существующее сохранение и не доказательство канонических стартовых значений.
+**Смысл полей:** `event_type` — вид уведомления, `event_id` — уникальный факт, `action_id` — ключ идемпотентности команды, `state_revision` — версия авторитетного состояния. **Нельзя** называть `event_id` типом события как в старом EventBus. Предлагаемый интерфейс: `EventBus.publish_after_commit(event: DomainEvent)`. Слушатель события не выдаёт награду повторно.
 
-### CI и test stubs
-- A1 готовит mock EventBus, GameClock, InventoryService, ProgressionService, SceneRouter. QA-only метод `GameClock.advance_for_test(hours: float)` доступен только тестовому запуску; в релизной сборке его нет. Все игровые таймеры читают один GameClock. Агенты тестируют свои сцены/системы автономно на mock-сервисах.
-- Сборка тестируется в Godot headless. Интеграционные сцены с настоящими API собирает A1.
-- A5 проверяет E2E-01—05; каждый агент отвечает за unit/integration тесты собственных модулей.
-- **Ни один агент не использует чужую сцену как редактируемый шаблон**: подключать через инстанцирование и публичный API.
+**Повтор команды:** тот же `action_id` + тот же fingerprint **семантических** параметров запроса возвращает записанный результат, без мутаций; тот же `action_id` + иная целевая операция/payload → `ACTION_CONFLICT`. `expected_resource_revisions` и другие служебные сведения о пересылке не должны менять fingerprint уже исполненного действия. Новый осознанный клик на покупку получает новый `action_id`; повтор доставки старого клика сохраняет ID. Для однократных наград проверять ещё устойчивый `reward_id`/`enemy_id`, а не только `action_id`.
 
-## 7. Изменения контракта
+**Нормализация fingerprint:** сохраняемый ключ составляется из `command_type`, нормализованного доменного `payload`, стабильного `actor_id` и целевых сущностей. Временные `scene_id`, текущие UI resource revisions, transport retry count и порядок JSON-ключей **не должны** менять идентичность уже исполненной команды при повторной доставке после загрузки. Повтор с тем же `action_id` проверяется **до** валидации текущего контекста/сцены; прошлый успех возвращается из ledger, даже если игрок уже ушёл с той карты. Новое сознательное действие с иными параметрами имеет другой `action_id`. Failed validation без commit не создаёт фиктивной квитанции успеха.
 
-Если не хватает события / типа / команды: создать Issue `[CONTRACT] Что нужно изменить и зачем`, приложить минимальный пример и связанные FR; A1 принимает, меняет версию, уведомляет заинтересованных и только после этого происходит интеграция. Не создавать параллельные реализации того же API.
+**Optimistic concurrency:** `state_revision` — монотонный номер общего snapshot для уведомлений/сохранений. Он может меняться при обычном ходе Clock. `CampaignSnapshot.resource_revisions` — словарь **ключ ресурса → его ревизия**, например `inventory:player`, `offer:system_seed`, `resident:npc_alice`. Для расхода/перемещения клиент передаёт `context.expected_resource_revisions=[{key,revision}, ...]` для **всех затронутых и показанных ему в подтверждении сущностей**, а координатор сравнивает их перед мутацией. Иначе покупка может ошибочно пройти на устаревшем ассортименте/ресурсе. Clock-only изменение общего `state_revision` **не** делает кнопку магазина устаревшей. Возвращать `STALE_REVISION` только при конфликте конкретной сущности; UI получает свежий snapshot. В MVP можно использовать ревизии по контейнеру и NPC, без дорогостоящей полной распределённой MVCC.
 
-**G0 принят** только после согласования scope, открытых технических решений, событий, API и структуры сохранений всеми пятью агентами и явного утверждения владельца проекта. До этого контракт остаётся **DRAFT**, реализация по нему не начинается.
+## 3. Публичные фасады и владельцы
+
+| Фасад | Владелец | Команды / запросы (псевдосигнатуры до реального type-check) |
+|---|---|---|
+| `GameSession` | A1 | `new_campaign(seed?)`, `get_snapshot()->CampaignSnapshot`, `set_pause(bool)` |
+| `GameCoordinator` | A1 | `execute(request:CommandRequest)->CommandResult`; сериализация, validation, commit, notifications |
+| `SceneRouter` | A1 | `try_transition(action_id,destination_scene_id,entry_point_id)` |
+| `GameClock` | A1 | `get_game_minute()->int`, `try_rest_until(action_id,target_minute,context)`, `advance_for_test(minutes)` **QA-only** |
+| `InventoryService` | A1 | `try_transfer(action_id,instance_id,from,to,quantity)`, `try_spend_and_grant(action_id,offer_id)`, `try_claim_parcel(action_id,parcel_id)` |
+| `ProgressionService` | A1 | `apply_combat_reward_once(action_id,combat_receipt)`, `register_first_item_type(action_id,type_id)` |
+| `FarmService` | A3 | `try_till/plant/water/harvest(action_id,plot_id,...)`, `plan_time_advance(from,to)` |
+| `CombatService` | A2 | `resolve_attack(attack_id,attacker,target,weapon)`, `get_combat_snapshot()` |
+| `WorldResourceService` | A2 | `plan_claim_resource(action_id,resource_node_id)`, `get_resource_snapshot()`; A1 atomically adds reward and persists cooldown |
+| `ResidentService` | A4 | `try_accept_contract(action_id,resident_id,version)`, `plan_recruitment(action_id,resident_ids,food_rule_id,food_selection?)`, `try_assign_job(action_id,resident_id,job_id)` |
+| `QuestService` | A4 | `get_active_quests()`, `plan_quest_progress(tentative_state)` |
+| `UILayer/ViewModels` | **A5** | `render_snapshot()`; UI triggers commands and displays `message_key`; **does not mutate game data** |
+
+Кандидат версий контрактов должен быть подтверждён ревью **A1–A5**, A0 выполняет независимую трассировку и ревью UI. Реальные GDScript имена/типы проверяются при bootstrap G1a без произвольного изменения внешних гарантий.
+
+## 4. Инварианты и транзакции
+
+1. **Одна операция — один эффект.** Нельзя выдавать награду, XP, посылку, жителей или создавать урожай дважды при повторе, reload или двойной подписке.
+2. **Состояние меняет владелец через coordinator:** A2 — подтверждение попадания/смерти, A3 — поле/постройка, A4 — согласие/квест. A1 — XP, кошелёк, инвентарь, квитанции, единое состояние и commit. **Не делать доменную запись в EventBus listener.**
+3. **Cross-domain action** (сбор→инвентарь; еда→житель; покупка→предмет; убийство→XP/квест) имеет единый validate/plan/commit. Невозможно частично списать еду и не заселить NPC; ошибка переполнения не может «убрать» урожай.
+4. **Ревизия UI:** если изменилась важная для операции версия одной из затронутых сущностей, вернуть `STALE_REVISION` и обновляемый snapshot, не применять старый выбор. **Обычный тик игрового Clock сам по себе не основание для отказа**.
+5. **Отрицательные значения:** количество, деньги, прогресс и таймеры валидируются; есть ID типов и экземпляров, не используем отображаемое имя как ключ.
+6. **Одноразовые награды:** сериализуются `claimed_parcel_ids`, `discovered_item_type_ids`, `completed_actions`, `recruited_resident_ids`, `reward_ids`, применённые задания.
+
+### Протокол commit
+
+```text
+execute(request):
+  if action_id already committed: check semantic fingerprint; return recorded result or ACTION_CONFLICT
+  validate request, context, expected affected-resource revision
+  tentative = copy(affected authoritative DTOs)
+  domain_owner.validate_and_plan(tentative, request)  # no UI/signal side-effects
+  coordinator.assert_invariants(tentative)
+  if invalid: return error (no mutation)
+  if durable action: persist full coherent checkpoint + receipt or return SAVE_FAILED
+  publish tentative as new authoritative revision
+  enqueue DomainEvent(s) after commit
+  return CommandResult + receipt
+```
+
+Здесь `durable action` — критичная одноразовая покупка/награда/заселение/посылка и явный save. Другие действия сохраняются по разумному автосейву; до фактической записи не обещать устойчивого сохранения. **Частые `move/aim/dodge/attack frame` не пишутся на диск и не требуют persistent `action_id` для каждого кадра**: это боевой runtime A2. Граница транзакции проходит по долговременному результату (смерть врага, XP/лут, уникальное раскрытие), а не по каждому кадру анимации. Для выдачи результата боевого столкновения используются устойчивые `enemy_id` и `reward_id` с общей командой A1. G1a обязан проверить порядок атомарной смены файла и памяти и сценарии падения на Windows.
+
+## 5. Порядок времени и safe rest
+
+- Авторитетный **игровой календарь** — целые `game_time_minutes` (сельское хозяйство, порча, сюжетные дедлайны); `minutes_per_real_second` хранится в `game_balance`. A1 накапливает **дробный остаток реального delta** и повышает календарную минуту при переходе границы, иначе скорость будет зависеть от FPS. **Реальное время A2 (physics delta, attack cooldown, i-frames dodge, animation)** является отдельной runtime-метрикой, не общим вторым календарём; на паузе бой и календарь останавливаются вместе. Нельзя менять время роста из physics frame напрямую.
+- Для каждой культуры `grow_minutes`, `spoil_minutes` находятся в версии правил. Книжный картофель 72/12 игровых часов — **референс**, не неизменяемый hardcode. Тесты используют активное значение конфига, отдельно могут проверять референсную фикстуру.
+- Игрок может **безопасно отдыхать** в зоне палатки до ближайшей зрелой культуры или выбранного допустимого времени: UI A5 → команда `GameClock.try_rest_until(...)` A1. При опасности/боевой активности или невозможном deadline → понятный отказ без изменения времени.
+- **Один скачок** времени обязан корректно обработать рост/порчу ВСЕХ полей, релевантные deadlines/квесты, дискретные правила и системные уведомления в детерминированном порядке `tentative_clock → domain plan → commit → ordered events`. На больших скачках при интерактивном событии — остановка/предупреждение, а не молчаливое пропускание обязательного выбора.
+- `advance_for_test(minutes)` существует **только в QA окружении** и не подключён к обычному UI. Пауза останавливает игровой clock, но не управление меню.
+
+## 6. Запас еды для заселения (без захардкоженных двух картофелин)
+
+```text
+arrival_food_requirement := {
+  rule_id: String,                  # версия правила баланса
+  accepted_food_type_ids: [String],# например crop.potato; список задаёт баланс
+  units_per_resident: int >= 1,    # количество >0; баланс A3/A5
+  reserve_mode: "reserve" | "consume"   # P0 предпочтительно reserve
+}
+```
+
+**Валидация правила:** `accepted_food_type_ids` — непустой список допустимых типов, `units_per_resident` — положительное целое, `reserve_mode` — один из перечисленных вариантов. Тем самым действительное требование еды не может быть нулевым. `ruleset_version` фиксируется в save; смена продовольственного правила между сохранениями допускается лишь с явной миграцией/проверкой старого резерва, а не тихим пересчётом.
+
+Конфиг/формула `needed_units = units_per_resident × количество заявленных жителей` — пример общего правила. Более сложная структура допускается через версию `food_rule_id`. **Никаких 2 картофелин как обязательной нормы.** Можно тестировать `units_per_resident = 1` и `3` как фикстуры; это не утверждение реального баланса.
+
+**Выбор еды:** если пользователь выбирает конкретные стеки, `food_selection` содержит количество каждого допустимого `type_id` и проходит проверку суммарной нормы; если выбор автоматический, A1 применяет детерминированный порядок `accepted_food_type_ids` из версионированного правила. Квитанция сохраняет фактический состав резерва по типам; другие запасы и зарезервированные единицы нельзя использовать одновременно. При `reserve_mode=reserve` они недоступны остальным покупкам/операциям до явного освобождения по правилу; при `consume` — списываются один раз.
+
+**Поток:** A4 фиксирует информированное добровольное согласие, NPC остаётся `AWAITING_SUPPLIES`; A1 проверяет конфиг и доступный food container; в **одном commit** создаёт уникальный резерв с `reservation_receipt_id`, переводит уникальных NPC в `RECRUITED`, обновляет Q07 и выдаёт награды. Нехватка еды → никакого частичного списания и заселения. Повтор того же action/попытка с другим action после успеха не повторяет эффект; для нескольких NPC в batch — все-or-none, для отдельного человека отдельная транзакция. P0 сохраняет `job_id`, но регулярные голод/труд — P1.
+
+### 6.1. Возобновляемый источник для защиты от softlock (P0)
+
+A2 предусматривает **как минимум один доступный узел обычных семян/ресурсов** за пределами необязательных квестов. Конфигурация `resource_respawn_minutes: int > 0` (первый кандидат: 1440 игровых минут, не утверждённый баланс). `resource_node_id` имеет устойчивую идентичность, `next_available_game_minute` сохраняется в `world_states`. A2 формирует план `plan_claim_resource`, A1 атомарно проводит Inventory + обновление cooldown + событие после commit. После повторного входа в город узел не восстанавливается досрочно. При заполненном инвентаре нет потери предмета или незаконного обновления cooldown. Это **обычный восполняемый ресурс**, а не повторяемая уникальная сюжетная награда.
+
+**Проигрыш в P0:** A2 возвращает героя на зафиксированную безопасную точку/чекпойнт через A1 SceneRouter, с корректным восстановлением состояния боя, без удаления кампании и без повторного System unlock. Инвентарь и одноразовые rewards сохраняются по ранее завершённым транзакциям; нестандартный штраф не вводить без принятой настройки баланса.
+
+## 7. События P0 после commit
+
+| event_type | Минимальные поля payload | Владелец факта |
+|---|---|---|
+| `enemy_defeated` | enemy_id, enemy_type_id, weapon_type_id, is_system_weapon | A2 + A1 commit |
+| `world_resource_claimed` | resource_node_id, item_type_id, quantity, next_available_game_minute | A2/A1 commit |
+| `system_unlocked` | reward_id, skill_id | A1 |
+| `scene_changed` | from_scene_id, to_scene_id, return_point_id | A1 |
+| `item_transferred` | instance_id, type_id, quantity, from_id, to_id | A1 |
+| `first_item_type_discovered` | type_id, xp_awarded | A1 |
+| `parcel_claimed` | parcel_id, receipt_id | A1 |
+| `time_advanced` | from_minute, to_minute, reason | A1 |
+| `crop_stage_changed` | plot_id, old_stage, new_stage | A3 |
+| `crop_harvested` | plot_id, type_id, quantity, inventory_receipt_id | A3/A1 |
+| `resident_contract_accepted` | resident_id, contract_version | A4 |
+| `arrival_food_reserved` | reservation_receipt_id, food_rule_id, items:[{type_id,quantity}], total_units | A1 |
+| `resident_recruited` | resident_id, reservation_receipt_id | A4/A1 |
+| `quest_completed` | quest_id, reward_receipt_id | A4/A1 |
+| `state_loaded` | schema_version, state_revision | A1 |
+
+UI A5 переполучает snapshot после `state_loaded`. EventBus listeners отписываются при уничтожении сцены; повторное открытие меню не должно создавать N подписок. Прогресс квеста вычисляется внутри транзакционного плана; event только уведомляет о завершении.
+
+## 8. Сохранение и отказоустойчивость
+
+```json
+{
+  "schema_version": 1, "ruleset_version": "g0-candidate",
+  "save_id": "slot-01", "state_revision": 0, "game_time_minutes": 0,
+  "resource_revisions": {"inventory:player": 0},
+  "scene": {"current_scene_id": "hospital", "return_scene_id": null, "last_outside_position": null},
+  "player": {"state": {}}, "wallet": {"system_coins": 0},
+  "shelter": {"state": {}, "discovered_item_type_ids": [], "claimed_parcel_ids": []},
+  "inventory": {"items": [], "containers": [], "reservations": []},
+  "crops": {"plots": []}, "residents": {"records": []},
+  "quests": {"records": []}, "story_flags": [], "world_states": {},
+  "completed_actions": {}, "claimed_reward_ids": []
+}
+```
+
+Это **пример формы**, не стартовые значения баланса. Запрещены `NodePath`, живые Node/Texture/Signal, абсолютные пути. Данные сохраняются в `user://saves/` локально на Windows. Для критичных операций — coherent snapshot + receipt. Писать temp и проверять результат, хранить прошлый валидный backup, использовать безопасную замену файла с проверенной на Windows семантикой. `FileAccess.flush` сам по себе не гарантирует переживание внезапного отключения питания; не обещать не проверенную durability.
+
+При повреждённом основном save → предложить проверенный backup/ошибку, **не** запускать тихо новую кампанию поверх данных. Неизвестную будущую схему отклонять без уничтожения файла; chain миграций `v1→v2` тестировать на фикстуре при появлении версии 2. A2–A4: `export_state()`, `validate_import_state(data)`, `import_state(data)` без выдачи наград. Сохранение и восстановление проверяются после restart.
+
+## 9. Конкретные негативные случаи и приемка контракта
+
+- Дубли action/parcel/enemy/quest, одинаковый action_id с другим payload, повторная доставка после reload.
+- Harvest на полный инвентарь; нет семян/воды/монет/еды; stale ресурсная версия; `units_per_resident=0` **отклоняется валидатором**, `1` и `3` — допустимые тестовые конфиги, не утверждённый баланс.
+- Два разных поля, пересекающиеся deadlines при длинном отдыхе; пауза во время open modal; QA метод недоступен обычной игре.
+- Save corrupted/truncated + backup; версия `schema_version` больше известной; двойной вход в сцену и повторное открытие UI.
+- Игра остаётся функциональной, если Q03–Q07 не активированы.
+
+Подробно — [10-qa-acceptance-matrix.md](10-qa-acceptance-matrix.md). Без фактического запуска все тесты **NOT_RUN**.
+
+## 10. Изменения и заморозка
+
+Этот контракт **не считается утверждённым до G0**. Breaking change: Issue `[CONTRACT]` + список потребителей + review A1–A5 + A0 по риску, версия, тест/миграция, новая ссылка на SHA. Сама работа над документацией и создание PR не означает разрешения писать Godot-код. Для G0 необходимы доказательства ревью и явное утверждение владельцем **точного commit SHA**.
