@@ -9,7 +9,10 @@
 3. [03-requirements.md](03-requirements.md) — требования к продукту, MVP, приоритеты, технические ограничения, критерии приёмки.
 4. [04-five-agent-workplan.md](04-five-agent-workplan.md) — **план для пяти агентов** A1–A5: владение файлами, задачи, контрольные ворота и порядок GitHub-работы.
 5. [05-integration-contracts.md](05-integration-contracts.md) — API, события, данные сохранений, способы параллельной интеграции; до G0 это **черновик**.
-6. **Индивидуальные промпты агентов:** [A1](agents/A1.md) · [A2](agents/A2.md) · [A3](agents/A3.md) · [A4](agents/A4.md) · [A5](agents/A5.md).
+6. [06-application-architecture-proposal.md](06-application-architecture-proposal.md) — **предложение архитектуры** модульного Godot-приложения, отдельные состояния сцен, единый GameClock и границы владения.
+7. [07-contract-spec-proposal.md](07-contract-spec-proposal.md) — **предложение контрактов v1**: команды/события, атомарность, `action_id`, картофель/жители, сохранение и восстановление.
+8. [08-g0-decision-record.md](08-g0-decision-record.md) — **реестр открытых решений G0**, риски, распределение полномочий и test matrix. Пока это не утверждение владельца.
+9. **Индивидуальные промпты агентов:** [A1](agents/A1.md) · [A2](agents/A2.md) · [A3](agents/A3.md) · [A4](agents/A4.md) · [A5](agents/A5.md).
 
 **Источники:** предоставленный `604600.fb2.zip` (43 главы) и [досье первого тома](../../lore/books/01-kartoshka-est.md). Полные тексты не копируются в публичный репозиторий.
 
