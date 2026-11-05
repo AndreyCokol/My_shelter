@@ -40,7 +40,7 @@
 | D-14 | Контент для широкой аудитории, добровольные соглашения; **закрытый** прототип, правовой gate до публикации | `OWNER_INTENT_APPROVED / EDITORIAL_DETAILS_DELEGATED` | A4+A5 |
 | D-15 | Unit/contract/E2E, real headless & Windows export, 60 FPS target only after measurement | `TEST_DESIGN_READY / NOT_RUN` | A1/A5/A0 |
 | D-16 | 15–35 мин целевой первый цикл; предварительно обязательный внутренний smoke, внешние плейтесты не блокируют первый запуск | `OWNER_DURATION_APPROVED / UX_NOT_MEASURED` | A5/A0 |
-| D-17 | Один консолидированный PR вместо конкурирующих #1/#2/#5/#6; freeze SHA только после review | `IN_PROGRESS` | A5+A1/владелец |
+| D-17 | Один [консолидированный PR #7](https://github.com/AndreyCokol/My_shelter/pull/7), старые #1/#2/#5/#6 закрыты без merge; SHA после review | `CONSOLIDATED / REVIEW_PENDING` | A5+A1/владелец |
 | D-18 | **ВЕСЬ** осколок LATER, ни P1, ни P2 не обязательны | `OWNER_APPROVED` | A4+A5 |
 | D-19 | Только частная демонстрация; распространение и все публичные релизные задачи out of scope | `OWNER_APPROVED` | Владелец |
 
@@ -64,8 +64,16 @@
 - [ ] Действительный review A1/A2/A3/A4/A5 по своим интерфейсам (реальные комментарии/ссылки; один исполнитель не выдаёт себя за 5 запущенных агентов).
 - [ ] Независимое review A0/A1 собственных UI интерфейсов A5 при наличии соответствующего исполнителя; если отсутствует — явный `REVIEW_NOT_PERFORMED`.
 - [ ] Технический конфиг baseline (tile/time/food) зарегистрирован A5/A1 в ADR или issue; числовые значения допускается дорабатывать после UX.
-- [ ] Консолидированный PR принят, история старых PR приведена к одному источнику, SHA заморожен.
+- [x] Старые PR #1/#2/#5/#6 закрыты без merge, консолидированный PR #7 — единственный открытый кандидат.
+- [ ] PR #7 прошёл независимое документальное review A1–A5, все находки разрешены; SHA заморожен.
 - [ ] Владелец явно подтверждает **финальную редакцию по SHA**; Issue #4 переведён в `G0 APPROVED` только после этого.
+
+### Конкретные review Issues — ещё не выполнены
+
+- [A1 #8](https://github.com/AndreyCokol/My_shelter/issues/8) — контракты, commit/Save; [A2 #9](https://github.com/AndreyCokol/My_shelter/issues/9) — Combat/Input/softlock; [A3 #10](https://github.com/AndreyCokol/My_shelter/issues/10) — Clock/Farm/Food.
+- [A4 #11](https://github.com/AndreyCokol/My_shelter/issues/11) — добровольный NPC и optional quests; [A5 #12](https://github.com/AndreyCokol/My_shelter/issues/12) — архитектура, UI, integration; [A0 #13](https://github.com/AndreyCokol/My_shelter/issues/13) — независимое вертикальное ревью и рекомендации A5.
+- **Не считать создание Issues запуском 6 процессов или одобрением G0**. Реальное review — комментарий с конкретными findings/evidence.
+- Новые технические поправки в [11](11-technical-decisions-and-handoff.md) и [10](10-qa-acceptance-matrix.md) включают разделение игрового времени/боевых кадров, защиту от softlock и локальную документационную CI. CI PASS **не заменяет** Godot, Windows, A0 review или G0 owner approval.
 
 ## 5. После G0
 
@@ -75,12 +83,12 @@ G1a — существующий и запускающийся `project.godot`, 
 
 ```text
 Owner decision: OD-01..OD-11 accepted 2026-11-05 (this conversation)
-Consolidated PR URL: <real URL after creation>
+Consolidated PR URL: https://github.com/AndreyCokol/My_shelter/pull/7
 PRD SHA: <real SHA after final review>
 Contract SHA: <real SHA after final review>
 Plan SHA: <real SHA after final review>
-A1–A5 reviewers: <actual comments/PR references or NOT_REVIEWED>
-A0 reviewer: <actual review or NOT_REVIEWED>
+A1–A5 reviewers: NOT_REVIEWED; issues #8 #9 #10 #11 #12 created for scoped review
+A0 reviewer: NOT_REVIEWED; issue #13 created for independent review
 Owner freeze approval link: <actual Issue/PR comment, otherwise PENDING>
 Gate status: G0_BLOCKED until above are verified
 ```
