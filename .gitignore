@@ -4,3 +4,5 @@ export/
 
 build/
 __pycache__/
+# Third-party packs: local installation/embedded game build only; no raw redistribution.
+game/assets/vendor/

@@ -29,15 +29,15 @@ func run() -> void:
 	check(not app.snapshot().world_states.first_enemy_defeated, "step12 UI facade cannot issue trusted combat reward")
 	# Exercise real combat via actor, not a direct reward command.
 	app.enemy().take_damage(100)
-	await process_frame
-	await process_frame
+	for i in range(4):
+		await physics_frame
 	await process_frame
 	check(app.snapshot().world_states.first_enemy_defeated, "step13 render scene keeps gameplay alive")
 	app.transition("shelter")
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
-	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save"]:
+	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save", "credits"]:
 		app.ui.open_panel(panel)
 		await process_frame
 		await process_frame

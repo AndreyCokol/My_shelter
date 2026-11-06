@@ -3,6 +3,9 @@ on:
   push:
     branches: ['integration/**']
   pull_request:
+concurrency:
+  group: asset-ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -11,6 +14,7 @@ jobs:
     timeout-minutes: 25
     env:
       PYTHONUTF8: '1'
+      SHELTER_REQUIRE_ASSETS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,6 +38,11 @@ jobs:
               for name in ['version.txt', 'windows_release_x86_64.exe', 'windows_debug_x86_64.exe']:
                   (root / name).write_bytes(archive.read('templates/' + name))
           '@ | python -
+      - name: Install reviewed Kibyra UI resources
+        shell: pwsh
+        run: |
+          python tools/install_ui_assets.py --download-ui
+          if ($LASTEXITCODE -ne 0) { throw 'Asset installation failed' }
       - name: Native Windows contract and gameplay suites
         shell: pwsh
         run: |
@@ -57,6 +66,9 @@ jobs:
           Write-Output $log
           if ($log -match 'SCRIPT ERROR:|ERROR:|instances leaked') { throw 'Runtime errors' }
           if ($log -notmatch 'Playable prototype initialized; schema v3') { throw 'Missing startup marker' }
+          $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
+          Write-Output $assetlog
+          if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
