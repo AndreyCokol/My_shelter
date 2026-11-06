@@ -4,11 +4,11 @@ const Core = preload("res://game/systems/core/core_session.gd")
 
 static func new_state(rules: Dictionary) -> Dictionary:
 	return {
-		"schema_version": 1, "scope": "campaign-core", "ruleset_version": rules.version,
+		"schema_version": 2, "scope": "campaign-core", "ruleset_version": rules.version,
 		"save_id": "slot-01", "state_revision": 0, "game_time_minutes": 0, "clock_remainder": 0.0,
 		"resource_revisions": {"wallet": 0, "inventory:player": 0, "inventory:storage": 0, "scene": 0},
-		"scene": {"current_scene_id": "shelter", "return_scene_id": "outside", "entry_point_id": "default"},
-		"player": {"xp": 0}, "wallet": {"system_coins": 0},
+		"scene": {"current_scene_id": "shelter", "return_scene_id": "outside", "entry_point_id": "default", "positions": {}, "last_outside_position": null},
+		"player": {"xp": 0, "position": {"x": 0.0, "y": 0.0}}, "wallet": {"system_coins": 0},
 		"shelter": {"xp": 0, "discovered_item_type_ids": [], "claimed_parcel_ids": []},
 		"inventory": {"items": [], "containers": rules.containers.duplicate(true), "reservations": []},
 		"crops": {"plots": []}, "residents": {"records": []}, "quests": {"records": []},
@@ -22,7 +22,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	for key in shape:
 		if not state.has(key):
 			return false
-	if state.schema_version != 1 or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
+	if state.schema_version != 2 or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
 		return false
 	for value in [state.state_revision, state.game_time_minutes]:
 		if not Core.valid_integer(value):
@@ -35,6 +35,13 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not Core.valid_integer(state.player.get("xp")) or not Core.valid_integer(state.wallet.get("system_coins")) or not Core.valid_integer(state.shelter.get("xp")):
 		return false
 	if not state.scene.get("current_scene_id") in rules.scenes or not state.scene.get("return_scene_id") in rules.scenes or not state.scene.get("entry_point_id") in rules.scenes[state.scene.current_scene_id]:
+		return false
+	if not valid_position(state.player.get("position")) or not state.scene.get("positions") is Dictionary:
+		return false
+	for id in state.scene.positions:
+		if not id in rules.scenes or not valid_position(state.scene.positions[id]):
+			return false
+	if state.scene.get("last_outside_position") != null and not valid_position(state.scene.last_outside_position):
 		return false
 	for key in ["items", "containers", "reservations"]:
 		if not state.inventory.get(key) is Array:
@@ -102,4 +109,13 @@ static func unique_strings(value) -> bool:
 		if not entry is String or entry.is_empty() or seen.has(entry):
 			return false
 		seen[entry] = true
+	return true
+
+static func valid_position(value) -> bool:
+	if not value is Dictionary or value.size() != 2:
+		return false
+	for axis in ["x", "y"]:
+		var number = value.get(axis)
+		if not (number is float or number is int) or not is_finite(number) or abs(number) > 10000000:
+			return false
 	return true

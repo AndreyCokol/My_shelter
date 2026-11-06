@@ -3,6 +3,7 @@ extends RefCounted
 signal committed(result: Dictionary)
 signal state_loaded
 
+const JsonNumbers = preload("res://game/state/json_numbers.gd")
 const PauseRegistry = preload("res://game/systems/core/pause_registry.gd")
 var pauses = PauseRegistry.new()
 var _state: Dictionary = initial_state()
@@ -12,6 +13,8 @@ var _domain_owner: RefCounted # Retain planner/normalizer lifetime without a ses
 var _state_validator: Callable = validate
 var _normalizer: Callable = _normalize_core
 var _planner: Callable = _plan_core
+var runtime_required: bool = false
+var runtime_preparer: Callable # Trusted staged runtime adapter; never serialized.
 
 func _init(start: Dictionary = {}, validator: Callable = Callable(), normalizer: Callable = Callable(), planner: Callable = Callable()) -> void:
 	if not start.is_empty():
@@ -22,6 +25,7 @@ func _init(start: Dictionary = {}, validator: Callable = Callable(), normalizer:
 		_normalizer = normalizer
 	if planner.is_valid():
 		_planner = planner
+	_state = JsonNumbers.normalize_numbers(_state)
 
 static func _normalize_core(request: Dictionary) -> Dictionary:
 	var payload = request.get("payload", {})
@@ -73,13 +77,24 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 		pauses.release_pause(token)
 		_busy = false
 		return _result(false, "INVALID_STATE", "")
+	var ticket := _prepare_runtime(loaded.state, "load")
+	if not ticket.get("ok", false):
+		pauses.release_pause(token)
+		_busy = false
+		return _result(false, "UNAVAILABLE", "")
 	# Explicit recovery preserves damaged primary and restores selected backup.
 	if use_backup and not store.restore_checkpoint(loaded.state):
+		_discard_runtime(ticket)
 		pauses.release_pause(token)
 		_busy = false
 		return _result(false, "SAVE_FAILED", "")
 	# One root swap after all validation. Domain validators join here in G1b.
 	_state = loaded.state.duplicate(true)
+	if not _install_runtime(ticket):
+		_ensure_recovery()
+		pauses.release_pause(token)
+		_busy = false
+		return _result(false, "UNAVAILABLE", "")
 	if _recovery_token != 0:
 		pauses.release_pause(_recovery_token)
 		_recovery_token = 0
@@ -127,6 +142,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 		var failed := _result(false, planned.get("code", "INVALID_STATE"), action_id)
 		failed.data = planned.get("data", {}).duplicate(true)
 		return failed
+	tentative = JsonNumbers.normalize_numbers(tentative)
 	tentative.state_revision += 1
 	var result := _result(true, "OK", action_id)
 	result.state_revision = tentative.state_revision
@@ -135,15 +151,25 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if not _state_validator.call(tentative):
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
+	var ticket := _prepare_runtime(tentative, "command")
+	if not ticket.get("ok", false):
+		_busy = false
+		return _result(false, "UNAVAILABLE", action_id)
 	var written: Dictionary = store.write_checkpoint(tentative, _state_validator)
 	if not written.get("committed", false):
+		_discard_runtime(ticket)
 		_busy = false
 		return _result(false, "SAVE_FAILED", action_id)
 	if written.get("recover", false):
-		_recovery_token = pauses.acquire_pause("recovery")
+		_discard_runtime(ticket)
+		_ensure_recovery()
 		_busy = false
 		return _result(false, "UNAVAILABLE", action_id)
 	_state = tentative
+	if not _install_runtime(ticket):
+		_ensure_recovery()
+		_busy = false
+		return _result(false, "UNAVAILABLE", action_id)
 	committed.emit(result.duplicate(true))
 	_busy = false
 	return result
@@ -161,6 +187,7 @@ func apply_runtime(plan: Callable) -> bool:
 	if not plan.call(tentative):
 		_busy = false
 		return false
+	tentative = JsonNumbers.normalize_numbers(tentative)
 	tentative.state_revision += 1
 	if not _state_validator.call(tentative):
 		_busy = false
@@ -168,3 +195,26 @@ func apply_runtime(plan: Callable) -> bool:
 	_state = tentative
 	_busy = false
 	return true
+
+func _prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
+	if runtime_preparer.is_valid():
+		return runtime_preparer.call(candidate.duplicate(true), reason)
+	if runtime_required:
+		return {"ok": false}
+	return {"ok": true}
+
+static func _discard_runtime(ticket: Dictionary) -> void:
+	var discard: Callable = ticket.get("discard", Callable())
+	if discard.is_valid():
+		discard.call()
+
+static func _install_runtime(ticket: Dictionary) -> bool:
+	var install: Callable = ticket.get("install", Callable())
+	return bool(install.call()) if install.is_valid() else true
+
+func _ensure_recovery() -> void:
+	if _recovery_token == 0:
+		_recovery_token = pauses.acquire_pause("recovery")
+
+func is_busy() -> bool:
+	return _busy

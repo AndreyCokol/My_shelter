@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
 var rules: Dictionary
 
@@ -39,6 +40,11 @@ func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	# Scene validation happens AFTER receipt replay in CoreSession.
 	if request.context.get("scene_id") != state.scene.current_scene_id:
 		return fail("INVALID_STATE")
+	if kind in ["scene.transition", "session.save"] and request.context.has("departure_position"):
+		if not Model.valid_position(request.context.departure_position):
+			return fail("INVALID_ARGUMENT")
+		state.player.position = request.context.departure_position.duplicate(true)
+		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
 	match kind:
 		"inventory.transfer":
 			var rev := revisions(state, request, ["inventory:" + p.from_id, "inventory:" + p.to_id])
@@ -116,6 +122,13 @@ func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			if not p.destination_scene_id in rules.scenes or not p.entry_point_id in rules.scenes[p.destination_scene_id] or p.destination_scene_id == state.scene.current_scene_id:
 				return fail("INVALID_ARGUMENT")
 			var old: String = state.scene.current_scene_id
+			var arrival = request.context.get("arrival_position", state.scene.positions.get(p.destination_scene_id, {"x": 0.0, "y": 0.0}))
+			if not Model.valid_position(arrival):
+				return fail("INVALID_ARGUMENT")
+			state.scene.positions[old] = state.player.position.duplicate(true)
+			if old != "shelter":
+				state.scene.last_outside_position = state.player.position.duplicate(true)
+			state.player.position = arrival.duplicate(true)
 			state.scene.current_scene_id = p.destination_scene_id
 			state.scene.entry_point_id = p.entry_point_id
 			if old != "shelter":

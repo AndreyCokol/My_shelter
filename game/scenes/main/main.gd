@@ -21,3 +21,27 @@ func _ready() -> void:
 	attack.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("attack", attack)
 	print("G1a core bootstrap ready; gameplay and UI pending")
+
+var campaign
+var scene_router
+
+# A2 supplies the actor/world PackedScenes; A5 supplies UILayer separately.
+# No test catalog or synthetic player is installed into the product by default.
+func start_campaign(rules: Dictionary, worlds: Dictionary, actor: Node2D, save_path: String = "user://saves/campaign-v2.json") -> Dictionary:
+	if campaign != null:
+		return {"ok": false, "code": "INVALID_STATE"}
+	var candidate = preload("res://game/systems/core/campaign_session.gd").new(rules)
+	if candidate.coordinator == null:
+		return {"ok": false, "code": "INVALID_ARGUMENT"}
+	var store = preload("res://game/systems/core/checkpoint_store.gd").new(save_path)
+	var router = preload("res://game/systems/scene_router/scene_router.gd").new($WorldHost, actor, candidate.coordinator, store, worlds)
+	if not router.mount_current():
+		return {"ok": false, "code": "UNAVAILABLE"}
+	campaign = candidate
+	session = campaign.coordinator
+	scene_router = router
+	return {"ok": true, "code": "OK"}
+
+func _process(delta: float) -> void:
+	if campaign != null:
+		campaign.tick(delta)
