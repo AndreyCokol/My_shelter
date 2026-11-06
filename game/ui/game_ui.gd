@@ -54,10 +54,12 @@ func _ready() -> void:
 	nav.position = Vector2(15, 53)
 	top.add_child(nav)
 	for entry in [["Рюкзак [I]", "inventory"], ["Задания [Tab]", "quests"], ["Магазин", "shop"], ["Меню [Esc]", "menu"]]:
-		button(nav, entry[0], open_panel.bind(entry[1]))
+		var nav_button := button(nav, entry[0], open_panel.bind(entry[1]))
+		nav_button.focus_mode = Control.FOCUS_NONE
 	notice = Label.new()
 	notice.position = Vector2(15, 345)
 	notice.size = Vector2(610, 15)
+	notice.clip_text = true
 	notice.add_theme_font_size_override("font_size", 11)
 	notice.text = "WASD — движение · ЛКМ — удар · Space — уклонение · E — рядом с объектом"
 	add_child(notice)
@@ -126,6 +128,9 @@ func close_panel() -> void:
 		app.session.pauses.release_pause(pause_token)
 	pause_token = 0
 	panel_id = ""
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null:
+		focused.release_focus()
 	modal.hide()
 
 func run_command(kind: String, payload: Dictionary = {}) -> void:
@@ -206,7 +211,7 @@ func render_panel() -> void:
 			button(body, "Получить стартовую посылку", run_command.bind("inventory.claim_parcel", {"parcel_id": "starter"}))
 			for item in state.inventory.items:
 				var available: int = preload("res://game/systems/gameplay/gameplay_commands.gd").available(state, item)
-				line("%s ×%d · %s · свободно %d" % [app.campaign._rules.items[item.type_id].name, item.quantity, "рюкзак" if item.container_id == "player" else "хранилище", available])
+				line("%s ×%d · %s · свободно %d" % [app.rules().items[item.type_id].name, item.quantity, "рюкзак" if item.container_id == "player" else "хранилище", available])
 				if available > 0:
 					button(body, "В хранилище" if item.container_id == "player" else "В рюкзак", run_command.bind("inventory.transfer", {"instance_id": item.instance_id, "from_id": item.container_id, "to_id": "storage" if item.container_id == "player" else "player", "quantity": available}))
 		"farm":
@@ -229,7 +234,7 @@ func render_panel() -> void:
 					line("Конечная минута: %d. Испорченных грядок: %d." % [preview.data.actual_to_minute, preview.data.spoiled_plots])
 					button(body, "Подтвердить отдых", run_command.bind("clock.rest", {"target_minute": rest_target}))
 		"residents":
-			line("Путники присоединяются добровольно. Для каждого нужен запас: %d ед. еды. Резерв нельзя расходовать повторно." % app.campaign._rules.food.units_per_resident)
+			line("Путники присоединяются добровольно. Для каждого нужен запас: %d ед. еды. Резерв нельзя расходовать повторно." % app.rules().food.units_per_resident)
 			for resident in state.residents.records:
 				line("%s: %s" % ["Путник 1" if resident.id == "resident_1" else "Путник 2", STATUS[resident.status]])
 				if resident.status == "unknown":

@@ -26,6 +26,9 @@ func _init(rules: Dictionary) -> void:
 		var adapter = preload("res://game/systems/gameplay/gameplay_calendar.gd")
 		configure_calendar(adapter.deadlines, adapter.apply)
 
+func get_rules() -> Dictionary:
+	return _rules.duplicate(true)
+
 # Adapters are installed during campaign setup, never through player payloads.
 func configure_calendar(source: Callable, consumer: Callable) -> bool:
 	if coordinator == null or coordinator.is_busy():

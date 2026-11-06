@@ -20,7 +20,7 @@ func _ready() -> void:
 	var attack = InputEventMouseButton.new()
 	attack.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("attack", attack)
-	print("G1a core bootstrap ready; gameplay and UI pending")
+	print("Core platform initialized")
 
 var campaign
 var scene_router

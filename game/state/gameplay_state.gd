@@ -53,6 +53,17 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 			return false
 		if resident.status == "joined" and (resident.food_receipt_id.is_empty() or not state.completed_actions.has(resident.food_receipt_id)):
 			return false
+		if resident.status == "joined":
+			var receipt: Dictionary = state.completed_actions[resident.food_receipt_id].result.data
+			if receipt.get("resident_id") != resident.id or receipt.get("reserve_mode") != rules.food.reserve_mode or receipt.get("units") != rules.food.units_per_resident or not receipt.get("food_allocations") is Array:
+				return false
+			var total: int = 0
+			for part in receipt.food_allocations:
+				if not part is Dictionary or not part.get("instance_id") is String or not part.get("type_id") in rules.food.accepted_food_type_ids or not integer(part.get("quantity")) or part.quantity <= 0:
+					return false
+				total += int(part.quantity)
+			if total != rules.food.units_per_resident:
+				return false
 	if not state.quests.get("records") is Array or state.quests.records.size() != 7:
 		return false
 	ids = []
@@ -69,7 +80,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		ids.append(flag)
 	if state.world_states.size() != 3 or not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
-	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags):
+	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags) or state.world_states.first_enemy_defeated != ("system" in state.claimed_reward_ids):
 		return false
 	for key in ["farm", "residents", "world"]:
 		if not integer(state.resource_revisions.get(key)):

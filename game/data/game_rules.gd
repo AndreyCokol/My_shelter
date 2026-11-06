@@ -14,8 +14,14 @@ static func build() -> Dictionary:
 		"resource_respawn_minutes": 60, "resource_quantity": 2}
 
 static func validate(rules: Dictionary) -> bool:
-	if not rules.get("items") is Dictionary:
+	if not rules.get("items") is Dictionary or not rules.get("scenes") is Dictionary or not rules.get("rewards") is Dictionary or not rules.rewards.get("system") is Dictionary:
 		return false
+	for id in ["seed.basic", "crop.potato", "tool.basic"]:
+		if not rules.items.get(id) is Dictionary or not rules.items[id].get("name") is String or rules.items[id].name.is_empty():
+			return false
+	for id in ["hospital", "outside", "shelter", "louvre"]:
+		if not rules.scenes.get(id) is Array or not "default" in rules.scenes[id]:
+			return false
 	for key in ["crop", "food"]:
 		if not rules.get(key) is Dictionary:
 			return false

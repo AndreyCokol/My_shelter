@@ -32,6 +32,7 @@ func _ready() -> void:
 	camera.position = Vector2(320, 180)
 	$WorldHost.add_child(camera)
 	ui.open_panel("welcome")
+	print("Playable prototype initialized; schema v3")
 
 func _process(delta: float) -> void:
 	super._process(delta)
@@ -42,6 +43,9 @@ func _process(delta: float) -> void:
 
 func snapshot() -> Dictionary:
 	return session.get_snapshot()
+
+func rules() -> Dictionary:
+	return campaign.get_rules()
 
 func running() -> bool:
 	return campaign != null and not session.pauses.is_paused() and not session.is_busy()

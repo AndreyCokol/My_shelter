@@ -197,6 +197,7 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 				if not resident.consent:
 					return fail("REQUIRES_CONSENT")
 				var needed: int = int(rules.food.units_per_resident)
+				var allocation: Array = []
 				var available_food: int = 0
 				for item in state.inventory.items:
 					if item.type_id in rules.food.accepted_food_type_ids:
@@ -209,6 +210,7 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 					var used := mini(needed, available(state, item))
 					if used <= 0:
 						continue
+					allocation.append({"instance_id": item.instance_id, "type_id": item.type_id, "quantity": used})
 					if rules.food.reserve_mode == "reserve":
 						state.inventory.reservations.append({"instance_id": item.instance_id, "resident_id": resident.id, "quantity": used})
 					else:
@@ -221,6 +223,8 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 				resident.status = "joined"
 				resident.food_receipt_id = request.action_id
 				bump(state, ["inventory:player", "inventory:storage"])
+				bump(state, ["residents"])
+				return success({"resident_id": resident.id, "food_allocations": allocation, "reserve_mode": rules.food.reserve_mode, "units": rules.food.units_per_resident})
 		bump(state, ["residents"])
 		return success()
 	return fail("INVALID_ARGUMENT")

@@ -1,6 +1,6 @@
 # 05 — Единый контракт модулей, состояния и сохранений
 
-**Контракт:** `v1.4-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
+**Контракт:** `v1.5-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
 ## 1. Основное правило и границы
 
@@ -261,3 +261,22 @@ Clock tick публикует time_advanced только при изменени
 - Rest проходит durable transaction с квитанцией; повтор не вызывает adapters. Tick проходит runtime validation barrier без записи на каждом кадре. Save failure до commit не публикует ни время, ни доменные события; после commit recovery читает сохранённый snapshot и посылает только refresh.
 
 **Handoff:** A3/A4 предоставляют полный provider, чистые handlers, schema validators и persisted pending gates; A5 читает actual_to_minute/interrupted и обновляет UI из snapshot. API предложен для review A3/A4/A5, не объявлен согласованным ими. Проверки CT-44..47 используют технические adapters, не игровые поля/квесты.
+
+
+## 15. Игровой прототип v3 (Issue #27, предложено для review)
+
+Прямое поручение владельца выполнить все 17 шагов расширяет область одной сессии на игровые модули и UI. Это не шесть отдельных авторов/reviewers и не формальное G0 approve.
+
+- `game/scenes/main/playable.tscn` — запускаемая композиция; прежний `main.tscn` сохраняет supplied campaign API и core fixtures. `GameApp.command(kind,payload)` — UI facade; trusted команды `game.enemy_defeated`/`game.player_defeated` через него запрещены. Combat вызывает их отдельными runtime hooks после подтверждённого состояния actor/enemy. Серверов/сети в игре нет.
+- Gameplay catalogs: `game/data/game_rules.gd`. Правила — первоначальные кандидаты, а не подтверждённый баланс 15–35 минут. `CampaignSession.get_rules()` возвращает копию. UI не пишет state/rules.
+- Gameplay state имеет `schema_version=3`, `ruleset_version=prototype-v1`, отдельный путь `prototype-v3.json`. Core-fixture v2 остаётся поддержан только своим ruleset. Автоматическая миграция v2→v3 не заявляется: несовместимый файл отклоняется без перезаписи. Новая игра — явный выбор с архивированием старых primary/backup.
+- Persisted domains: два plot ID и стадии empty/planted/growing/ripe/spoiled; два resident ID со status/consent/food_receipt_id; Q01–Q07, story flags, first enemy ID, resource cooldown и defeats. Валидатор проверяет известные IDs/status, сроки из rules, вместимость из каталога, ссылки/суммы food reservations и joined receipt. Core проверяет всю сессию до runtime swap.
+- Типизированные UI команды: `game.plant/water/harvest/clear {plot_id}`, `game.resource_collect {}`, `game.contact/recruit {resident_id}`, `game.consent {resident_id,accept}`, `game.quest_track {quest_id}`. Требуются revisions world/farm/residents и обоих контейнеров. Generic inventory/clock/scene/save команды сохраняются. Q03–Q07 inactive не мешают механикам.
+- Посадка расходует свободное семя; вода в убежище доступна; полив начинает configured grow/spoil deadlines. Calendar provider заранее включает зрелость и порчу всех полей. Harvest + inventory + XP + receipt — одна транзакция; полный рюкзак оставляет ripe plot. Порча ровно на spoil_at блокирует сбор.
+- Контакт и согласие отдельны от заселения; отказ не выдаёт жителя. При нехватке пищи остаётся AWAITING_SUPPLIES. Recruit использует positive configured units, accepted types, reserve/consume. Receipt содержит resident_id, фактические instance/type/quantity allocations, mode и units. Резерв ограничивает inventory transfer и любой расход через available quantity.
+- Runtime health/attack/dodge/enemy AI используют physics delta и останавливаются при агрегированной паузе. Атаки не пишут диск; первая смерть и награда сохраняются вместе. Здоровье/координаты героя сохраняются явным Save; смерть создаёт durable safe respawn. Состояние промежуточного удара/анимации не сохраняется, живой враг при загрузке восстанавливает здоровье. Незавершённый бой при restart начинается заново без повторной уже выданной награды.
+- UI modal владеет одним pause token. Для синхронной команды панель временно отпускает только свой token и восстанавливает его без промежуточного кадра; чужой token/recovery продолжает блокировать изменения. Save допускается из меню. Escape закрывает окно, снимает его focus и token; навигационные кнопки не перехватывают Space для боя после закрытия.
+- `preview_rest(target)` планирует на отдельной копии без commit и возвращает фактическую минуту/число spoiled plots. Подтверждение исполняет обычный clock.rest. Рендер/UX/доступность проверяются отдельно от headless DTO/E2E тестов.
+- JSON checkpoints используют full_precision=true для сохранения дробного Clock/координат без потери точности. Engine notices входят в архив сборки; lore/docs/tests исключены из экспортируемых ресурсов.
+
+Статус: реализовано и проверяется в integration branch; независимый review NOT_PERFORMED. Windows headless CI не является human GUI/UX acceptance. Полная готовность G4 требует оставшихся доказательств.

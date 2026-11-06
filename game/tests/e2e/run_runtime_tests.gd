@@ -82,6 +82,20 @@ func run() -> void:
 			if saved[key] != app.snapshot()[key]:
 				print("DIFFERENT ", key, " before=", saved[key], " after=", app.snapshot()[key])
 	check(loaded_result.ok and app.snapshot() == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270), "E2E05 load installs all domains position and health")
+	app.ui.open_panel("inventory")
+	var focused_button: Button = app.ui.body.find_children("*", "Button", true, false)[0]
+	focused_button.grab_focus()
+	var escape := InputEventKey.new()
+	escape.physical_keycode = KEY_ESCAPE
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	Input.parse_input_event(escape)
+	await process_frame
+	escape.pressed = false
+	Input.parse_input_event(escape)
+	await process_frame
+	check(app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "E2E08 Escape closes focused modal and releases its pause")
+	check(root.gui_get_focus_owner() == null, "E2E08 closed modal leaves no focused action that Space can trigger")
 	var subscriptions: int = app.session.events.subscription_count()
 	for i in range(10):
 		app.ui.open_panel("inventory")

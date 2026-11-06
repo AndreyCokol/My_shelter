@@ -61,7 +61,7 @@ func try_attack(target: Vector2) -> bool:
 	return true
 
 func take_damage(amount: int) -> bool:
-	if defeated or dodge_remaining > 0 or hurt_remaining > 0 or app == null or not app.running():
+	if amount <= 0 or defeated or dodge_remaining > 0 or hurt_remaining > 0 or app == null or not app.running():
 		return false
 	health = maxi(0, health - amount)
 	hurt_remaining = 0.45

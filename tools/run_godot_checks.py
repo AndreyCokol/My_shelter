@@ -23,7 +23,7 @@ commands = [
 ]
 for args in commands:
     try:
-        run = subprocess.run([godot, *args], cwd=root, text=True, stdout=subprocess.PIPE,
+        run = subprocess.run([godot, *args], cwd=root, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, timeout=45)
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f'FAIL {args}: {exc}')
