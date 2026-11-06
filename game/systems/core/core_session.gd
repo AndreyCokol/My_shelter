@@ -158,7 +158,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
 	var drafts = planned.get("events", [])
-	if not _valid_drafts(drafts):
+	if not _valid_drafts(drafts, tentative.get("game_time_minutes", 0)):
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
 	var ticket := _prepare_runtime(tentative, "command")
@@ -201,7 +201,7 @@ func apply_runtime(plan: Callable, event_factory: Callable = Callable()) -> bool
 	tentative = JsonNumbers.normalize_numbers(tentative)
 	tentative.state_revision += 1
 	var drafts: Array = event_factory.call(_state.duplicate(true), tentative.duplicate(true)) if event_factory.is_valid() else []
-	if not _valid_drafts(drafts) or not _state_validator.call(tentative):
+	if not _valid_drafts(drafts, tentative.get("game_time_minutes", 0)) or not _state_validator.call(tentative):
 		_busy = false
 		return false
 	_state = tentative
@@ -232,11 +232,13 @@ func _ensure_recovery() -> void:
 func is_busy() -> bool:
 	return _busy
 
-static func _valid_drafts(drafts) -> bool:
+static func _valid_drafts(drafts, max_minute: int = 0) -> bool:
 	if not drafts is Array:
 		return false
 	for draft in drafts:
 		if not draft is Dictionary or not (draft.get("event_type") is String or draft.get("event_type") is StringName) or str(draft.event_type).is_empty() or not draft.get("payload") is Dictionary:
+			return false
+		if draft.has("game_minute") and (not valid_integer(draft.game_minute) or draft.game_minute > max_minute):
 			return false
 	return true
 
@@ -246,5 +248,5 @@ func _publish_events(drafts: Array, action_id: String) -> void:
 		events.publish_after_commit({
 			"event_id": "%s:%s:%d" % [_state.get("save_id", _state.scope), action_id.sha256_text(), i],
 			"event_type": str(draft.event_type), "action_id": action_id,
-			"game_minute": _state.get("game_time_minutes", 0),
+			"game_minute": draft.get("game_minute", _state.get("game_time_minutes", 0)),
 			"state_revision": _state.state_revision, "payload": JsonNumbers.normalize_numbers(draft.payload)})

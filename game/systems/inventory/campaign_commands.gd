@@ -2,6 +2,7 @@ extends RefCounted
 
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
+var calendar
 var rules: Dictionary
 
 func _init(config: Dictionary) -> void:
@@ -35,7 +36,7 @@ func normalize(request: Dictionary) -> Dictionary:
 func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var before := state.duplicate(true)
 	var result := _plan(state, request)
-	if result.get("ok", false):
+	if result.get("ok", false) and request.command_type != "clock.rest":
 		result.events = command_events(before, state, request, result)
 	return result
 
@@ -120,8 +121,10 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 				return fail("NOT_IN_SAFE_AREA")
 			if p.target_minute <= state.game_time_minutes:
 				return fail("INVALID_ARGUMENT")
-			state.game_time_minutes = p.target_minute
-			return success({"actual_to_minute": state.game_time_minutes})
+			var advanced: Dictionary = calendar.advance(state, int(p.target_minute), "rest")
+			if advanced.ok:
+				state.clock_remainder = 0.0
+			return advanced
 		"scene.transition":
 			var rev := revisions(state, request, ["scene"])
 			if not rev.ok:
