@@ -1,0 +1,87 @@
+4.7.2.stable.official.ed1daf0bf
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Started Project initialization (5 steps)[39m[0m
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Scanning file structure...[39m[0m
+[  16% ] [90m[1mfirst_scan_filesystem[22m | Loading global class names...[39m[0m
+[  33% ] [90m[1mfirst_scan_filesystem[22m | Verifying GDExtensions...[39m[0m
+[  50% ] [90m[1mfirst_scan_filesystem[22m | Creating autoload scripts...[39m[0m
+[  66% ] [90m[1mfirst_scan_filesystem[22m | Initializing plugins...[39m[0m
+[  83% ] [90m[1mfirst_scan_filesystem[22m | Starting file scan...[39m[0m
+[92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | Started Registering global classes... (5 steps)[39m[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  16% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  33% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  50% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  66% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[92m[ DONE ][39m [1mupdate_scripts_classes[22m
+[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Started Loading editor (5 steps)[39m[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Loading editor layout...[39m[0m
+[  16% ] [90m[1mloading_editor_layout[22m | Loading docks...[39m[0m
+[92m[ DONE ][39m [1mloading_editor_layout[22m
+[0m
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS CT-01 first commit
+PASS CT-01 replay has no events
+PASS CT-02 changed payload
+PASS reject negative input
+PASS CT-33 historical receipt, current snapshot
+PASS CT-22 replay after actual disk reload
+PASS snapshot isolation
+PASS CT-30 failure before commit
+PASS CT-30 failure after disk before RAM
+PASS CT-30 recovery blocks mutations
+PASS CT-30 recover committed checkpoint
+PASS CT-30 no duplicate recovery effect
+PASS CT-29 invalid linked receipt leaves live session intact
+PASS CT-11 explicit backup load
+PASS CT-11 restored backup accepts subsequent writes
+PASS malformed context rejected
+PASS CT-31 nested pause retained
+PASS CT-31 last reason released
+PASS CT-23 same calendar at 30 and 60 FPS
+PASS CT-05 paused clock
+PASS CT-32 ordered scheduler, split interval equivalence
+CORE TESTS: 21 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS valid technical rules
+PASS negative rule price rejected
+PASS CT-03 insufficient coins, no receipt
+PASS parcel grants items and coins together
+PASS discovery XP on first type
+PASS parcel semantic ID prevents second claim
+PASS CT-19 clock tick does not stale inventory purchase
+PASS CT-04 repeated type grants no discovery XP
+PASS once-only reward
+PASS independent XP counters
+PASS ineligible reward rejected
+PASS split stack transfer
+PASS CT-19 genuine resource conflict
+PASS transfer overdraw atomic
+PASS CT-03 full inventory preserves coins/items
+PASS scene DTO transition
+PASS rest outside safe scene rejected
+PASS scene DTO round trip
+PASS rest uses persistent calendar
+PASS CT-10 full supported campaign state reload
+PASS CT-22 replay across state/scene revisions
+PASS CT-20 purchase I/O failure rolls back all domains
+PASS campaign commit enters recovery
+PASS campaign recovery restores exactly one purchase
+PASS paused campaign tick has no mutation
+PASS paused purchase rejected
+PASS explicit save permitted from pause menu
+PASS client cannot override catalog price
+PASS required optimistic revisions cannot be omitted
+PASS CT-29 cross-domain invalid item prevents entire import
+PASS ruleset mismatch refused without migration
+CAMPAIGN TESTS: 31 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+G1a core bootstrap ready; gameplay and UI pending
+GODOT CHECKS: PASS

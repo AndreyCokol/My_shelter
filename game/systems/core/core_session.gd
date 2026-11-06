@@ -8,6 +8,31 @@ var pauses = PauseRegistry.new()
 var _state: Dictionary = initial_state()
 var _busy: bool = false
 var _recovery_token: int = 0
+var _domain_owner: RefCounted # Retain planner/normalizer lifetime without a session cycle.
+var _state_validator: Callable = validate
+var _normalizer: Callable = _normalize_core
+var _planner: Callable = _plan_core
+
+func _init(start: Dictionary = {}, validator: Callable = Callable(), normalizer: Callable = Callable(), planner: Callable = Callable()) -> void:
+	if not start.is_empty():
+		_state = start.duplicate(true)
+	if validator.is_valid():
+		_state_validator = validator
+	if normalizer.is_valid():
+		_normalizer = normalizer
+	if planner.is_valid():
+		_planner = planner
+
+static func _normalize_core(request: Dictionary) -> Dictionary:
+	var payload = request.get("payload", {})
+	if request.get("command_type") != "core.increment" or not payload is Dictionary or not valid_integer(payload.get("amount")) or payload.amount <= 0:
+		return {"ok": false}
+	return {"ok": true, "payload": {"amount": int(payload.amount)}}
+
+static func _plan_core(tentative: Dictionary, request: Dictionary) -> Dictionary:
+	tentative.counter += int(request.payload.amount)
+	return {"ok": true, "data": {"counter": tentative.counter}}
+
 
 static func initial_state() -> Dictionary:
 	return {"schema_version": 1, "scope": "core-bootstrap", "state_revision": 0, "counter": 0, "completed_actions": {}}
@@ -44,7 +69,7 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 	_busy = true
 	var token: int = pauses.acquire_pause("load")
 	var loaded: Dictionary = store.read_checkpoint(store.path + ".bak" if use_backup else "")
-	if not loaded.ok or not validate(loaded.get("state", {})):
+	if not loaded.ok or not _state_validator.call(loaded.get("state", {})):
 		pauses.release_pause(token)
 		_busy = false
 		return _result(false, "INVALID_STATE", "")
@@ -69,7 +94,8 @@ func execute(request: Dictionary, store) -> Dictionary:
 	var payload = request.get("payload", {})
 	if not action_id is String or action_id.is_empty() or not payload is Dictionary:
 		return _result(false, "INVALID_ARGUMENT", "")
-	if request.get("command_type") != "core.increment" or not valid_integer(payload.get("amount")) or payload.amount <= 0:
+	var normalized: Dictionary = _normalizer.call(request)
+	if not normalized.get("ok", false):
 		return _result(false, "INVALID_ARGUMENT", action_id)
 	var context = request.get("context", {})
 	if not context is Dictionary:
@@ -79,7 +105,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 		return _result(false, "INVALID_ARGUMENT", action_id)
 	# Only meaningful fields of this typed command participate; JSON key order,
 	# scene and optimistic revisions are transport context.
-	var fingerprint := JSON.stringify(["core.increment", actor, int(payload.amount)]).sha256_text()
+	var fingerprint := JSON.stringify([request.command_type, actor, normalized.payload]).sha256_text()
 	if _recovery_token != 0 or _busy:
 		return _result(false, "UNAVAILABLE", action_id)
 	if _state.completed_actions.has(action_id):
@@ -89,20 +115,27 @@ func execute(request: Dictionary, store) -> Dictionary:
 		var replay: Dictionary = receipt.result.duplicate(true)
 		replay.code = "ALREADY_APPLIED"
 		return replay
-	if pauses.is_paused():
+	if pauses.is_paused() and request.command_type != "session.save":
 		return _result(false, "PAUSED", action_id)
 	_busy = true
 	var tentative := _state.duplicate(true)
-	tentative.counter += int(payload.amount)
+	var typed_request := request.duplicate(true)
+	typed_request.payload = normalized.payload
+	var planned: Dictionary = _planner.call(tentative, typed_request)
+	if not planned.get("ok", false):
+		_busy = false
+		var failed := _result(false, planned.get("code", "INVALID_STATE"), action_id)
+		failed.data = planned.get("data", {}).duplicate(true)
+		return failed
 	tentative.state_revision += 1
 	var result := _result(true, "OK", action_id)
 	result.state_revision = tentative.state_revision
-	result.data = {"counter": tentative.counter}
+	result.data = planned.get("data", {}).duplicate(true)
 	tentative.completed_actions[action_id] = {"fingerprint": fingerprint, "result": result.duplicate(true)}
-	if not validate(tentative):
+	if not _state_validator.call(tentative):
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
-	var written: Dictionary = store.write_checkpoint(tentative, validate)
+	var written: Dictionary = store.write_checkpoint(tentative, _state_validator)
 	if not written.get("committed", false):
 		_busy = false
 		return _result(false, "SAVE_FAILED", action_id)
@@ -117,3 +150,21 @@ func execute(request: Dictionary, store) -> Dictionary:
 
 func _result(ok: bool, code: String, action_id: String) -> Dictionary:
 	return {"ok": ok, "code": code, "action_id": action_id, "state_revision": _state.state_revision, "data": {}, "message_key": "core." + code.to_lower()}
+
+# Trusted runtime hook for the calendar; never exposed as a player payload.
+# It uses the same serialization/validation barrier but does not write each frame.
+func apply_runtime(plan: Callable) -> bool:
+	if _busy or _recovery_token != 0 or pauses.is_paused():
+		return false
+	_busy = true
+	var tentative := _state.duplicate(true)
+	if not plan.call(tentative):
+		_busy = false
+		return false
+	tentative.state_revision += 1
+	if not _state_validator.call(tentative):
+		_busy = false
+		return false
+	_state = tentative
+	_busy = false
+	return true
