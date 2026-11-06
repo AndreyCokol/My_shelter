@@ -34,6 +34,8 @@ func run() -> void:
 	check(app.ui.theme.get_stylebox("normal", "Button") is StyleBoxTexture, "real image-backed button style replaces flat placeholder")
 	check(app.ui.theme.get_stylebox("hover", "Button") is StyleBoxTexture and app.ui.theme.get_stylebox("pressed", "Button") is StyleBoxTexture and app.ui.theme.get_stylebox("focus", "Button") is StyleBoxTexture, "hover pressed and keyboard focus states have texture styles")
 	check(app.ui.heading_icon.texture == Art.texture("shelter"), "welcome header displays pack artwork")
+	var health_icon: TextureRect = app.ui.find_child("HealthIcon", true, false)
+	check(health_icon != null and health_icon.size == Vector2(14, 14) and health_icon.get_global_rect().end.x + 4 <= app.ui.hud.get_global_rect().position.x, "health icon respects target size and does not overlap HUD text")
 	var viewport: Vector2 = app.ui.get_viewport_rect().size
 	for child in app.ui.get_children():
 		if child is Panel:

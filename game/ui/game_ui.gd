@@ -59,10 +59,11 @@ func _ready() -> void:
 	hud.position = Vector2(15, 31)
 	if Art.texture("heart") != null:
 		var heart := TextureRect.new()
+		heart.name = "HealthIcon"
 		heart.texture = Art.texture("heart")
 		heart.position = Vector2(15, 33)
-		heart.size = Vector2(14, 14)
 		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		heart.size = Vector2(14, 14)
 		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		top.add_child(heart)
@@ -75,7 +76,7 @@ func _ready() -> void:
 		var nav_button := button(nav, entry[0], open_panel.bind(entry[1]))
 		nav_button.focus_mode = Control.FOCUS_NONE
 		nav_button.icon = Art.icon(entry[1])
-		nav_button.expand_icon = true
+		nav_button.expand_icon = false
 	notice = Label.new()
 	notice.position = Vector2(15, 345)
 	notice.size = Vector2(610, 15)
@@ -134,7 +135,7 @@ func _ready() -> void:
 func button(parent: Node, text: String, action: Callable) -> Button:
 	var item := Button.new()
 	item.text = text
-	item.expand_icon = true
+	item.expand_icon = false
 	item.add_theme_constant_override("icon_max_width", 16)
 	var method: String = str(action.get_method())
 	var roles := {"save_game": "save", "load_game": "save", "close_panel": "back", "new_game": "shelter", "_prepare_rest": "rest"}

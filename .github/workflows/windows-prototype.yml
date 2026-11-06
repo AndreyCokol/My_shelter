@@ -63,6 +63,9 @@ jobs:
           Write-Output $log
           if ($log -match 'SCRIPT ERROR:|ERROR:|instances leaked') { throw 'Runtime errors' }
           if ($log -notmatch 'Playable prototype initialized; schema v3') { throw 'Missing startup marker' }
+          $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
+          Write-Output $assetlog
+          if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
