@@ -1,0 +1,66 @@
+name: Windows prototype validation
+on:
+  push:
+    branches: ['integration/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned Windows engine and release template
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/'
+          Invoke-WebRequest ($url + 'Godot_v4.7.2-stable_win64.exe.zip') -OutFile "$env:RUNNER_TEMP/engine.zip"
+          Expand-Archive "$env:RUNNER_TEMP/engine.zip" "$env:RUNNER_TEMP/engine"
+          $engine = (Get-ChildItem "$env:RUNNER_TEMP/engine" -Filter '*_console.exe').FullName
+          if (-not $engine) { throw 'Console engine executable missing' }
+          "GODOT=$engine" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Invoke-WebRequest ($url + 'Godot_v4.7.2-stable_export_templates.tpz') -OutFile "$env:RUNNER_TEMP/templates.zip"
+          @'
+          import os, pathlib, zipfile
+          root = pathlib.Path(os.environ['APPDATA']) / 'Godot/export_templates/4.7.2.stable'
+          root.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(pathlib.Path(os.environ['RUNNER_TEMP']) / 'templates.zip') as archive:
+              for name in ['version.txt', 'windows_release_x86_64.exe', 'windows_debug_x86_64.exe']:
+                  (root / name).write_bytes(archive.read('templates/' + name))
+          '@ | python -
+      - name: Native Windows contract and gameplay suites
+        shell: pwsh
+        run: |
+          python tools/run_godot_checks.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows suites failed' }
+          python tools/check_g0_docs.py
+          if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed' }
+      - name: Export and run the Windows release executable offline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/windows | Out-Null
+          & $env:GODOT --headless --path . --export-release 'Windows Desktop' build/windows/MyShelter.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Release export failed' }
+          $exe = Join-Path $PWD 'build/windows/MyShelter.exe'
+          $stdout = Join-Path $PWD 'build/windows/runtime.log'
+          $stderr = Join-Path $PWD 'build/windows/runtime-errors.log'
+          $p = Start-Process -FilePath $exe -ArgumentList '--headless','--audio-driver','Dummy','--quit-after','10' -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $p.WaitForExit(30000)) { $p.Kill(); throw 'Exported executable timed out' }
+          if ($p.ExitCode -ne 0) { throw "Executable exit code $($p.ExitCode)" }
+          $log = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          Write-Output $log
+          if ($log -match 'SCRIPT ERROR:|ERROR:|instances leaked') { throw 'Runtime errors' }
+          if ($log -notmatch 'Playable prototype initialized; schema v3') { throw 'Missing startup marker' }
+      - name: Keep test logs (no public executable artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-validation-logs
+          path: build/windows/*.log
+          if-no-files-found: ignore

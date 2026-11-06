@@ -1,3 +1,6 @@
 .godot/
 export/
 *.tmp
+
+build/
+__pycache__/

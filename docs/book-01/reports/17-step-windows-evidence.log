@@ -1,0 +1,16 @@
+Source: GitHub Actions run 42198787927, job 127828614304
+Tested code SHA: 27eee756368cef9d675bc6d55bfac1f2768077a7
+Native Windows headless suites and exported executable PASS
+2026-11-06T09:56:22.5549338Z Microsoft Windows Server 2025
+2026-11-06T09:57:11.9576479Z CORE TESTS: 21 checks, 0 failures
+2026-11-06T09:57:11.9587970Z CAMPAIGN TESTS: 31 checks, 0 failures
+2026-11-06T09:57:11.9595596Z ROUTER TESTS: 27 checks, 0 failures
+2026-11-06T09:57:11.9607721Z EVENT TESTS: 39 checks, 0 failures
+2026-11-06T09:57:16.4695578Z CALENDAR TESTS: 35 checks, 0 failures
+2026-11-06T09:57:16.4712237Z GAMEPLAY TESTS: 41 checks, 0 failures
+2026-11-06T09:57:16.4726006Z EDGE TESTS: 32 checks, 0 failures
+2026-11-06T09:57:16.4727141Z Playable prototype initialized; schema v3
+2026-11-06T09:57:16.4736731Z RUNTIME TESTS: 34 checks, 0 failures
+2026-11-06T09:57:16.4737463Z Playable prototype initialized; schema v3
+2026-11-06T09:57:16.4737664Z GODOT CHECKS: PASS
+2026-11-06T09:57:21.1092615Z Playable prototype initialized; schema v3
