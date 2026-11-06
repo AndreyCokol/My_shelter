@@ -90,7 +90,7 @@
 | A1-01 | Godot 4.7.2 Linux import/headless, root/InputMap, CI | GUI/Windows и независимая приёмка |
 | A1-02 | Сериализованный coordinator, callbacks доменов, snapshots, pause tokens, persistent clock/rest | Подключение доменных планов времени и gameplay runtime |
 | A1-03 | Реальные транзакции Inventory/coins/parcels/rewards/discovery/XP, resource revisions | Продуктовый каталог и predicates/источники наград A2–A4, UI A5 |
-| A1-04 | Общий checkpoint, backup/recovery и scene DTO round-trip | Фактическая загрузка world-сцен/позиции, Windows I/O/export |
+| A1-04 | Общий checkpoint, backup/recovery; реальная замена world/позиции на Node2D fixtures | Поставка игровых сцен A2/A3/A4, Windows I/O/export |
 | A2-01/02 | Реализация не выполнялась в этой сессии | Бой, игрок, ресурсный узел, checkpoint героя |
 | A3-01/02 | Есть общий Clock и сортировщик; фермы нет | Поля, рост/порча, harvest+inventory, food balance |
 | A4-01/02 | Реализация не выполнялась в этой сессии | Квесты, согласие, NPC и атомарное заселение |
@@ -98,3 +98,5 @@
 | A0-01/02/03 | Независимое review не проводилось | Review по реальным PR/SHA |
 
 G2–G4 не пройдены; готовность игры не заявляется.
+
+Последнее продолжение A1-04: [SceneRouter report](reports/A1-scene-router-2026-11-06.md), Issue #21.

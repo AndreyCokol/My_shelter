@@ -86,3 +86,16 @@
 - V-06: NFR-09/14 → независимое ревью A5, проверка focus/reopen/save/Windows → CT-11/13/14/19/20.
 
 **Доказательный отчёт**: test ID, task, PR/SHA, OS/Godot version, fixture, exact command, expected, actual, evidence, **PASS/FAIL/SKIP/NOT_RUN**, reviewer и blocker. A0 не проверяет собственный патч единолично; A5 не одобряет сам себе критичный UI PR.
+
+## A1-04 runtime сценарии (Issue #21)
+
+| ID | Вход | Ожидание |
+|---|---|---|
+| CT-34 | Смена реального Node2D world и возвращение | Один actor, old world освобождён, координаты сохранены |
+| CT-35 | Нет PackedScene/Marker2D, неверный entry ID, ошибка до записи | Старый runtime/state не изменён |
+| CT-36 | Сбой после durable commit до смены world | Мутации блокируются, recovery монтирует записанную сцену/позицию |
+| CT-37 | Replay предыдущего transition, в том числе после recovery | Историческая квитанция, без повторного монтажа/телепорта |
+| CT-38 | Load при неподготовляемом runtime или старой schema | Нет частичного import/замены world |
+| CT-39 | committed/state_loaded listener или reentrant transition | Наблюдатель видит установленный runtime; reentrant mutation отклонена |
+
+Фактическое выполнение только в технических PackedScene fixtures — см. [A1-04 report](reports/A1-scene-router-2026-11-06.md). Игровые карты/Windows/E2E не подтверждены этими тестами.

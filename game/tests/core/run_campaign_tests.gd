@@ -14,14 +14,7 @@ func check(ok: bool, label: String) -> void:
 		push_error("FAIL " + label)
 
 func fixture_rules() -> Dictionary:
-	# Technical fixtures, not accepted product balance or literary content.
-	return {"version": "test-v1", "minutes_per_real_second": 1.0, "discovery_xp": 5,
-		"items": {"seed.basic": {}, "tool.basic": {}},
-		"containers": [{"id": "player", "capacity_units": 20}, {"id": "storage", "capacity_units": 100}],
-		"scenes": {"shelter": ["default"], "outside": ["default"]},
-		"offers": {"seed": {"type_id": "seed.basic", "quantity": 2, "price": 3}},
-		"parcels": {"starter": {"type_id": "seed.basic", "quantity": 3, "coins": 10, "eligible": true}},
-		"rewards": {"first": {"type_id": "tool.basic", "quantity": 1, "hero_xp": 7, "eligible": true}, "locked": {"type_id": "tool.basic", "quantity": 1, "eligible": false}}}
+	return preload("res://game/tests/core/campaign_fixtures.gd").rules()
 
 func request(session, id: String, kind: String, payload: Dictionary) -> Dictionary:
 	var state: Dictionary = session.get_snapshot()
