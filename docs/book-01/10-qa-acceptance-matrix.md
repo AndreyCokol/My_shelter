@@ -99,3 +99,14 @@
 | CT-39 | committed/state_loaded listener или reentrant transition | Наблюдатель видит установленный runtime; reentrant mutation отклонена |
 
 Фактическое выполнение только в технических PackedScene fixtures — см. [A1-04 report](reports/A1-scene-router-2026-11-06.md). Игровые карты/Windows/E2E не подтверждены этими тестами.
+
+## A1-02 EventBus (Issue #23)
+
+| ID | Вход | Ожидание |
+|---|---|---|
+| CT-40 | Успех/отказ/replay/recovery одной команды | Ordered facts только после commit/runtime; нет повторных начислений/уведомлений |
+| CT-41 | 10 подписок, уничтожение/отписка владельца, смена подписок во время dispatch | Нет накопления, нет доставки уничтоженному владельцу; новый listener со следующего event |
+| CT-42 | Listener меняет payload или пробует команду/публикацию | Изолированные копии, reentrant mutation/publication отклонена |
+| CT-43 | Дробные ticks, календарная граница, отдых, load | time_advanced по границе без записи на кадр; state_loaded запускает snapshot refresh |
+
+Результаты core-only проверок — [EventBus report](reports/A1-events-2026-11-06.md). Реальный lifecycle всех окон A5 проверяется после их реализации.

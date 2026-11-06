@@ -28,7 +28,7 @@ func tick(delta: float) -> bool:
 		var minutes := int(floor(accumulated + 0.000000001))
 		state.clock_remainder = maxf(0.0, accumulated - minutes)
 		state.game_time_minutes += minutes
-		return true)
+		return true, _commands.time_events)
 
 static func valid_rules(rules: Dictionary) -> bool:
 	if not rules.get("version") is String or rules.version.is_empty() or not Core.valid_integer(rules.get("discovery_xp")):

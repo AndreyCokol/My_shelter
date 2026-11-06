@@ -1,6 +1,6 @@
 # 05 — Единый контракт модулей, состояния и сохранений
 
-**Контракт:** `v1.2-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
+**Контракт:** `v1.3-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
 ## 1. Основное правило и границы
 
@@ -137,7 +137,7 @@ A2 предусматривает **как минимум один доступ�
 | `enemy_defeated` | enemy_id, enemy_type_id, weapon_type_id, is_system_weapon | A2 + A1 commit |
 | `world_resource_claimed` | resource_node_id, item_type_id, quantity, next_available_game_minute | A2/A1 commit |
 | `system_unlocked` | reward_id, skill_id | A1 |
-| `scene_changed` | from_scene_id, to_scene_id, return_point_id | A1 |
+| `scene_changed` | from_scene_id, to_scene_id, entry_point_id, return_scene_id | A1 |
 | `item_transferred` | instance_id, type_id, quantity, from_id, to_id | A1 |
 | `first_item_type_discovered` | type_id, xp_awarded | A1 |
 | `parcel_claimed` | parcel_id, receipt_id | A1 |
@@ -222,3 +222,27 @@ SceneRouter принимает доверенный реестр scene_id→Pack
 Позиции departure/arrival — вычисленные SceneRouter сведения runtime в context, не смысл нового действия и не часть fingerprint. Для UI канонический путь: router.try_transition(action_id,destination_scene_id,entry_point_id), router.save(action_id), router.load_saved(use_backup=false). save захватывает актуальную координату героя; переход сохраняет исходную и восстанавливает ранее посещённую точку либо Marker2D для нового назначения. Replay старого action возвращает receipt до проверки текущей сцены/ресурса и не монтирует старый world поверх нового. Изменение действия с тем же ID остаётся ACTION_CONFLICT.
 
 Сохранять SceneRouter в Main на всё время жизни кампании; runtime_required запрещает незаметный переход к DTO-only, если назначенный adapter недоступен. Main.start_campaign(rules,worlds,actor,save_path) подключает supplied модули и запускает Clock; повторный старт в том же Main отклоняется. Без поставленных модулей Main остаётся техническим bootstrap, игровая готовность не заявляется.
+
+## 13. A1-02: EventBus после commit (2026-11-06)
+
+Реализация по Issue #23. GameCoordinator формирует DomainEvent из чистых domain drafts {event_type,payload}. Проверка draft выполняется до записи; malformed draft отклоняет команду целиком. События приходят только после успешного snapshot commit и runtime install, до compatibility committed signal. Порядок draft сохраняется. Идентификатор: save_id/scope + hash(action_id) + ordinal. События не являются хранилищем или источником начисления ресурсов.
+
+EventBus.subscribe(owner,callback,event_types=[])->token принимает стабильный bound method владельца. Повтор той же подписки возвращает прежний token; unsubscribe(token) идемпотентен, unsubscribe_owner(owner) снимает подписки панели. Владелец хранится weak reference; уничтоженные/queued-for-deletion Node и невалидные callbacks удаляются перед доставкой. Панель, которая только скрыта, должна сама отписаться при закрытии. Новые подписки во время dispatch начинают получать следующий event; снятая подписка не получает оставшуюся доставку текущего event. String/StringName типов нормализуются в String.
+
+Каждый слушатель получает собственную глубокую копию payload. Мутация event одним слушателем не влияет на другого или snapshot. Вызов команды во время dispatch отклоняется UNAVAILABLE, повторная публикация из callback отклоняется. UI обновляет view/snapshot, а не исполняет доменную логику в listener. Для действий после уведомления требуется отдельный осознанный пользовательский ввод после завершения commit.
+
+Replay возвращает receipt без новых событий; ошибки validation/I/O и остановка после disk commit до runtime install не выдают успешные уведомления. После load/recovery очищается временная история доставки, сохраняются живые подписки и публикуется только state_loaded для snapshot refresh. Пропущенные игровые события не воспроизводятся: авторитетные последствия уже в coherent checkpoint. Domain idempotency основана на persisted receipts/reward IDs, не на временном EventBus dedup. In-memory history доставки живёт до load/new session.
+
+Clock tick публикует time_advanced только при изменении целой календарной минуты и не пишет файл на каждом кадре. Rest публикует тот же envelope с reason=rest; tick с reason=tick. Это не реализация Farm/Quest deadlines, их планы ещё не подключены.
+
+Дополнительные факты уже реализованного ядра:
+
+| event_type | payload | Примечание |
+|---|---|---|
+| item_granted | instance_id, type_id, quantity, container_id | Источник — выполненный grant, не команда на выдачу |
+| reward_claimed | reward_id, receipt_id | Не заменяет будущий combat receipt |
+| progression_changed | hero_xp, shelter_xp | Итоговые раздельные счётчики |
+| wallet_changed | system_coins | Итоговый баланс |
+| checkpoint_saved | save_id | Revision в envelope |
+
+Для scene_changed уточнено имя entry_point_id для целевой точки входа и отдельно return_scene_id; неоднозначное старое return_point_id не публикуется. Обновление интерфейса требует review потребителей A2–A5; реальных UI потребителей в текущем ядре ещё нет.

@@ -33,6 +33,13 @@ func normalize(request: Dictionary) -> Dictionary:
 	return {"ok": true, "payload": normalized}
 
 func plan(state: Dictionary, request: Dictionary) -> Dictionary:
+	var before := state.duplicate(true)
+	var result := _plan(state, request)
+	if result.get("ok", false):
+		result.events = command_events(before, state, request, result)
+	return result
+
+func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var p: Dictionary = request.payload
 	var kind: String = request.command_type
 	if request.context.actor_id != "player":
@@ -187,3 +194,44 @@ static func fail(code: String) -> Dictionary:
 
 static func success(data: Dictionary) -> Dictionary:
 	return {"ok": true, "data": data}
+
+func command_events(before: Dictionary, after: Dictionary, request: Dictionary, result: Dictionary) -> Array:
+	var drafts: Array = []
+	var p: Dictionary = request.payload
+	match request.command_type:
+		"inventory.transfer":
+			var type_id: String = ""
+			var moved_id: String = p.instance_id
+			for item in before.inventory.items:
+				if item.instance_id == p.instance_id:
+					type_id = item.type_id
+					if item.quantity > p.quantity:
+						moved_id = "split:" + request.action_id
+			drafts.append({"event_type": "item_transferred", "payload": {"instance_id": moved_id, "type_id": type_id, "quantity": p.quantity, "from_id": p.from_id, "to_id": p.to_id}})
+		"inventory.purchase", "inventory.claim_parcel", "progression.claim_reward":
+			var payload: Dictionary = result.data.duplicate(true)
+			payload.container_id = "player"
+			drafts.append({"event_type": "item_granted", "payload": payload})
+		"scene.transition":
+			drafts.append({"event_type": "scene_changed", "payload": {"from_scene_id": before.scene.current_scene_id, "to_scene_id": after.scene.current_scene_id, "entry_point_id": p.entry_point_id, "return_scene_id": after.scene.return_scene_id}})
+		"clock.rest":
+			drafts.append({"event_type": "time_advanced", "payload": {"from_minute": before.game_time_minutes, "to_minute": after.game_time_minutes, "reason": "rest"}})
+		"session.save":
+			drafts.append({"event_type": "checkpoint_saved", "payload": {"save_id": after.save_id}})
+	for type_id in after.shelter.discovered_item_type_ids:
+		if not type_id in before.shelter.discovered_item_type_ids:
+			drafts.append({"event_type": "first_item_type_discovered", "payload": {"type_id": type_id, "xp_awarded": rules.discovery_xp}})
+	if request.command_type == "inventory.claim_parcel":
+		drafts.append({"event_type": "parcel_claimed", "payload": {"parcel_id": p.parcel_id, "receipt_id": request.action_id}})
+	if request.command_type == "progression.claim_reward":
+		drafts.append({"event_type": "reward_claimed", "payload": {"reward_id": p.reward_id, "receipt_id": request.action_id}})
+	if before.player.xp != after.player.xp or before.shelter.xp != after.shelter.xp:
+		drafts.append({"event_type": "progression_changed", "payload": {"hero_xp": after.player.xp, "shelter_xp": after.shelter.xp}})
+	if before.wallet.system_coins != after.wallet.system_coins:
+		drafts.append({"event_type": "wallet_changed", "payload": {"system_coins": after.wallet.system_coins}})
+	return drafts
+
+static func time_events(before: Dictionary, after: Dictionary) -> Array:
+	if before.game_time_minutes == after.game_time_minutes:
+		return []
+	return [{"event_type": "time_advanced", "payload": {"from_minute": before.game_time_minutes, "to_minute": after.game_time_minutes, "reason": "tick"}}]
