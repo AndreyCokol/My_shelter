@@ -22,6 +22,9 @@ func _init(rules: Dictionary) -> void:
 		state.resource_revisions["offer:" + offer_id] = 0
 	coordinator = Core.new(state, Model.validate.bind(_rules), _commands.normalize, _commands.plan)
 	coordinator._domain_owner = _commands
+	if _rules.get("gameplay", false):
+		var adapter = preload("res://game/systems/gameplay/gameplay_calendar.gd")
+		configure_calendar(adapter.deadlines, adapter.apply)
 
 # Adapters are installed during campaign setup, never through player payloads.
 func configure_calendar(source: Callable, consumer: Callable) -> bool:
@@ -47,6 +50,8 @@ func tick(delta: float) -> bool:
 		return true, func(_before, _after): return drafts)
 
 static func valid_rules(rules: Dictionary) -> bool:
+	if rules.get("gameplay", false) and not preload("res://game/data/game_rules.gd").validate(rules):
+		return false
 	if not rules.get("version") is String or rules.version.is_empty() or not Core.valid_integer(rules.get("discovery_xp")):
 		return false
 	var rate = rules.get("minutes_per_real_second")

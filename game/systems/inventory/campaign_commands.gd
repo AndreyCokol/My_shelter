@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
 var calendar
@@ -17,6 +18,8 @@ func normalize(request: Dictionary) -> Dictionary:
 		"scene.transition": ["destination_scene_id", "entry_point_id"], "session.save": []
 	}
 	var kind = request.get("command_type")
+	if rules.get("gameplay", false) and kind is String and kind.begins_with("game."):
+		return Gameplay.normalize(request)
 	var payload = request.get("payload")
 	if not fields.has(kind) or not payload is Dictionary or payload.size() != fields[kind].size():
 		return {"ok": false}
@@ -36,8 +39,13 @@ func normalize(request: Dictionary) -> Dictionary:
 func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var before := state.duplicate(true)
 	var result := _plan(state, request)
-	if result.get("ok", false) and request.command_type != "clock.rest":
-		result.events = command_events(before, state, request, result)
+	if result.get("ok", false):
+		if rules.get("gameplay", false):
+			Gameplay.refresh_quests(state)
+		if request.command_type != "clock.rest":
+			result.events = command_events(before, state, request, result)
+			if request.command_type.begins_with("game."):
+				result.events.append({"event_type": "gameplay_changed", "payload": {"command_type": request.command_type}})
 	return result
 
 func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
@@ -53,6 +61,14 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			return fail("INVALID_ARGUMENT")
 		state.player.position = request.context.departure_position.duplicate(true)
 		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
+	if rules.get("gameplay", false):
+		if kind in ["scene.transition", "inventory.purchase", "inventory.claim_parcel"] and not state.world_states.first_enemy_defeated:
+			return fail("UNAVAILABLE")
+		if kind.begins_with("game."):
+			var checked := revisions(state, request, ["world", "farm", "residents", "inventory:player", "inventory:storage"])
+			if not checked.ok:
+				return checked
+			return Gameplay.plan(state, request, rules)
 	match kind:
 		"inventory.transfer":
 			var rev := revisions(state, request, ["inventory:" + p.from_id, "inventory:" + p.to_id])
@@ -65,7 +81,7 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 					continue
 				if item.container_id != p.from_id:
 					return fail("INVALID_STATE")
-				if item.quantity < p.quantity:
+				if Gameplay.available(state, item) < p.quantity:
 					return fail("INSUFFICIENT_RESOURCES")
 				if not room(state, p.to_id, p.quantity):
 					return fail("CAPACITY_EXCEEDED")
@@ -146,6 +162,10 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			bump(state, ["scene"])
 			return success({"from_scene_id": old, "to_scene_id": p.destination_scene_id})
 		"session.save":
+			if rules.get("gameplay", false) and request.context.has("health"):
+				if not Core.valid_integer(request.context.health) or request.context.health > 100:
+					return fail("INVALID_ARGUMENT")
+				state.player.hp = int(request.context.health)
 			return success({})
 	return fail("UNAVAILABLE")
 

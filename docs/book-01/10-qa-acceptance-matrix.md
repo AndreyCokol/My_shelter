@@ -1,6 +1,6 @@
 # 10 — Матрица приёмки и вертикальной сверки
 
-**Статус:** G0 CANDIDATE · **Фактические runtime-проверки:** NOT_RUN. В репозитории пока нет Godot проекта или Windows сборки. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
+**Статус:** G0 CANDIDATE · **Фактические runtime-проверки:** ядро Godot реализовано в стеке PR #18–26; на базе #26 проходят 153 assertions Linux. Игровые E2E и Windows пока NOT_RUN. Точные результаты указаны в reports, таблицы ниже задают критерии. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
 
 ## Фикстуры G1a
 

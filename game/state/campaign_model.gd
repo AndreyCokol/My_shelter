@@ -1,9 +1,10 @@
 extends RefCounted
 
+const Gameplay = preload("res://game/state/gameplay_state.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
 
 static func new_state(rules: Dictionary) -> Dictionary:
-	return {
+	var state: Dictionary = {
 		"schema_version": 2, "scope": "campaign-core", "ruleset_version": rules.version,
 		"save_id": "slot-01", "state_revision": 0, "game_time_minutes": 0, "clock_remainder": 0.0,
 		"resource_revisions": {"wallet": 0, "inventory:player": 0, "inventory:storage": 0, "scene": 0},
@@ -15,6 +16,10 @@ static func new_state(rules: Dictionary) -> Dictionary:
 		"story_flags": [], "world_states": {}, "completed_actions": {}, "claimed_reward_ids": []
 	}
 
+	if rules.get("gameplay", false):
+		Gameplay.seed(state)
+	return state
+
 static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	var shape := new_state(rules)
 	if state.size() != shape.size():
@@ -22,7 +27,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	for key in shape:
 		if not state.has(key):
 			return false
-	if state.schema_version != 2 or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
+	if state.schema_version != shape.schema_version or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
 		return false
 	for value in [state.state_revision, state.game_time_minutes]:
 		if not Core.valid_integer(value):
@@ -47,9 +52,9 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if not state.inventory.get(key) is Array:
 			return false
 	# Until domain import hooks exist, reject unsupported data rather than lose it.
-	if state.crops.get("plots") != [] or state.residents.get("records") != [] or state.quests.get("records") != [] or not state.inventory.reservations.is_empty() or not state.world_states.is_empty():
+	if not rules.get("gameplay", false) and (state.crops.get("plots") != [] or state.residents.get("records") != [] or state.quests.get("records") != [] or not state.inventory.reservations.is_empty() or not state.world_states.is_empty()):
 		return false
-	if not state.story_flags is Array or not state.story_flags.is_empty():
+	if not rules.get("gameplay", false) and (not state.story_flags is Array or not state.story_flags.is_empty()):
 		return false
 	for key in ["discovered_item_type_ids", "claimed_parcel_ids"]:
 		if not unique_strings(state.shelter.get(key)):
@@ -65,6 +70,8 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	for reward_id in state.claimed_reward_ids:
 		if not rules.rewards.has(reward_id):
 			return false
+	if state.inventory.containers != rules.containers:
+		return false
 	var capacities: Dictionary = {}
 	for container in state.inventory.containers:
 		if not container is Dictionary or not container.get("id") is String or container.id.is_empty() or capacities.has(container.id) or not Core.valid_integer(container.get("capacity_units")):
@@ -99,6 +106,8 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		var result: Dictionary = receipt.result
 		if result.get("ok") != true or result.get("code") != "OK" or result.get("action_id") != id or not Core.valid_integer(result.get("state_revision")) or result.state_revision > state.state_revision or not result.get("data") is Dictionary or not result.get("message_key") is String:
 			return false
+	if rules.get("gameplay", false) and not Gameplay.validate(state, rules):
+		return false
 	return true
 
 static func unique_strings(value) -> bool:

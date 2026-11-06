@@ -25,7 +25,7 @@ func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
 	if file == null:
 		return {"ok": false, "committed": false}
-	file.store_string(JSON.stringify(state))
+	file.store_string(JSON.stringify(state, "", true, true))
 	file.flush()
 	var write_error := file.get_error()
 	file.close()
@@ -49,7 +49,7 @@ func restore_checkpoint(state: Dictionary) -> bool:
 	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
 	if file == null:
 		return false
-	file.store_string(JSON.stringify(state))
+	file.store_string(JSON.stringify(state, "", true, true))
 	file.flush()
 	var error := file.get_error()
 	file.close()
