@@ -1,0 +1,360 @@
+4.7.2.stable.official.ed1daf0bf
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Started Project initialization (5 steps)[39m[0m
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Scanning file structure...[39m[0m
+[  16% ] [90m[1mfirst_scan_filesystem[22m | Loading global class names...[39m[0m
+[  33% ] [90m[1mfirst_scan_filesystem[22m | Verifying GDExtensions...[39m[0m
+[  50% ] [90m[1mfirst_scan_filesystem[22m | Creating autoload scripts...[39m[0m
+[  66% ] [90m[1mfirst_scan_filesystem[22m | Initializing plugins...[39m[0m
+[  83% ] [90m[1mfirst_scan_filesystem[22m | Starting file scan...[39m[0m
+[92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | Started Registering global classes... (3 steps)[39m[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  25% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  50% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[92m[ DONE ][39m [1mupdate_scripts_classes[22m
+[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Started Loading editor (5 steps)[39m[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Loading editor layout...[39m[0m
+[  16% ] [90m[1mloading_editor_layout[22m | Loading docks...[39m[0m
+[92m[ DONE ][39m [1mloading_editor_layout[22m
+[0m
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS CT-01 first commit
+PASS CT-01 replay has no events
+PASS CT-02 changed payload
+PASS reject negative input
+PASS CT-33 historical receipt, current snapshot
+PASS CT-22 replay after actual disk reload
+PASS snapshot isolation
+PASS CT-30 failure before commit
+PASS CT-30 failure after disk before RAM
+PASS CT-30 recovery blocks mutations
+PASS CT-30 recover committed checkpoint
+PASS CT-30 no duplicate recovery effect
+PASS CT-29 invalid linked receipt leaves live session intact
+PASS CT-11 explicit backup load
+PASS CT-11 restored backup accepts subsequent writes
+PASS malformed context rejected
+PASS CT-31 nested pause retained
+PASS CT-31 last reason released
+PASS CT-23 same calendar at 30 and 60 FPS
+PASS CT-05 paused clock
+PASS CT-32 ordered scheduler, split interval equivalence
+CORE TESTS: 21 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS valid technical rules
+PASS negative rule price rejected
+PASS CT-03 insufficient coins, no receipt
+PASS parcel grants items and coins together
+PASS discovery XP on first type
+PASS parcel semantic ID prevents second claim
+PASS CT-19 clock tick does not stale inventory purchase
+PASS CT-04 repeated type grants no discovery XP
+PASS once-only reward
+PASS independent XP counters
+PASS ineligible reward rejected
+PASS split stack transfer
+PASS CT-19 genuine resource conflict
+PASS transfer overdraw atomic
+PASS CT-03 full inventory preserves coins/items
+PASS scene DTO transition
+PASS rest outside safe scene rejected
+PASS scene DTO round trip
+PASS rest uses persistent calendar
+PASS CT-10 full supported campaign state reload
+PASS CT-22 replay across state/scene revisions
+PASS CT-20 purchase I/O failure rolls back all domains
+PASS campaign commit enters recovery
+PASS campaign recovery restores exactly one purchase
+PASS paused campaign tick has no mutation
+PASS paused purchase rejected
+PASS explicit save permitted from pause menu
+PASS client cannot override catalog price
+PASS required optimistic revisions cannot be omitted
+PASS CT-29 cross-domain invalid item prevents entire import
+PASS ruleset mismatch refused without migration
+CAMPAIGN TESTS: 31 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS mount actual world with one actor
+PASS save captures actual actor position
+PASS actual world transition commits
+PASS old world disposed, actor reused, entry marker applied
+PASS return to saved shelter position
+PASS outside return coordinate persisted
+PASS outside round trip restores departure point
+PASS old action replay does not remount or teleport
+PASS missing resource preserves state and active world
+PASS missing entry rejected before commit
+PASS entry cannot traverse node paths
+PASS failed checkpoint keeps active world and campaign
+PASS paused transition has no world mutation
+PASS save updated outside position
+PASS reload restores actual actor coordinate
+PASS load stages resource before replacing state/world
+PASS postcommit failure freezes old world for recovery
+PASS recovery restores committed target and position together
+PASS recovered transition replay is effect-free
+PASS notification observes installed runtime and committed state
+PASS DomainEvent delivered after actual world installation
+PASS reentrant transition cannot replace a committing world
+PASS state_loaded observes restored runtime
+PASS unsupported old schema refuses load without live mutation
+PASS router errors preserve CommandResult envelope
+Core platform initialized
+PASS composition root accepts supplied campaign/world/actor
+PASS composition root prevents duplicate campaign/actor
+ROUTER TESTS: 27 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS repeat subscription token 0
+PASS repeat subscription token 1
+PASS repeat subscription token 2
+PASS repeat subscription token 3
+PASS repeat subscription token 4
+PASS repeat subscription token 5
+PASS repeat subscription token 6
+PASS repeat subscription token 7
+PASS repeat subscription token 8
+PASS repeat subscription token 9
+PASS CT-13 repeated registration does not accumulate subscriptions
+PASS valid fact delivered
+PASS subscriber payload mutation cannot affect others/publisher
+PASS duplicate event ID not delivered twice
+PASS event type filter
+PASS malformed event rejected
+PASS StringName event types supported by contract
+PASS unsubscribe is idempotent
+PASS destroyed scene owner pruned
+PASS unsubscribe during dispatch effective, new listener waits
+PASS reentrant fact publication rejected
+PASS new subscription starts on next event
+PASS owner lifecycle leaves no live subscriptions
+PASS campaign publishes after successful commit
+PASS domain event order follows atomic operation
+PASS listeners see committed snapshot and cannot mutate reentrantly
+PASS stable distinct event ordinal IDs
+PASS replay emits no facts
+PASS failed commit emits no facts
+PASS fractional tick emits no calendar fact
+PASS calendar boundary emits one time event
+PASS runtime tick does not write checkpoint
+PASS postcommit interruption defers all notifications
+PASS recovery emits refresh, not repeated reward facts
+PASS live subscription retained through load
+PASS recovered purchase replay silent
+PASS rest uses same calendar event contract
+PASS invalid domain event plan rejects whole command before disk
+PASS campaign UI owner destruction cleans subscription
+EVENT TESTS: 39 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS rest commits all calendar boundaries
+PASS all fixture effects share authoritative calendar
+PASS CT-44 time, phase and entity order
+PASS deadline envelope preserves boundary minute despite later commit
+PASS time notification precedes ordered domain notifications
+PASS one revision for whole rest plan
+PASS calendar replay never reprocesses boundaries
+PASS CT-44 tick uses same planner as rest
+PASS CT-44 large and small advances equivalent
+PASS fractional tick does not cross boundary
+PASS modal pause preserves remainder and domains
+PASS explicit integer rest resets fractional remainder
+PASS old remainder cannot skip minute after rest
+PASS CT-45 rest stops at interactive boundary
+PASS stop completes all phases at same minute, excludes later ones
+PASS tick stop discards unconsumed frame time
+PASS domain gate prevents next tick from skipping pending choice
+PASS domain gate refuses rest atomically
+PASS late handler failure rolls back tick and events
+PASS late handler failure rolls back rest and receipt
+PASS rest I/O failure discards all planned effects
+PASS postcommit interruption publishes no partial calendar
+PASS recovery loads committed calendar effects exactly once
+PASS recovered rest receipt remains silent
+PASS duplicate deadline identity rejected before effects
+PASS malformed deadline rejects whole plan
+PASS partial adapter configuration refused
+PASS failed configuration preserves working adapters
+PASS trusted callable pair can be installed
+PASS destroyed adapter fails closed instead of silently skipping deadlines
+PASS nonfinite and out of range delta refused without conversion
+PASS finite rate times finite delta overflow rejected
+PASS bootstrap clock rejects invalid rate
+PASS bootstrap clock also guards numeric overflow
+PASS calendar never moves backward
+CALENDAR TESTS: 35 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS step4 production candidate catalog validates
+PASS step3 gameplay schema seed validates
+PASS step3 malformed crop rejected
+PASS step3 duplicate resident rejected
+PASS step3 malformed quest rejected
+PASS step3 old schema refused without silent migration
+PASS step4 zero food rule refused
+PASS step4 invalid duration refused
+PASS step5 onboarding cannot skip first unlock
+PASS step5 first defeat gives one System reward
+PASS step5 duplicate death never grants reward twice
+PASS step6 city transition
+PASS step6 renewable seed source available
+PASS step6 cooldown cannot be bypassed with new action ID
+PASS step6 cooldown survives restart
+PASS step6 defeat safely returns hero without resetting unlock
+PASS step7 starter seeds supplied
+PASS step7 plant consumes seed
+PASS step7 two independent plots
+PASS step7 watering starts configured deadlines
+PASS step8 cannot harvest immature crop
+PASS step9 natural time matures real crop at boundary
+PASS step8 harvest transfers real food to inventory
+PASS step8 no double harvest
+PASS step8 second plot harvest
+PASS step10 sandbox works with optional quests inactive
+PASS step10 optional quest derives completion from persisted state
+PASS step11 reach contact area
+PASS step11 recruitment requires voluntary consent
+PASS step11 contact resident_1
+PASS step11 consent resident_1
+PASS step11 food reservation and join resident_1
+PASS step11 contact resident_2
+PASS step11 consent resident_2
+PASS step11 food reservation and join resident_2
+PASS step11 food reservations persisted against concrete stacks
+PASS step14 full domain save/load round trip
+PASS step11 reload cannot duplicate resident
+PASS step11 reserved food unavailable for other spending
+PASS step3 reservation cross references reject overdraw
+PASS step3 joined resident without consent rejected
+GAMEPLAY TESTS: 41 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS real crop rest write failure leaves both plots and clock unchanged
+PASS long rest crosses maturity and exact spoil boundary for both plots
+PASS cannot harvest at spoil_at
+PASS spoiled plot can be cleared and replanted
+PASS negative crop deadline rejected
+PASS malformed inventory rejected before reservation cross validation
+PASS save cannot inflate catalog container capacity
+PASS clock-only tick does not stale farm resource revision
+PASS water receipt replays after state changes
+PASS leave shelter after crop operations
+PASS renewable source first collection
+PASS renewable source available at exact cooldown boundary
+PASS real gameplay refuses unsafe rest
+PASS full inventory harvest preserves ripe crop and all resources
+PASS explicit decline respected reserve1
+PASS insufficient food preserves consent without partial reserve reserve1
+PASS configured food rule applied reserve1
+PASS food accounting remains valid reserve1
+PASS explicit decline respected reserve3
+PASS insufficient food preserves consent without partial reserve reserve3
+PASS configured food rule applied reserve3
+PASS food accounting remains valid reserve3
+PASS explicit decline respected consume1
+PASS insufficient food preserves consent without partial reserve consume1
+PASS configured food rule applied consume1
+PASS food accounting remains valid consume1
+PASS explicit decline respected consume3
+PASS insufficient food preserves consent without partial reserve consume3
+PASS configured food rule applied consume3
+PASS food accounting remains valid consume3
+PASS corrupt quest rejects entire live campaign import
+PASS explicit backup recovery works with real domain schema
+EDGE TESTS: 32 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+Core platform initialized
+Playable prototype initialized; schema v3
+PASS step12 welcome pauses world and combat
+PASS step5 real hospital and enemy mounted
+PASS step5 actual controller moves on physics frames
+PASS step5 walls and world bounds constrain movement
+PASS step5 dodge cooldown prevents spam
+PASS step5 dodge grants invulnerability
+PASS step5 attack cooldown prevents repeated frame hit
+PASS E2E01 actual real time attacks unlock one reward
+PASS step6 actual scene transition keeps supplied hero
+PASS step12 inventory modal pauses clock
+PASS step12 panel command releases only own token and restores pause
+PASS step12 panel cannot bypass another pause owner
+PASS E2E02 plant and water plot_1
+PASS E2E02 plant and water plot_2
+PASS step9 preview is pure and exposes spoilage risk
+PASS E2E02 real calendar rest reaches crop maturity
+PASS E2E02 durable harvest plot_1
+PASS E2E02 durable harvest plot_2
+PASS E2E07 untracked story never blocks farming
+PASS step11 actual NPC world mounted
+PASS E2E04 consent food and resident resident_1
+PASS E2E04 consent food and resident resident_2
+PASS E2E05 save captures actor position and runtime health
+PASS E2E05 load installs all domains position and health
+PASS E2E08 Escape closes focused modal and releases its pause
+PASS E2E08 closed modal leaves no focused action that Space can trigger
+PASS E2E08 ten reopens do not leak subscriptions or pause tokens
+PASS step12 panel renders farm
+PASS step12 panel renders rest
+PASS step12 panel renders residents
+PASS step12 panel renders quests
+PASS step12 panel renders shop
+PASS step12 panel renders save
+PASS step12 panel renders menu
+RUNTIME TESTS: 34 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS unlisted asset role cannot load arbitrary resources
+PASS reviewed Kibyra texture loads: button_frame
+PASS reviewed Kibyra texture loads: focus_frame
+PASS reviewed Kibyra texture loads: panel_frame
+PASS reviewed Kibyra texture loads: heart
+PASS reviewed Kibyra texture loads: coin
+PASS reviewed Kibyra texture loads: inventory
+PASS reviewed Kibyra texture loads: sword
+PASS reviewed Kibyra texture loads: quests
+PASS reviewed Kibyra texture loads: menu
+PASS reviewed Kibyra texture loads: farm
+PASS reviewed Kibyra texture loads: rest
+PASS reviewed Kibyra texture loads: residents
+PASS reviewed Kibyra texture loads: save
+PASS reviewed Kibyra texture loads: shelter
+PASS reviewed Kibyra texture loads: hero_xp
+PASS reviewed Kibyra texture loads: shelter_xp
+PASS reviewed Kibyra texture loads: back
+PASS reviewed Kibyra texture loads: accept
+Core platform initialized
+Playable prototype initialized; schema v3
+PASS pixel art UI uses nearest filtering
+PASS real image-backed button style replaces flat placeholder
+PASS hover pressed and keyboard focus states have texture styles
+PASS welcome header displays pack artwork
+PASS health icon respects target size and does not overlap HUD text
+PASS navigation icon fits viewport without covering world
+PASS navigation icon fits viewport without covering world
+PASS navigation icon fits viewport without covering world
+PASS navigation icon fits viewport without covering world
+PASS modal frame uses selected Kibyra panel artwork
+PASS skinned modal fits design viewport
+PASS skinned panel preserves icon title and pause: inventory
+PASS skinned panel preserves icon title and pause: farm
+PASS skinned panel preserves icon title and pause: rest
+PASS skinned panel preserves icon title and pause: residents
+PASS skinned panel preserves icon title and pause: quests
+PASS skinned panel preserves icon title and pause: shop
+PASS skinned panel preserves icon title and pause: save
+PASS skinned panel preserves icon title and pause: credits
+PASS credits include author and source
+PASS skin does not leave an extra pause owner
+ASSET TESTS: 40 checks, 0 failures
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+Core platform initialized
+Playable prototype initialized; schema v3
+GODOT CHECKS: PASS
