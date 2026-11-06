@@ -14,7 +14,7 @@ func read_checkpoint(source: String = "") -> Dictionary:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(target))
 	if not parsed is Dictionary:
 		return {"ok": false, "code": "INVALID_STATE"}
-	return {"ok": true, "state": parsed}
+	return {"ok": true, "state": normalize_numbers(parsed)}
 
 func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 	if fault == "before_replace":
@@ -59,3 +59,20 @@ func restore_checkpoint(state: Dictionary) -> bool:
 		if DirAccess.copy_absolute(absolute, absolute + ".rejected") != OK:
 			return false
 	return DirAccess.rename_absolute(absolute + ".tmp", absolute) == OK
+
+# Godot JSON decodes all numbers as floats. Restore exact integral values within
+# JSON's safe range before DTO validation; fractional remainders stay floats.
+static func normalize_numbers(value):
+	if value is float and is_finite(value) and value == floor(value) and abs(value) <= 9007199254740991:
+		return int(value)
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value:
+			result[key] = normalize_numbers(value[key])
+		return result
+	if value is Array:
+		var result: Array = []
+		for entry in value:
+			result.append(normalize_numbers(entry))
+		return result
+	return value

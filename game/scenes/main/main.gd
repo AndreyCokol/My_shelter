@@ -13,6 +13,10 @@ func _ready() -> void:
 		var event = InputEventKey.new()
 		event.physical_keycode = keys[action]
 		InputMap.action_add_event(action, event)
+	for action in {"move_up": KEY_UP, "move_down": KEY_DOWN, "move_left": KEY_LEFT, "move_right": KEY_RIGHT}:
+		var arrow = InputEventKey.new()
+		arrow.physical_keycode = {"move_up": KEY_UP, "move_down": KEY_DOWN, "move_left": KEY_LEFT, "move_right": KEY_RIGHT}[action]
+		InputMap.action_add_event(action, arrow)
 	var attack = InputEventMouseButton.new()
 	attack.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("attack", attack)

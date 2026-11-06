@@ -18,8 +18,5 @@ jobs:
       - name: Import and run core tests
         run: |
           set -euo pipefail
-          Godot_v4.7.2-stable_linux.x86_64 --version
-          Godot_v4.7.2-stable_linux.x86_64 --headless --path . --editor --import
-          Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script game/tests/core/run_core_tests.gd
-          Godot_v4.7.2-stable_linux.x86_64 --headless --path . --quit-after 3
+          GODOT=Godot_v4.7.2-stable_linux.x86_64 python3 tools/run_godot_checks.py
           python3 tools/check_g0_docs.py

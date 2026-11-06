@@ -80,3 +80,21 @@
 `agent | task | PR/SHA | changed files | FR | tested command/environment | PASS/FAIL/NOT_RUN | reviewer | blockers | next owner`.
 
 **DoD:** код не нарушает чужих зон, контракт соответствует принятой ревизии, есть негативные тесты и корректный экран ошибки; checked Godot export vs `NOT_RUN` различены. Подтверждение A5 недостаточно для собственного критического PR — нужен независимый review. Назначение агента в документе **не означает**, что отдельные автономные процессы уже запущены.
+
+## 7. Фактическое исполнение на 2026-11-06
+
+Разрешение владельца на начальные этапы зафиксировано в [отчёте G1a](reports/G1a-2026-11-06.md). Текущая поставка и открытые проблемы — [A1-02/03/04](reports/A1-campaign-2026-11-06.md). Эта таблица не меняет acceptance criteria выше и не выдаёт авторскую проверку за приёмку A5.
+
+| Участок карты | Факт | Остаток |
+|---|---|---|
+| A1-01 | Godot 4.7.2 Linux import/headless, root/InputMap, CI | GUI/Windows и независимая приёмка |
+| A1-02 | Сериализованный coordinator, callbacks доменов, snapshots, pause tokens, persistent clock/rest | Подключение доменных планов времени и gameplay runtime |
+| A1-03 | Реальные транзакции Inventory/coins/parcels/rewards/discovery/XP, resource revisions | Продуктовый каталог и predicates/источники наград A2–A4, UI A5 |
+| A1-04 | Общий checkpoint, backup/recovery и scene DTO round-trip | Фактическая загрузка world-сцен/позиции, Windows I/O/export |
+| A2-01/02 | Реализация не выполнялась в этой сессии | Бой, игрок, ресурсный узел, checkpoint героя |
+| A3-01/02 | Есть общий Clock и сортировщик; фермы нет | Поля, рост/порча, harvest+inventory, food balance |
+| A4-01/02 | Реализация не выполнялась в этой сессии | Квесты, согласие, NPC и атомарное заселение |
+| A5-01/02/03 | Предоставлен пустой UILayer и API | Весь UI, UX/E2E, Windows |
+| A0-01/02/03 | Независимое review не проводилось | Review по реальным PR/SHA |
+
+G2–G4 не пройдены; готовность игры не заявляется.
