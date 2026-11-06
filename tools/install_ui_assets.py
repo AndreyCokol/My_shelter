@@ -11,6 +11,11 @@ import urllib.parse
 import urllib.request
 import zipfile
 import io
+import math
+import time
+import urllib.error
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = 'https://kibyra.itch.io/free-medieval-fantasy-ui-pack'
@@ -38,6 +43,31 @@ SELECTED = {
 }
 
 
+def read_response(opener, request, waiter=time.sleep) -> bytes:
+    """Bounded retries respect server rate limits; auth/security failures fail closed."""
+    for attempt in range(3):
+        try:
+            with opener.open(request, timeout=40) as response:
+                result = response.read(16 * 1024 * 1024 + 1)
+            if len(result) > 16 * 1024 * 1024:
+                raise ValueError('Download exceeds the expected pack size')
+            return result
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 503) or attempt == 2:
+                raise
+            delay = 5 * (2 ** attempt)
+            retry_after = error.headers.get('Retry-After') if error.headers else None
+            if retry_after:
+                try:
+                    delay = float(retry_after)
+                except ValueError:
+                    delay = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+            if not math.isfinite(delay) or delay > 60:
+                raise ValueError('Server requests a longer pause; retry the download later') from error
+            waiter(max(1, math.ceil(delay)))
+    raise RuntimeError('Download did not complete')
+
+
 def fetch() -> bytes:
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -45,11 +75,7 @@ def fetch() -> bytes:
     def read(url, data=None, referer=PAGE):
         request = urllib.request.Request(url, data=data, headers={
             'Referer': referer, 'X-Requested-With': 'XMLHttpRequest'})
-        with opener.open(request, timeout=40) as response:
-            result = response.read(16 * 1024 * 1024 + 1)
-        if len(result) > 16 * 1024 * 1024:
-            raise ValueError('Download exceeds the expected pack size')
-        return result
+        return read_response(opener, request)
     def csrf(page):
         match = re.search(r'name="csrf_token" value="([^"]+)"', page)
         if not match:

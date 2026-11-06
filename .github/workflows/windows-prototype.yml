@@ -3,6 +3,9 @@ on:
   push:
     branches: ['integration/**']
   pull_request:
+concurrency:
+  group: asset-ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
