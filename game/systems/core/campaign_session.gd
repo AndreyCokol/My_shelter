@@ -2,16 +2,19 @@ extends RefCounted
 
 const Core = preload("res://game/systems/core/core_session.gd")
 const Model = preload("res://game/state/campaign_model.gd")
+const Calendar = preload("res://game/systems/core/calendar_planner.gd")
 const Commands = preload("res://game/systems/inventory/campaign_commands.gd")
 var coordinator
 var _rules: Dictionary
 var _commands
+var calendar = Calendar.new()
 
 func _init(rules: Dictionary) -> void:
 	if not valid_rules(rules):
 		return
 	_rules = rules.duplicate(true)
 	_commands = Commands.new(_rules)
+	_commands.calendar = calendar
 	var state := Model.new_state(_rules)
 	for container in state.inventory.containers:
 		state.resource_revisions["inventory:" + container.id] = 0
@@ -20,15 +23,28 @@ func _init(rules: Dictionary) -> void:
 	coordinator = Core.new(state, Model.validate.bind(_rules), _commands.normalize, _commands.plan)
 	coordinator._domain_owner = _commands
 
+# Adapters are installed during campaign setup, never through player payloads.
+func configure_calendar(source: Callable, consumer: Callable) -> bool:
+	if coordinator == null or coordinator.is_busy():
+		return false
+	return calendar.configure(source, consumer)
+
 func tick(delta: float) -> bool:
 	if coordinator == null or not is_finite(delta) or delta < 0:
 		return false
+	var drafts: Array = []
 	return coordinator.apply_runtime(func(state):
 		var accumulated: float = state.clock_remainder + delta * _rules.minutes_per_real_second
+		# Check before float-to-int conversion, including overflow of finite inputs.
+		if not is_finite(accumulated) or accumulated > Calendar.MAX_MINUTE - state.game_time_minutes:
+			return false
 		var minutes := int(floor(accumulated + 0.000000001))
-		state.clock_remainder = maxf(0.0, accumulated - minutes)
-		state.game_time_minutes += minutes
-		return true, _commands.time_events)
+		var result: Dictionary = calendar.advance(state, int(state.game_time_minutes) + minutes, "tick")
+		if not result.ok:
+			return false
+		state.clock_remainder = 0.0 if result.data.interrupted else maxf(0.0, accumulated - minutes)
+		drafts.assign(result.events)
+		return true, func(_before, _after): return drafts)
 
 static func valid_rules(rules: Dictionary) -> bool:
 	if not rules.get("version") is String or rules.version.is_empty() or not Core.valid_integer(rules.get("discovery_xp")):

@@ -88,7 +88,7 @@
 | Участок карты | Факт | Остаток |
 |---|---|---|
 | A1-01 | Godot 4.7.2 Linux import/headless, root/InputMap, CI | GUI/Windows и независимая приёмка |
-| A1-02 | Сериализованный coordinator, callbacks, snapshots, pause, Clock/rest и post-commit EventBus | Подключение доменных планов времени и gameplay runtime |
+| A1-02 | Сериализованный coordinator, callbacks, snapshots, pause, Clock/rest и post-commit EventBus | Общий calendar planner с fixtures готов; нужны реальные domain adapters/validators и gameplay runtime |
 | A1-03 | Реальные транзакции Inventory/coins/parcels/rewards/discovery/XP, resource revisions | Продуктовый каталог и predicates/источники наград A2–A4, UI A5 |
 | A1-04 | Общий checkpoint, backup/recovery; реальная замена world/позиции на Node2D fixtures | Поставка игровых сцен A2/A3/A4, Windows I/O/export |
 | A2-01/02 | Реализация не выполнялась в этой сессии | Бой, игрок, ресурсный узел, checkpoint героя |
@@ -102,3 +102,5 @@ G2–G4 не пройдены; готовность игры не заявляе
 Последнее продолжение A1-04: [SceneRouter report](reports/A1-scene-router-2026-11-06.md), Issue #21.
 
 Продолжение A1-02: [post-commit EventBus report](reports/A1-events-2026-11-06.md), Issue #23.
+
+Продолжение A1-02/04: [общий календарный планировщик](reports/A1-calendar-2026-11-06.md), Issue #25. Реальная ферма/квесты не подменяются техническими handlers.

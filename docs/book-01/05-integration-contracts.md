@@ -1,6 +1,6 @@
 # 05 — Единый контракт модулей, состояния и сохранений
 
-**Контракт:** `v1.3-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
+**Контракт:** `v1.4-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
 ## 1. Основное правило и границы
 
@@ -233,7 +233,7 @@ EventBus.subscribe(owner,callback,event_types=[])->token принимает ст
 
 Replay возвращает receipt без новых событий; ошибки validation/I/O и остановка после disk commit до runtime install не выдают успешные уведомления. После load/recovery очищается временная история доставки, сохраняются живые подписки и публикуется только state_loaded для snapshot refresh. Пропущенные игровые события не воспроизводятся: авторитетные последствия уже в coherent checkpoint. Domain idempotency основана на persisted receipts/reward IDs, не на временном EventBus dedup. In-memory history доставки живёт до load/new session.
 
-Clock tick публикует time_advanced только при изменении целой календарной минуты и не пишет файл на каждом кадре. Rest публикует тот же envelope с reason=rest; tick с reason=tick. Это не реализация Farm/Quest deadlines, их планы ещё не подключены.
+Clock tick публикует time_advanced только при изменении целой календарной минуты и не пишет файл на каждом кадре. Rest публикует тот же envelope с reason=rest; tick с reason=tick. Реальные планы Farm/Quest пока не подключены; общий механизм calendar adapters описан в §14.
 
 Дополнительные факты уже реализованного ядра:
 
@@ -246,3 +246,18 @@ Clock tick публикует time_advanced только при изменени
 | checkpoint_saved | save_id | Revision в envelope |
 
 Для scene_changed уточнено имя entry_point_id для целевой точки входа и отдельно return_scene_id; неоднозначное старое return_point_id не публикуется. Обновление интерфейса требует review потребителей A2–A5; реальных UI потребителей в текущем ядре ещё нет.
+
+
+## 14. A1-02/04: общий calendar planner (Issue #25, proposed)
+
+`CampaignSession.configure_calendar(provider, handler)->bool` — trusted setup API A3/A4 через A1, не команда UI. Оба Callable устанавливаются вместе; пустая пара снимает adapters, неполная пара отклоняется, во время coordinator transaction настройка запрещена. Владельцы adapters обеспечивают их lifetime; уничтоженный установленный callback блокирует время с UNAVAILABLE, а не снимает обработку дедлайнов молча. Схема campaign-core остаётся v2, callbacks не сериализуются.
+
+- `provider(snapshot_copy, from_minute, target_minute)` возвращает полный массив deadlines интервала `(from, target]` либо `{ok:false}` при опасности/сохраняемом ожидающем выборе. Отказ даёт `UNAVAILABLE` для отдыха, `false` для tick и не меняет время. Provider чистый, без I/O/эффектов. Он обязан включить все производные границы (например зрелость **и** порчу), которые могут возникнуть в этом интервале. Динамическое достраивание очереди в этом API не реализовано.
+- Deadline: `{minute: int>=0, priority: int>=0, entity_id: nonempty String, interactive?: bool}`. Один `(minute,priority,entity_id)` уникален; неверная форма, дубликат или граница вне интервала отклоняют весь план. Рекомендуемые priorities: 0 maturity, 1 spoilage, 2 story predicates. Handler сам определяет доменные правила.
+- `handler(candidate, deadline)->{ok:bool, events?:Array}` меняет только tentative snapshot. Он видит календарь на минуте deadline, не меняет сам календарь, не отправляет события, не пишет файлы и не изменяет runtime. Ссылки на candidate не сохранять. Эффекты должны иметь доменную валидацию и resource revisions, когда затронут показанный игроку ресурс. Ошибка любого handler откатывает весь tick/rest, включая ранее запланированные эффекты. Фактические доменные validators/состояния A3/A4 ещё должны быть подключены; непустые placeholders текущим Model по-прежнему отклоняются.
+- Единый `CalendarPlanner.advance` используется natural tick и `clock.rest`. Сортировка: minute, priority, stable entity ID. При первом interactive deadline выполняются **все** фазы этой минуты, поздние границы не выполняются; результат rest содержит `actual_to_minute` и `interrupted`. Остаток пропущенного кадра/отдыха автоматически не доигрывается. Handler обязан сохранить pending choice в своём домене, а provider — отказывать последующим попыткам времени до решения; одного transient уведомления недостаточно. Это ответственность будущего adapter, не готовая quest-система.
+- Rest завершается на целой минуте с `clock_remainder=0`. Обычный tick сохраняет дробную часть; остановленный tick сбрасывает непройденный остаток. Конечность произведения delta/rate и предел JSON exact integers проверяются **до** float→int.
+- После успешной установки состояния публикуются `time_advanced`, затем ordered domain drafts. Для deadline draft A1 ставит `game_minute=deadline.minute`; state_revision у всех событий — общая committed revision. Остальные события по умолчанию имеют минуту конечного snapshot. Неотрицательная минута draft не может превышать конечную минуту. События/receipt никогда не заменяют authoritative domain state.
+- Rest проходит durable transaction с квитанцией; повтор не вызывает adapters. Tick проходит runtime validation barrier без записи на каждом кадре. Save failure до commit не публикует ни время, ни доменные события; после commit recovery читает сохранённый snapshot и посылает только refresh.
+
+**Handoff:** A3/A4 предоставляют полный provider, чистые handlers, schema validators и persisted pending gates; A5 читает actual_to_minute/interrupted и обновляет UI из snapshot. API предложен для review A3/A4/A5, не объявлен согласованным ими. Проверки CT-44..47 используют технические adapters, не игровые поля/квесты.

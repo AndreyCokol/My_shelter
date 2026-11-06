@@ -110,3 +110,15 @@
 | CT-43 | Дробные ticks, календарная граница, отдых, load | time_advanced по границе без записи на кадр; state_loaded запускает snapshot refresh |
 
 Результаты core-only проверок — [EventBus report](reports/A1-events-2026-11-06.md). Реальный lifecycle всех окон A5 проверяется после их реализации.
+
+
+## A1-02/04 Calendar planner (Issue #25)
+
+| ID | Вход | Ожидание |
+|---|---|---|
+| CT-44 | Несколько фаз/сущностей в одну минуту, длинный rest и дробные ticks | Один planner, порядок minute/priority/entity; равные доменные эффекты; envelope сохраняет минуту границы |
+| CT-45 | Interactive deadline и последующий pending gate | Завершение всей выбранной минуты, actual_to_minute/interrupted; нет автоматического доигрывания остатка |
+| CT-46 | Поздний отказ handler, malformed/duplicate deadlines, I/O fault/recovery/replay | Нет частичной мутации/уведомлений; committed результат восстанавливается один раз |
+| CT-47 | INF/NaN, переполнение delta×rate, rest после дробного tick | Нет опасного int conversion; rest сбрасывает дробный остаток |
+
+Исполнение на технических handlers: [Calendar report](reports/A1-calendar-2026-11-06.md). Полные crop/quest state machines и сохранение их pending gates пока NOT_IMPLEMENTED.
