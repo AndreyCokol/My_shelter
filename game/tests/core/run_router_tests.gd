@@ -6,6 +6,14 @@ const Router = preload("res://game/systems/scene_router/scene_router.gd")
 const Fixtures = preload("res://game/tests/core/campaign_fixtures.gd")
 var checks: int = 0
 var failures: int = 0
+var observed_router
+var scene_fact_count: int = 0
+var scene_fact_after_install: bool = false
+var previous_observed_world_id: int = 0
+
+func on_scene_fact(_event: Dictionary) -> void:
+	scene_fact_count += 1
+	scene_fact_after_install = observed_router.current_world().get_instance_id() != previous_observed_world_id
 
 func check(ok: bool, label: String) -> void:
 	checks += 1
@@ -93,10 +101,16 @@ func run() -> void:
 	check(router.load_saved().ok and session.get_snapshot().scene.current_scene_id == "shelter" and actor.position == Vector2(32.25, 17.5), "recovery restores committed target and position together")
 	mounted = router.current_world()
 	check(router.try_transition("disk-crash", "shelter", "default").code == "ALREADY_APPLIED" and router.current_world() == mounted, "recovered transition replay is effect-free")
+	observed_router = router
+	previous_observed_world_id = mounted.get_instance_id()
+	session.events.subscribe(self, on_scene_fact, ["scene_changed"])
 	var previous_world_id: int = mounted.get_instance_id()
 	var observer: Array = [false]
 	session.committed.connect(func(_result): observer[0] = router.current_world().get_instance_id() != previous_world_id and session.get_snapshot().scene.current_scene_id == "outside")
 	check(router.try_transition("observed", "outside", "default").ok and observer[0], "notification observes installed runtime and committed state")
+	check(scene_fact_count == 1 and scene_fact_after_install, "DomainEvent delivered after actual world installation")
+	session.events.unsubscribe_owner(self)
+	observed_router = null
 	var reentrant: Array = [""]
 	session.committed.connect(func(_result): reentrant[0] = router.try_transition("reentrant", "outside", "default").code)
 	check(router.try_transition("back-for-reentrant", "shelter", "default").ok and reentrant[0] == "UNAVAILABLE", "reentrant transition cannot replace a committing world")

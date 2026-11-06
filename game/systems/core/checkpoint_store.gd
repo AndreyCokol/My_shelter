@@ -1,6 +1,6 @@
 extends RefCounted
 
-# Internal G1a schema, intentionally separate from the full campaign schema.
+# JSON checkpoint storage; schema validation is supplied by the active session.
 var path: String
 var fault: String = "" # Test seam; never exposed to player commands.
 

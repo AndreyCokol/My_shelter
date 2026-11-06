@@ -4,8 +4,11 @@ signal committed(result: Dictionary)
 signal state_loaded
 
 const JsonNumbers = preload("res://game/state/json_numbers.gd")
+const EventBus = preload("res://game/systems/core/event_bus.gd")
 const PauseRegistry = preload("res://game/systems/core/pause_registry.gd")
 var pauses = PauseRegistry.new()
+var events = EventBus.new()
+var _load_serial: int = 0
 var _state: Dictionary = initial_state()
 var _busy: bool = false
 var _recovery_token: int = 0
@@ -99,11 +102,14 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 		pauses.release_pause(_recovery_token)
 		_recovery_token = 0
 	pauses.release_pause(token)
+	events.reset_history()
+	_load_serial += 1
+	_publish_events([{"event_type": "state_loaded", "payload": {"schema_version": _state.schema_version, "state_revision": _state.state_revision}}], "load:%d" % _load_serial)
 	state_loaded.emit()
 	_busy = false
 	return _result(true, "OK", "")
 
-# Internal contract fixture, NOT a gameplay reward/inventory API.
+# Shared transactional executor; its default planner is only a bootstrap fixture.
 func execute(request: Dictionary, store) -> Dictionary:
 	var action_id = request.get("action_id", "")
 	var payload = request.get("payload", {})
@@ -151,6 +157,10 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if not _state_validator.call(tentative):
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
+	var drafts = planned.get("events", [])
+	if not _valid_drafts(drafts):
+		_busy = false
+		return _result(false, "INVALID_STATE", action_id)
 	var ticket := _prepare_runtime(tentative, "command")
 	if not ticket.get("ok", false):
 		_busy = false
@@ -170,6 +180,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 		_ensure_recovery()
 		_busy = false
 		return _result(false, "UNAVAILABLE", action_id)
+	_publish_events(drafts, action_id)
 	committed.emit(result.duplicate(true))
 	_busy = false
 	return result
@@ -179,7 +190,7 @@ func _result(ok: bool, code: String, action_id: String) -> Dictionary:
 
 # Trusted runtime hook for the calendar; never exposed as a player payload.
 # It uses the same serialization/validation barrier but does not write each frame.
-func apply_runtime(plan: Callable) -> bool:
+func apply_runtime(plan: Callable, event_factory: Callable = Callable()) -> bool:
 	if _busy or _recovery_token != 0 or pauses.is_paused():
 		return false
 	_busy = true
@@ -189,10 +200,12 @@ func apply_runtime(plan: Callable) -> bool:
 		return false
 	tentative = JsonNumbers.normalize_numbers(tentative)
 	tentative.state_revision += 1
-	if not _state_validator.call(tentative):
+	var drafts: Array = event_factory.call(_state.duplicate(true), tentative.duplicate(true)) if event_factory.is_valid() else []
+	if not _valid_drafts(drafts) or not _state_validator.call(tentative):
 		_busy = false
 		return false
 	_state = tentative
+	_publish_events(drafts, "runtime:%d" % _state.state_revision)
 	_busy = false
 	return true
 
@@ -218,3 +231,20 @@ func _ensure_recovery() -> void:
 
 func is_busy() -> bool:
 	return _busy
+
+static func _valid_drafts(drafts) -> bool:
+	if not drafts is Array:
+		return false
+	for draft in drafts:
+		if not draft is Dictionary or not (draft.get("event_type") is String or draft.get("event_type") is StringName) or str(draft.event_type).is_empty() or not draft.get("payload") is Dictionary:
+			return false
+	return true
+
+func _publish_events(drafts: Array, action_id: String) -> void:
+	for i in range(drafts.size()):
+		var draft: Dictionary = drafts[i]
+		events.publish_after_commit({
+			"event_id": "%s:%s:%d" % [_state.get("save_id", _state.scope), action_id.sha256_text(), i],
+			"event_type": str(draft.event_type), "action_id": action_id,
+			"game_minute": _state.get("game_time_minutes", 0),
+			"state_revision": _state.state_revision, "payload": JsonNumbers.normalize_numbers(draft.payload)})
