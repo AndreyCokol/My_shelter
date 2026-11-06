@@ -1,0 +1,24 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+PASS CT-01 first commit
+PASS CT-01 replay has no events
+PASS CT-02 changed payload
+PASS reject negative input
+PASS CT-33 historical receipt, current snapshot
+PASS CT-22 replay after actual disk reload
+PASS snapshot isolation
+PASS CT-30 failure before commit
+PASS CT-30 failure after disk before RAM
+PASS CT-30 recovery blocks mutations
+PASS CT-30 recover committed checkpoint
+PASS CT-30 no duplicate recovery effect
+PASS CT-29 invalid linked receipt leaves live session intact
+PASS CT-11 explicit backup load
+PASS CT-11 restored backup accepts subsequent writes
+PASS malformed context rejected
+PASS CT-31 nested pause retained
+PASS CT-31 last reason released
+PASS CT-23 same calendar at 30 and 60 FPS
+PASS CT-05 paused clock
+PASS CT-32 ordered scheduler, split interval equivalence
+CORE TESTS: 21 checks, 0 failures
