@@ -1,5 +1,7 @@
 extends Control
 
+const Art = preload("res://game/ui/asset_theme.gd")
+
 var app
 var panel_id: String = ""
 var pause_token: int = 0
@@ -9,16 +11,18 @@ var notice: Label
 var modal: ColorRect
 var body: VBoxContainer
 var heading: Label
+var heading_icon: TextureRect
 var rest_target: int = 0
 var _refresh_pending: bool = false
 const NAMES = {"hospital": "Больница", "outside": "Город", "shelter": "Убежище", "louvre": "Стоянка"}
-const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?"}
+const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
 const ERRORS = {"OK": "Готово", "ALREADY_APPLIED": "Действие уже выполнено", "UNAVAILABLE": "Сейчас недоступно. Проверьте условия или восстановите сохранение.", "INVALID_STATE": "Состояние изменилось: обновите действие или выберите резервную копию.", "INVALID_ARGUMENT": "Проверьте параметры действия.", "INSUFFICIENT_RESOURCES": "Не хватает доступных ресурсов. Зарезервированная еда не расходуется.", "CAPACITY_EXCEEDED": "Рюкзак заполнен. Перенесите предметы в хранилище.", "REQUIRES_CONSENT": "Сначала нужно добровольное согласие путника.", "STALE_REVISION": "Данные изменились. Экран обновлён — повторите выбор.", "NOT_IN_SAFE_AREA": "Отдых и работа с грядками доступны в убежище.", "SAVE_FAILED": "Не удалось записать сохранение. Действие не подтверждено.", "PAUSED": "Осталась другая причина паузы. Закройте её прежде, чем действовать.", "NOT_FOUND": "Объект не найден."}
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var theme := Theme.new()
 	theme.default_font_size = 13
 	var style := StyleBoxFlat.new()
@@ -35,6 +39,7 @@ func _ready() -> void:
 	hover.bg_color = Color("365650")
 	theme.set_stylebox("hover", "Button", hover)
 	theme.set_stylebox("pressed", "Button", hover)
+	Art.apply_buttons(theme)
 	self.theme = theme
 	var top := Panel.new()
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
@@ -43,12 +48,25 @@ func _ready() -> void:
 	var topstyle := StyleBoxFlat.new()
 	topstyle.bg_color = Color("142329")
 	top.add_theme_stylebox_override("panel", topstyle)
+	var top_art := Art.textured_style("panel_frame", 10, Color(0.65, 0.72, 0.75))
+	if top_art != null:
+		top.add_theme_stylebox_override("panel", top_art)
 	location = Label.new()
 	location.position = Vector2(15, 6)
 	location.add_theme_font_size_override("font_size", 17)
 	top.add_child(location)
 	hud = Label.new()
 	hud.position = Vector2(15, 31)
+	if Art.texture("heart") != null:
+		var heart := TextureRect.new()
+		heart.texture = Art.texture("heart")
+		heart.position = Vector2(15, 33)
+		heart.size = Vector2(14, 14)
+		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		top.add_child(heart)
+		hud.position.x = 34
 	top.add_child(hud)
 	var nav := HBoxContainer.new()
 	nav.position = Vector2(15, 53)
@@ -56,6 +74,8 @@ func _ready() -> void:
 	for entry in [["Рюкзак [I]", "inventory"], ["Задания [Tab]", "quests"], ["Магазин", "shop"], ["Меню [Esc]", "menu"]]:
 		var nav_button := button(nav, entry[0], open_panel.bind(entry[1]))
 		nav_button.focus_mode = Control.FOCUS_NONE
+		nav_button.icon = Art.icon(entry[1])
+		nav_button.expand_icon = true
 	notice = Label.new()
 	notice.position = Vector2(15, 345)
 	notice.size = Vector2(610, 15)
@@ -76,6 +96,9 @@ func _ready() -> void:
 	panelstyle.set_border_width_all(1)
 	panelstyle.set_corner_radius_all(8)
 	panel.add_theme_stylebox_override("panel", panelstyle)
+	var panel_art := Art.textured_style("panel_frame", 10, Color(0.9, 0.95, 1.0))
+	if panel_art != null:
+		panel.add_theme_stylebox_override("panel", panel_art)
 	modal.add_child(panel)
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -85,6 +108,12 @@ func _ready() -> void:
 	margin.add_child(box)
 	var titlebar := HBoxContainer.new()
 	box.add_child(titlebar)
+	heading_icon = TextureRect.new()
+	heading_icon.custom_minimum_size = Vector2(22, 22)
+	heading_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	heading_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	heading_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	titlebar.add_child(heading_icon)
 	heading = Label.new()
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_theme_font_size_override("font_size", 19)
@@ -105,6 +134,18 @@ func _ready() -> void:
 func button(parent: Node, text: String, action: Callable) -> Button:
 	var item := Button.new()
 	item.text = text
+	item.expand_icon = true
+	item.add_theme_constant_override("icon_max_width", 16)
+	var method: String = str(action.get_method())
+	var roles := {"save_game": "save", "load_game": "save", "close_panel": "back", "new_game": "shelter", "_prepare_rest": "rest"}
+	if roles.has(method):
+		item.icon = Art.texture(roles[method])
+	elif method == "run_command":
+		var arguments: Array = action.get_bound_arguments()
+		if not arguments.is_empty():
+			var kind: String = arguments[0]
+			var commands := {"inventory.transfer": "inventory", "inventory.purchase": "coin", "inventory.claim_parcel": "save", "game.quest_track": "quests", "clock.rest": "rest", "game.contact": "residents", "game.consent": "accept", "game.recruit": "residents"}
+			item.icon = Art.texture(commands.get(kind, "farm"))
 	item.pressed.connect(action)
 	parent.add_child(item)
 	return item
@@ -178,6 +219,8 @@ func render_panel() -> void:
 		body.remove_child(child)
 		child.queue_free()
 	heading.text = PANELS.get(panel_id, panel_id)
+	heading_icon.texture = Art.icon(panel_id)
+	heading_icon.visible = heading_icon.texture != null
 	var state: Dictionary = app.snapshot()
 	match panel_id:
 		"welcome":
@@ -198,7 +241,15 @@ func render_panel() -> void:
 			button(body, "Продолжить", close_panel)
 			button(body, "Сохранение / загрузка", open_panel.bind("save"))
 			button(body, "Новая игра…", open_panel.bind("new_confirm"))
+			button(body, "Об игре и авторах", open_panel.bind("credits"))
 			button(body, "Выйти (несохранённое время будет потеряно)", func(): app.get_tree().quit())
+		"credits":
+			line("Моё пространственное убежище · игровой прототип")
+			if Art.texture("button_frame") != null:
+				line("Иконки и оформление интерфейса: Kibyra — Free Medieval Fantasy UI Pack.")
+				line("kibyra.itch.io/free-medieval-fantasy-ui-pack")
+			line("Движок: Godot. Сведения о лицензиях движка и использованных материалов входят в комплект игры.")
+			button(body, "Назад", open_panel.bind("menu"))
 		"save":
 			line("Сохранение включает позиции, здоровье героя, часы, грядки, ресурсы, жителей и квитанции действий.")
 			button(body, "Сохранить сейчас", app.save_game)

@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 25
     env:
       PYTHONUTF8: '1'
+      SHELTER_REQUIRE_ASSETS: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,6 +35,11 @@ jobs:
               for name in ['version.txt', 'windows_release_x86_64.exe', 'windows_debug_x86_64.exe']:
                   (root / name).write_bytes(archive.read('templates/' + name))
           '@ | python -
+      - name: Install reviewed Kibyra UI resources
+        shell: pwsh
+        run: |
+          python tools/install_ui_assets.py --download-ui
+          if ($LASTEXITCODE -ne 0) { throw 'Asset installation failed' }
       - name: Native Windows contract and gameplay suites
         shell: pwsh
         run: |
