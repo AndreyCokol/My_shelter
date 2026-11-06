@@ -60,9 +60,9 @@ func _ready() -> void:
 	if Art.texture("heart") != null:
 		var heart := TextureRect.new()
 		heart.name = "HealthIcon"
+		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		heart.texture = Art.texture("heart")
 		heart.position = Vector2(15, 33)
-		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		heart.size = Vector2(14, 14)
 		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
