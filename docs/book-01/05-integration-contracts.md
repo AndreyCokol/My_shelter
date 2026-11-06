@@ -45,7 +45,7 @@ DomainEvent := {
 
 **Смысл полей:** `event_type` — вид уведомления, `event_id` — уникальный факт, `action_id` — ключ идемпотентности команды, `state_revision` — версия авторитетного состояния. **Нельзя** называть `event_id` типом события как в старом EventBus. Предлагаемый интерфейс: `EventBus.publish_after_commit(event: DomainEvent)`. Слушатель события не выдаёт награду повторно.
 
-**Повтор команды:** тот же `action_id` + тот же fingerprint **семантических** параметров запроса возвращает записанный результат, без мутаций; тот же `action_id` + иная целевая операция/payload → `ACTION_CONFLICT`. `expected_resource_revisions` и другие служебные сведения о пересылке не должны менять fingerprint уже исполненного действия. Новый осознанный клик на покупку получает новый `action_id`; повтор доставки старого клика сохраняет ID. Для однократных наград проверять ещё устойчивый `reward_id`/`enemy_id`, а не только `action_id`.
+**Повтор команды:** тот же `action_id` + тот же fingerprint **семантических** параметров запроса возвращает записанные data/revision с `ok=true, code=ALREADY_APPLIED`, без мутаций; тот же `action_id` + иная целевая операция/payload → `ACTION_CONFLICT`. `expected_resource_revisions` и другие служебные сведения о пересылке не должны менять fingerprint уже исполненного действия. Новый осознанный клик на покупку получает новый `action_id`; повтор доставки старого клика сохраняет ID. Для однократных наград проверять ещё устойчивый `reward_id`/`enemy_id`, а не только `action_id`.
 
 **Нормализация fingerprint:** сохраняемый ключ составляется из `command_type`, нормализованного доменного `payload`, стабильного `actor_id` и целевых сущностей. Временные `scene_id`, текущие UI resource revisions, transport retry count и порядок JSON-ключей **не должны** менять идентичность уже исполненной команды при повторной доставке после загрузки. Повтор с тем же `action_id` проверяется **до** валидации текущего контекста/сцены; прошлый успех возвращается из ledger, даже если игрок уже ушёл с той карты. Новое сознательное действие с иными параметрами имеет другой `action_id`. Failed validation без commit не создаёт фиктивной квитанции успеха.
 
@@ -55,7 +55,7 @@ DomainEvent := {
 
 | Фасад | Владелец | Команды / запросы (псевдосигнатуры до реального type-check) |
 |---|---|---|
-| `GameSession` | A1 | `new_campaign(seed?)`, `get_snapshot()->CampaignSnapshot`, `set_pause(bool)` |
+| `GameSession` | A1 | `new_campaign(seed?)`, `get_snapshot()->CampaignSnapshot`, `acquire_pause(reason)->token`, `release_pause(token)` |
 | `GameCoordinator` | A1 | `execute(request:CommandRequest)->CommandResult`; сериализация, validation, commit, notifications |
 | `SceneRouter` | A1 | `try_transition(action_id,destination_scene_id,entry_point_id)` |
 | `GameClock` | A1 | `get_game_minute()->int`, `try_rest_until(action_id,target_minute,context)`, `advance_for_test(minutes)` **QA-only** |
