@@ -59,7 +59,9 @@ func run() -> void:
 	check(router.save("save-position").ok, "save captures actual actor position")
 	var old := router.current_world()
 	check(router.try_transition("go-out", "outside", "default").ok, "actual world transition commits")
-	check(not is_instance_valid(old) and actor.position == Vector2(100, 200) and host.get_child_count() == 2, "old world disposed, actor reused, entry marker applied")
+	check(old.get_parent() == null and old.is_queued_for_deletion() and actor.position == Vector2(100, 200) and host.get_child_count() == 2, "old world detached and scheduled for deletion, actor reused, entry marker applied")
+	await process_frame
+	check(not is_instance_valid(old), "detached world freed after transition call unwinds")
 	actor.position = Vector2(250.5, 300.25)
 	check(router.try_transition("go-home", "shelter", "default").ok and actor.position == Vector2(32.25, 17.5), "return to saved shelter position")
 	check(session.get_snapshot().scene.last_outside_position == {"x": 250.5, "y": 300.25}, "outside return coordinate persisted")

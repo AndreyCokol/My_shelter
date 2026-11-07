@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 var _host: Node2D
 var _actor: Node2D
@@ -7,6 +8,7 @@ var _session
 var _store
 var _registry: Dictionary
 var _world: Node2D
+var _mounted_schema := 0
 var _scene_id: String = ""
 var _pending_world: Node2D
 var _pending_scene: String = ""
@@ -39,11 +41,13 @@ func try_transition(action_id: String, destination_scene_id: String, entry_point
 		return _session.execute(request, _store)
 	if not is_instance_valid(_actor):
 		return _error("UNAVAILABLE", action_id)
-	var staged := _stage(destination_scene_id, entry_point_id)
+	var staged := _stage(destination_scene_id, entry_point_id, state)
 	if not staged.get("ok", false):
 		return _error("UNAVAILABLE", action_id)
 	request.context.departure_position = _position(_actor.position)
-	request.context.arrival_position = state.scene.positions.get(destination_scene_id, staged.position).duplicate(true)
+	var restore_position: bool = state.schema_version != 4 or (
+		state.scene.current_scene_id == "shelter" and destination_scene_id == state.scene.return_scene_id and entry_point_id == "default")
+	request.context.arrival_position = state.scene.positions.get(destination_scene_id, staged.position).duplicate(true) if restore_position else staged.position
 	_pending_world = staged.world
 	_pending_scene = destination_scene_id
 	_transitioning = true
@@ -76,14 +80,14 @@ func _request(action_id: String, kind: String, payload: Dictionary) -> Dictionar
 
 func prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	var target: String = candidate.scene.current_scene_id
-	if reason == "command" and target == _scene_id and is_instance_valid(_world):
+	if reason == "command" and target == _scene_id and candidate.schema_version == _mounted_schema and is_instance_valid(_world):
 		return {"ok": true}
 	var staged: Dictionary
 	if reason == "command" and is_instance_valid(_pending_world) and _pending_scene == target:
 		staged = {"ok": true, "world": _pending_world}
 		_pending_world = null
 	else:
-		staged = _stage(target, candidate.scene.entry_point_id)
+		staged = _stage(target, candidate.scene.entry_point_id, candidate)
 	if not staged.get("ok", false):
 		return {"ok": false}
 	var world: Node2D = staged.world
@@ -91,15 +95,17 @@ func prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	return {"ok": true, "discard": func():
 		if is_instance_valid(world):
 			world.free(),
-		"install": func(): return _install(world, target, position)}
+		"install": func(): return _install(world, target, position, int(candidate.schema_version))}
 
-func _stage(scene_id: String, entry_id: String) -> Dictionary:
+func _stage(scene_id: String, entry_id: String, state: Dictionary) -> Dictionary:
 	if not is_instance_valid(_host) or not is_instance_valid(_actor) or not _registry.get(scene_id) is PackedScene:
 		return {"ok": false}
 	var world = _registry[scene_id].instantiate()
 	if not world is Node2D:
 		world.free()
 		return {"ok": false}
+	if state.schema_version == 4 and world.has_method("configure_layout"):
+		world.configure_layout(Layout.from_manifest(state.world_states.layout), scene_id)
 	var entries = world.get_node_or_null("EntryPoints")
 	var entry = entries.get_node_or_null(NodePath(entry_id)) if entries is Node2D and entry_id.is_valid_identifier() else null
 	if not entry is Marker2D or world.transform != Transform2D.IDENTITY or entries.transform != Transform2D.IDENTITY:
@@ -107,7 +113,7 @@ func _stage(scene_id: String, entry_id: String) -> Dictionary:
 		return {"ok": false}
 	return {"ok": true, "world": world, "position": _position(entry.position)}
 
-func _install(world: Node2D, scene_id: String, position: Vector2) -> bool:
+func _install(world: Node2D, scene_id: String, position: Vector2, schema: int) -> bool:
 	if not is_instance_valid(_host) or not is_instance_valid(_actor):
 		world.free()
 		return false
@@ -123,9 +129,11 @@ func _install(world: Node2D, scene_id: String, position: Vector2) -> bool:
 	_actor.position = position
 	_world = world
 	_scene_id = scene_id
+	_mounted_schema = schema
 	_host.add_child(world)
 	if is_instance_valid(old):
-		old.free()
+		# A door interaction can still be executing on the detached world.
+		old.queue_free()
 	return is_instance_valid(_world) and _world.get_parent() == _host
 
 static func _position(position: Vector2) -> Dictionary:

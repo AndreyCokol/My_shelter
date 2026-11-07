@@ -15,7 +15,8 @@ func _initialize() -> void:
 
 func run() -> void:
 	var app = preload("res://game/scenes/main/playable.tscn").instantiate()
-	app.save_location = "user://visual-tests/transient.json"
+	app.save_location = "user://visual-tests/" + str(Time.get_ticks_usec()) + ".json"
+	app.starting_seed = 54
 	root.add_child(app)
 	await process_frame
 	await process_frame
@@ -33,11 +34,14 @@ func run() -> void:
 		await physics_frame
 	await process_frame
 	check(app.snapshot().world_states.first_enemy_defeated, "step13 render scene keeps gameplay alive")
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("/tmp/shelter-visual/hospital.png")
 	app.transition("shelter")
+	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "populate inventory with real gameplay items")
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
-	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save", "credits"]:
+	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save", "credits", "workshop", "jobs", "map", "journal", "new_confirm"]:
 		app.ui.open_panel(panel)
 		await process_frame
 		await process_frame
@@ -45,6 +49,14 @@ func run() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png("/tmp/shelter-visual/" + panel + ".png")
 		app.ui.close_panel()
+	check(app.transition("outside").ok, "render the generated city")
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("/tmp/shelter-visual/city.png")
+	check(app.transition("louvre").ok, "render the camp board in its scene")
+	app.ui.open_panel("camp")
+	await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("/tmp/shelter-visual/camp.png")
 	var path: String = app.save_location
 	app.free()
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:

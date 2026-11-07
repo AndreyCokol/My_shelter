@@ -54,6 +54,8 @@ func try_attack(target: Vector2) -> bool:
 	attack_cooldown = 0.45
 	swing_remaining = 0.15
 	var enemy = app.enemy()
+	if is_instance_valid(enemy):
+		enemy.hear_noise(global_position, 132.0)
 	if is_instance_valid(enemy) and enemy.health > 0 and global_position.distance_to(enemy.global_position) < 64:
 		var toward: Vector2 = global_position.direction_to(enemy.global_position)
 		if facing.dot(toward) > 0.2:

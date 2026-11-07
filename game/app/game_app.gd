@@ -1,5 +1,7 @@
 extends "res://game/scenes/main/main.gd"
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
+const NEXT_GAME_META := &"shelter_next_campaign"
 const Rules = preload("res://game/data/game_rules.gd")
 const Logic = preload("res://game/systems/gameplay/gameplay_commands.gd")
 var hero
@@ -9,15 +11,27 @@ var action_serial: int = 0
 var hud_elapsed: float = 0
 var save_location: String = "user://saves/prototype-v3.json"
 var last_result: Dictionary = {}
+var starting_seed: int = -1
 
 func _ready() -> void:
+	var next_game: Dictionary = get_tree().get_meta(NEXT_GAME_META, {})
+	if not next_game.is_empty():
+		get_tree().remove_meta(NEXT_GAME_META)
+		starting_seed = next_game.seed
+		save_location = next_game.save_location
 	super._ready()
 	hero = preload("res://game/entities/player/player.gd").new()
 	hero.app = self
 	var maps: Dictionary = {}
-	for id in ["hospital", "outside", "shelter", "louvre"]:
-		maps[id] = load("res://game/scenes/worlds/" + id + ".tscn")
-	var started := start_campaign(Rules.build(), maps, hero, save_location)
+	var settings := Rules.build()
+	settings.world_seed = randi_range(0, Layout.MAX_SEED) if starting_seed < 0 else starting_seed
+	settings.scenes = Layout.entries()
+	for id in settings.scenes:
+		var scene_type := Layout.kind(id)
+		if scene_type == "house":
+			scene_type = "hospital"
+		maps[id] = load("res://game/scenes/worlds/" + scene_type + ".tscn")
+	var started := start_campaign(settings, maps, hero, save_location)
 	if not started.ok:
 		push_error("Unable to start campaign")
 		return
@@ -31,8 +45,9 @@ func _ready() -> void:
 	var camera := Camera2D.new()
 	camera.position = Vector2(320, 180)
 	$WorldHost.add_child(camera)
-	ui.open_panel("welcome")
-	print("Playable prototype initialized; schema v3")
+	if next_game.is_empty():
+		ui.open_panel("welcome")
+	print("Playable prototype initialized; schema v4")
 
 func _process(delta: float) -> void:
 	super._process(delta)
@@ -71,13 +86,21 @@ func command(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return _execute(kind, payload)
 
 func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
-	last_result = session.execute(_request(kind, payload), save_store)
+	var request := _request(kind, payload)
+	if kind == "game.build":
+		request.context.live_position = {"x": hero.position.x, "y": hero.position.y}
+	if kind == "session.upgrade_world":
+		request.context.departure_position = {"x": hero.position.x, "y": hero.position.y}
+		request.context.health = hero.health
+	last_result = session.execute(request, save_store)
+	if last_result.ok and kind == "session.upgrade_world":
+		bind_world()
 	if ui != null:
 		ui.show_result(last_result)
 	return last_result
 
-func transition(destination: String) -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, "default")
+func transition(destination: String, entry_id: String = "default") -> Dictionary:
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id)
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
@@ -92,6 +115,7 @@ func bind_world() -> void:
 func _committed(_result: Dictionary) -> void:
 	var world = scene_router.current_world()
 	if is_instance_valid(world):
+		world.refresh_buildings()
 		world.queue_redraw()
 	update_hud()
 
@@ -144,18 +168,40 @@ func load_game(backup: bool = false) -> Dictionary:
 		ui.close_panel()
 	return last_result
 
-func new_game() -> void:
-	# Explicit user choice: preserve the previous primary/backup before resetting.
+func new_game(seed_text: String = "") -> void:
+	var entered := seed_text.strip_edges()
+	var seed_value := -1
+	if not entered.is_empty():
+		if entered.length() > 10 or not entered.is_valid_int() or int(entered) < 0 or int(entered) > Layout.MAX_SEED:
+			ui.show_result({"ok": false, "code": "INVALID_WORLD_SEED"})
+			return
+		seed_value = int(entered)
+	var state := snapshot()
+	var fresh: bool = state.state_revision == 0 and state.schema_version == 4 and (seed_value < 0 or seed_value == int(state.world_states.layout.seed))
+	var archived := {}
 	for suffix in ["", ".bak"]:
-		var path: String = save_location + str(suffix)
+		var path: String = ProjectSettings.globalize_path(save_location + str(suffix))
 		if FileAccess.file_exists(path):
 			var archive: String = path + ".archive-" + str(Time.get_ticks_usec())
-			if DirAccess.rename_absolute(ProjectSettings.globalize_path(path), ProjectSettings.globalize_path(archive)) != OK:
+			if DirAccess.rename_absolute(path, archive) != OK:
+				_restore_archives(archived)
 				ui.show_result({"ok": false, "code": "SAVE_FAILED"})
 				return
-	ui.close_panel()
-	if snapshot().state_revision > 0:
-		get_tree().reload_current_scene()
+			archived[path] = archive
+	if fresh:
+		ui.close_panel()
+		return
+	var tree := get_tree()
+	tree.set_meta(NEXT_GAME_META, {"seed": seed_value, "save_location": save_location})
+	if tree.reload_current_scene() != OK:
+		tree.remove_meta(NEXT_GAME_META)
+		_restore_archives(archived)
+		ui.show_result({"ok": false, "code": "UNAVAILABLE"})
+
+func _restore_archives(archived: Dictionary) -> void:
+	for path in archived:
+		if DirAccess.rename_absolute(archived[path], path) != OK:
+			push_error("Could not restore an archived save after reset failed")
 
 func preview_rest(target: int) -> Dictionary:
 	var candidate := snapshot()
