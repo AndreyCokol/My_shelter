@@ -28,12 +28,19 @@ func run() -> void:
 		await physics_frame
 	Input.action_release("move_right")
 	check(app.hero.position.x > before.x, "step5 actual controller moves on physics frames")
-	app.hero.position = Vector2(605, 300)
+	app.hero.position = Vector2(600, 226)
+	Input.action_press("move_right")
+	for i in range(10):
+		await physics_frame
+	Input.action_release("move_right")
+	check(app.hero.position.x > 610 and app.camera.position.x > 600, "hero and camera cross the first interior sector")
+	var right_edge: float = app.scene_router.current_world().floor_rect().end.x - 15
+	app.hero.position = Vector2(right_edge, 300)
 	Input.action_press("move_right")
 	for i in range(8):
 		await physics_frame
 	Input.action_release("move_right")
-	check(app.hero.position.x <= 605, "step5 walls and world bounds constrain movement")
+	check(app.hero.position.x <= right_edge, "step5 walls and world bounds constrain movement")
 	check(app.hero.try_dodge() and not app.hero.try_dodge(), "step5 dodge cooldown prevents spam")
 	var hp: int = app.hero.health
 	check(not app.hero.take_damage(20) and app.hero.health == hp, "step5 dodge grants invulnerability")
@@ -52,6 +59,26 @@ func run() -> void:
 	check(app.session.pauses.is_paused(), "step12 inventory modal pauses clock")
 	app.ui.run_command("inventory.claim_parcel", {"parcel_id": "starter"})
 	check(app.last_result.ok and app.session.pauses.is_paused(), "step12 panel command releases only own token and restores pause")
+	await process_frame
+	var item: Dictionary = app.snapshot().inventory.items.filter(func(stack): return stack.type_id == "seed.basic")[0]
+	for slot in app.ui.body.find_children("*", "Button", true, false):
+		if slot.tooltip_text == "Семена":
+			slot.pressed.emit()
+			break
+	var move_to_storage: Array = app.ui.body.find_children("*", "Button", true, false).filter(func(control): return control.text == "В хранилище")
+	check(app.ui.inventory_selection == item.instance_id and move_to_storage.size() == 1, "inventory grid selection opens the actual item action")
+	if not move_to_storage.is_empty():
+		move_to_storage[0].pressed.emit()
+	await process_frame
+	var storage_tab: Array = app.ui.body.find_children("*", "Button", true, false).filter(func(control): return control.text == "Хранилище")
+	if not storage_tab.is_empty():
+		storage_tab[0].pressed.emit()
+	var move_to_bag: Array = app.ui.body.find_children("*", "Button", true, false).filter(func(control): return control.text == "В рюкзак")
+	check(app.last_result.ok and app.ui.inventory_container == "storage" and move_to_bag.size() == 1, "storage tab shows the transferred item")
+	if not move_to_bag.is_empty():
+		move_to_bag[0].pressed.emit()
+	await process_frame
+	check(app.last_result.ok and app.snapshot().inventory.items.any(func(stack): return stack.type_id == "seed.basic" and stack.container_id == "player" and stack.quantity == 4), "inventory UI moves the complete available stack back")
 	var external: int = app.session.pauses.acquire_pause("test-other-window")
 	app.ui.run_command("inventory.purchase", {"offer_id": "seed"})
 	check(app.last_result.code == "PAUSED", "step12 panel cannot bypass another pause owner")
@@ -66,7 +93,7 @@ func run() -> void:
 	for id in ["plot_1", "plot_2"]:
 		check(app.command("game.harvest", {"plot_id": id}).ok, "E2E02 durable harvest " + id)
 	check(app.snapshot().quests.records[2].status == "inactive", "E2E07 untracked story never blocks farming")
-	check(app.transition("louvre").ok, "step11 actual NPC world mounted")
+	check(app.transition("outside").ok and app.transition("louvre").ok, "step11 actual NPC world mounted")
 	for id in ["resident_1", "resident_2"]:
 		check(app.command("game.contact", {"resident_id": id}).ok and app.command("game.consent", {"resident_id": id, "accept": true}).ok and app.command("game.recruit", {"resident_id": id}).ok, "E2E04 consent food and resident " + id)
 	app.hero.position = Vector2(200, 270)
@@ -76,13 +103,24 @@ func run() -> void:
 	app.hero.position = Vector2(500, 130)
 	app.hero.health = 11
 	var loaded_result: Dictionary = app.load_game()
-	if not (loaded_result.ok and app.snapshot() == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270)):
-		print("LOAD DETAIL ", loaded_result, " hp ", app.hero.health, " position ", app.hero.position)
-		for key in saved:
-			if saved[key] != app.snapshot()[key]:
-				print("DIFFERENT ", key, " before=", saved[key], " after=", app.snapshot()[key])
-	check(loaded_result.ok and app.snapshot() == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270), "E2E05 load installs all domains position and health")
+	var loaded: Dictionary = app.snapshot()
+	var positions_match: bool = loaded.scene.positions.keys().size() == saved.scene.positions.keys().size()
+	for id in saved.scene.positions:
+		var before_position: Dictionary = saved.scene.positions[id]
+		var after_position: Dictionary = loaded.scene.positions.get(id, {"x": INF, "y": INF})
+		positions_match = positions_match and Vector2(before_position.x, before_position.y) == Vector2(after_position.x, after_position.y)
+	loaded.scene.positions = saved.scene.positions
+	check(loaded_result.ok and positions_match and loaded == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270), "E2E05 load installs all domains position and health")
 	app.ui.open_panel("inventory")
+	var reserved_id: String = saved.inventory.reservations[0].instance_id
+	var reserved_stack: Dictionary = saved.inventory.items.filter(func(stack): return stack.instance_id == reserved_id)[0]
+	app.ui.select_inventory(reserved_stack.container_id, reserved_id)
+	var reserved_quantity := 0
+	for reservation in saved.inventory.reservations:
+		if reservation.instance_id == reserved_id:
+			reserved_quantity += int(reservation.quantity)
+	var matching_labels: Array = app.ui.body.find_children("*", "Label", true, false).filter(func(control): return ("В резерве: %d" % reserved_quantity) in control.text)
+	check(matching_labels.size() == 1, "inventory details show the real reservation on the selected stack")
 	var focused_button: Button = app.ui.body.find_children("*", "Button", true, false)[0]
 	focused_button.grab_focus()
 	var escape := InputEventKey.new()

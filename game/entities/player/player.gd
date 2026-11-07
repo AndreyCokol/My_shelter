@@ -36,7 +36,10 @@ func _physics_process(delta: float) -> void:
 		try_attack(get_global_mouse_position())
 	velocity = facing * 320 if dodge_remaining > 0 else direction * 115
 	move_and_slide()
-	position = position.clamp(Vector2(35, 100), Vector2(605, 330))
+	var world = app.scene_router.current_world()
+	if is_instance_valid(world):
+		var walkable: Rect2 = world.floor_rect().grow(-15)
+		position = position.clamp(walkable.position, walkable.end)
 	queue_redraw()
 
 func try_dodge() -> bool:
@@ -54,6 +57,8 @@ func try_attack(target: Vector2) -> bool:
 	attack_cooldown = 0.45
 	swing_remaining = 0.15
 	var enemy = app.enemy()
+	if is_instance_valid(enemy):
+		enemy.hear_noise(global_position, 132.0)
 	if is_instance_valid(enemy) and enemy.health > 0 and global_position.distance_to(enemy.global_position) < 64:
 		var toward: Vector2 = global_position.direction_to(enemy.global_position)
 		if facing.dot(toward) > 0.2:

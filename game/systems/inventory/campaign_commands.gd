@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
@@ -15,7 +16,7 @@ func normalize(request: Dictionary) -> Dictionary:
 		"inventory.transfer": ["instance_id", "from_id", "to_id", "quantity"],
 		"inventory.purchase": ["offer_id"], "inventory.claim_parcel": ["parcel_id"],
 		"progression.claim_reward": ["reward_id"], "clock.rest": ["target_minute"],
-		"scene.transition": ["destination_scene_id", "entry_point_id"], "session.save": []
+		"scene.transition": ["destination_scene_id", "entry_point_id"], "session.save": [], "session.upgrade_world": []
 	}
 	var kind = request.get("command_type")
 	if rules.get("gameplay", false) and kind is String and kind.begins_with("game."):
@@ -65,7 +66,10 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 		if kind in ["scene.transition", "inventory.purchase", "inventory.claim_parcel"] and not state.world_states.first_enemy_defeated:
 			return fail("UNAVAILABLE")
 		if kind.begins_with("game."):
-			var checked := revisions(state, request, ["world", "farm", "residents", "inventory:player", "inventory:storage"])
+			var keys := ["world", "farm", "residents", "inventory:player", "inventory:storage"]
+			if kind in ["game.expand_farm", "game.fulfill_contract", "game.trade_camp", "game.claim_expedition", "game.resolve_district"]:
+				keys.append("wallet")
+			var checked := revisions(state, request, keys)
 			if not checked.ok:
 				return checked
 			return Gameplay.plan(state, request, rules)
@@ -148,6 +152,15 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			if not p.destination_scene_id in rules.scenes or not p.entry_point_id in rules.scenes[p.destination_scene_id] or p.destination_scene_id == state.scene.current_scene_id:
 				return fail("INVALID_ARGUMENT")
 			var old: String = state.scene.current_scene_id
+			if state.schema_version == 4:
+				var linked := Layout.linked(rules.scenes, old, p.destination_scene_id, state.world_states.layout)
+				var shelter_warp: bool = p.entry_point_id == "default" and (p.destination_scene_id == "shelter" or (old == "shelter" and p.destination_scene_id == state.scene.return_scene_id))
+				if not linked and not shelter_warp:
+					return fail("INVALID_ARGUMENT")
+				if p.entry_point_id != "default" and p.entry_point_id != "from_" + old:
+					return fail("INVALID_ARGUMENT")
+			elif p.destination_scene_id not in ["hospital", "outside", "shelter", "louvre"] and rules.has("world_seed"):
+				return fail("INVALID_ARGUMENT")
 			var arrival = request.context.get("arrival_position", state.scene.positions.get(p.destination_scene_id, {"x": 0.0, "y": 0.0}))
 			if not Model.valid_position(arrival):
 				return fail("INVALID_ARGUMENT")
@@ -161,6 +174,36 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 				state.scene.return_scene_id = old
 			bump(state, ["scene"])
 			return success({"from_scene_id": old, "to_scene_id": p.destination_scene_id})
+		"session.upgrade_world":
+			if not rules.has("world_seed"):
+				return fail("UNAVAILABLE")
+			var legacy: bool = state.schema_version == 3
+			if not legacy and (state.schema_version != 4 or state.world_states.layout.generator_version == Layout.VERSION):
+				return fail("UNAVAILABLE")
+			var rev := revisions(state, request, ["world", "scene"])
+			if not rev.ok:
+				return rev
+			var seed_value: int = rules.world_seed if legacy else int(state.world_states.layout.seed)
+			if legacy:
+				state.schema_version = 4
+				state.world_states.locations = {}
+			state.world_states.layout = Layout.manifest(seed_value)
+			var previous_entry: String = state.scene.entry_point_id
+			if previous_entry != "default" and not Layout.linked(rules.scenes, previous_entry.trim_prefix("from_"), state.scene.current_scene_id, state.world_states.layout):
+				state.scene.entry_point_id = "default"
+			var nodes := Layout.from_manifest(state.world_states.layout)
+			for id in state.scene.positions:
+				state.scene.positions[id] = safe_legacy_position(nodes[id], state.scene.positions[id])
+			state.player.position = safe_legacy_position(nodes[state.scene.current_scene_id], request.context.get("departure_position", state.player.position))
+			state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate()
+			if state.scene.last_outside_position != null:
+				state.scene.last_outside_position = safe_legacy_position(nodes[state.scene.return_scene_id], state.scene.last_outside_position)
+			if request.context.has("health"):
+				if not Core.valid_integer(request.context.health) or request.context.health > 100:
+					return fail("INVALID_ARGUMENT")
+				state.player.hp = int(request.context.health)
+			bump(state, ["world", "scene"])
+			return success({"seed": seed_value})
 		"session.save":
 			if rules.get("gameplay", false) and request.context.has("health"):
 				if not Core.valid_integer(request.context.health) or request.context.health > 100:
@@ -168,6 +211,14 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 				state.player.hp = int(request.context.health)
 			return success({})
 	return fail("UNAVAILABLE")
+
+static func safe_legacy_position(node: Dictionary, position) -> Dictionary:
+	var bounds: Rect2 = node.bounds.grow(-15)
+	if Model.valid_position(position):
+		var point := Vector2(position.x, position.y)
+		if bounds.has_point(point) and node.obstacles.all(func(rect): return not rect.grow(10).has_point(point)):
+			return position.duplicate()
+	return {"x": node.spawn.x, "y": node.spawn.y}
 
 func revisions(state: Dictionary, request: Dictionary, required: Array) -> Dictionary:
 	var expected = request.context.get("expected_resource_revisions")

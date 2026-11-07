@@ -2,7 +2,7 @@ extends RefCounted
 
 const ROOT = "res://game/assets/vendor/kibyra_ui/"
 const ROLES = ["button_frame", "focus_frame", "panel_frame", "heart", "coin", "inventory", "sword", "quests", "menu", "farm", "rest", "residents", "save", "shelter", "hero_xp", "shelter_xp", "back", "accept"]
-const PANEL_ICONS = {"welcome": "shelter", "menu": "menu", "inventory": "inventory", "farm": "farm", "rest": "rest", "residents": "residents", "quests": "quests", "shop": "coin", "save": "save", "new_confirm": "back", "credits": "shelter"}
+const PANEL_ICONS = {"welcome": "shelter", "menu": "menu", "inventory": "inventory", "farm": "farm", "rest": "rest", "residents": "residents", "quests": "quests", "shop": "coin", "save": "save", "new_confirm": "back", "credits": "shelter", "map": "quests"}
 static var _textures: Dictionary = {}
 
 static func texture(role: String) -> Texture2D:
