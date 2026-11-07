@@ -1,6 +1,9 @@
 extends SceneTree
 
+const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
+const Work = preload("res://game/systems/shelter/resident_work.gd")
+const Logic = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Workshop = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const Model = preload("res://game/state/campaign_model.gd")
@@ -90,6 +93,9 @@ func run() -> void:
 	for record in geometry.values():
 		passable = passable and reachable_floor(record)
 	check(passable, "all catalog geometries provide collision clearance to doors and resource point")
+	check(geometry.values().all(func(record): return record.obstacles != Layout.FALLBACK_BLOCKS), "every authored segment passes the runtime geometry guard")
+	var fallback := Layout.checked_obstacles([Rect2(61, 116, 20, 50)])
+	check(fallback == Layout.FALLBACK_BLOCKS and reachable_floor({"obstacles": fallback, "links": ["a", "b", "c", "d", "e", "f"]}), "invalid geometry falls back to a passable module with the same door slots")
 	var app = preload("res://game/scenes/main/playable.tscn").instantiate()
 	var path := "user://world-tests/" + str(Time.get_ticks_usec()) + ".json"
 	app.save_location = path
@@ -154,13 +160,45 @@ func run() -> void:
 	test_workshop(app)
 	test_resident_work(app)
 	test_camp_network(app)
+	test_expedition(app)
+	await test_patrol(app)
+	await measure_world_switches(app)
+	test_furniture(app)
 	var legacy = Campaign.new(Rules.build())
 	check(app.save_store.write_checkpoint(legacy.coordinator.get_snapshot(), Model.validate.bind(app.rules())).get("committed", false), "legacy fixture writes version 3 checkpoint")
 	check(app.load_game().ok and app.snapshot().schema_version == 3 and app.scene_router.current_world().layout.is_empty(), "old version 3 saves load with original geometry")
-	app.free()
+	var legacy_state: Dictionary = app.snapshot()
+	app.save_store.fault = "before_replace"
+	check(app.command("session.upgrade_world").code == "SAVE_FAILED" and app.snapshot() == legacy_state and app.scene_router.current_world().layout.is_empty(), "failed upgrade leaves the previous world and save intact")
+	app.save_store.fault = ""
+	check(app.command("session.upgrade_world").ok and app.snapshot().schema_version == 4 and not app.scene_router.current_world().layout.is_empty(), "explicit migration mounts procedural geometry in the same scene slot")
+	check(app.snapshot().inventory == legacy_state.inventory and app.save_store.read_checkpoint(path + ".bak").state.schema_version == 3, "migration keeps player inventory and backs up the previous schema")
+	current_scene = app
+	app.ui.open_panel("new_confirm")
+	var seed_fields: Array = app.ui.body.get_children().filter(func(node): return node is LineEdit)
+	check(seed_fields.size() == 1, "new game confirmation provides a seed input")
+	app.new_game("2147483648")
+	check(FileAccess.file_exists(path) and current_scene == app, "invalid seed leaves the existing campaign and checkpoint in place")
+	if not seed_fields.is_empty():
+		seed_fields[0].text_submitted.emit("12345")
 	await process_frame
-	for suffix in ["", ".bak"]:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+	await process_frame
+	var next = current_scene
+	check(is_instance_valid(next) and next != app and next.snapshot().world_states.layout.seed == 12345 and next.ui.panel_id.is_empty(), "seed input starts the specified world through the normal scene reload")
+	if is_instance_valid(next):
+		next.free()
+	await process_frame
+	var directory := path.get_base_dir()
+	var prefix := path.get_file()
+	var archives := 0
+	for name in DirAccess.get_files_at(directory):
+		if name.begins_with(prefix):
+			if ".archive-" in name:
+				archives += 1
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(directory.path_join(name)))
+	check(archives == 2, "new campaign preserves both previous save files as archives")
+	await test_survival(91)
+	await test_survival(263)
 	print("WORLD TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
@@ -254,3 +292,134 @@ func test_camp_network(app) -> void:
 	check(app.transition("shelter").ok and app.command("clock.rest", {"target_minute": (day + 1) * Camp.DAY + Camp.OPEN}).ok, "advance to the next request")
 	check(Camp.schedule(int(app.snapshot().game_time_minutes), 54).faction == "settlers", "requests alternate factions on the shared calendar")
 	check(follow(app, "outside") and follow(app, "louvre") and app.command("game.trade_camp", {"faction": "scouts"}).ok, "daily stock replenishes while the faction retains trust")
+
+func test_patrol(app) -> void:
+	check(follow(app, "outside") and app.enemy() == null, "starting district leaves the critical supply route open")
+	var road: String = ""
+	for id in app.scene_router.current_world().layout.links:
+		if id.begins_with("street_"):
+			road = id
+			break
+	check(not road.is_empty() and follow(app, road) and is_instance_valid(app.enemy()), "outer district mounts an independent patrol")
+	var foe = app.enemy()
+	if not is_instance_valid(foe):
+		return
+	var start: Vector2 = foe.position
+	for frame in range(5):
+		await physics_frame
+	check(foe.position.distance_to(start) > 0.5 and foe.alert_remaining == 0, "unalerted enemy follows its patrol")
+	app.hero.position = foe.position - Vector2(105, 0)
+	app.hero.attack_cooldown = 0
+	check(app.hero.try_attack(foe.position) and foe.alert_remaining > 0 and foe.last_noise == app.hero.position, "attack noise attracts the enemy outside sight range")
+	check(follow(app, "outside") and follow(app, road), "player can abandon a fight and return by the same road")
+	foe = app.enemy()
+	foe.health = 0
+	app.enemy_defeated()
+	check(road in app.snapshot().world_states.get("cleared_patrols", []), "patrol defeat is tracked per district")
+	check(app.load_game().ok and app.enemy() == null, "cleared patrol stays gone after reloading")
+
+func measure_world_switches(app) -> void:
+	if not follow(app, "outside"):
+		check(false, "reach the switch measurement route")
+		return
+	await process_frame
+	var before := OS.get_static_memory_usage()
+	var timings := PackedFloat64Array()
+	var correct := true
+	var hero = app.hero
+	for index in range(24):
+		var destination := "house_0" if index % 2 == 0 else "outside"
+		var started := Time.get_ticks_usec()
+		correct = follow(app, destination) and correct
+		timings.append((Time.get_ticks_usec() - started) / 1000.0)
+		correct = correct and app.get_node("WorldHost").get_child_count() == 3 and app.hero == hero
+		await process_frame
+	timings.sort()
+	print("WORLD SWITCH METRICS %s n=%d median_ms=%.3f peak_ms=%.3f retained_engine_bytes=%d" % [OS.get_name(), timings.size(), timings[12], timings[23], OS.get_static_memory_usage() - before])
+	check(correct, "24 consecutive transitions keep one mounted world, one camera and the same hero")
+
+func test_expedition(app) -> void:
+	var state: Dictionary = app.snapshot()
+	var expected := Expedition.choose_target(state)
+	check(not expected.is_empty() and app.command("game.accept_expedition").ok and app.snapshot().quests.expedition.target == expected, "camp assigns a hospital objective from the actual world")
+	check(app.command("game.claim_expedition").code == "UNAVAILABLE", "expedition reward requires completing the objective")
+	var nodes := Layout.from_manifest(state.world_states.layout)
+	state.world_states.locations[expected] = {"defeated": true}
+	check(Expedition.choose_target(state) != expected, "objective selector skips exhausted hospitals")
+	for id in nodes:
+		if id != "hospital" and nodes[id].kind == "hospital":
+			state.world_states.locations[id] = {"defeated": true}
+	check(Expedition.choose_target(state).is_empty(), "fully cleared world receives a supply objective")
+	var path := Layout.route(nodes, "louvre", expected)
+	var traversed: bool = path.size() > 1
+	for id in path.slice(1):
+		traversed = traversed and follow(app, id)
+	check(traversed and is_instance_valid(app.enemy()), "generated route reaches the assigned enemy")
+	var foe = app.enemy()
+	if not is_instance_valid(foe):
+		return
+	var hospital = app.scene_router.current_world()
+	var cache := Layout.hospital_cache(expected, app.snapshot().world_states.layout)
+	app.hero.position = hospital.resource_point
+	hospital.interact()
+	check(app.last_result.ok and app.last_result.data.type_id == cache.item, "hospital floor grants its configured supply")
+	hospital.interact()
+	check(app.last_result.code == "UNAVAILABLE", "hospital supplies are finite")
+	foe.health = 0
+	app.enemy_defeated()
+	check(app.snapshot().world_states.locations[expected] == {"cache_looted": true, "defeated": true}, "looting and defeat persist independently on one floor")
+	path.reverse()
+	for id in path.slice(1):
+		traversed = traversed and follow(app, id)
+	check(traversed and app.command("game.claim_expedition").ok, "completed expedition pays on returning to camp")
+	check(app.load_game().ok and app.command("game.claim_expedition").code == "UNAVAILABLE", "expedition payout remains unique after reload")
+
+func test_furniture(app) -> void:
+	var cabinet := {"cell": "1", "structure": "cabinet"}
+	var bed := {"cell": "2", "structure": "bed"}
+	var materials := int(Workshop.STRUCTURES.cabinet.cost) + int(Workshop.STRUCTURES.bed.cost)
+	for trip in range(3):
+		if Logic.quantity(app.snapshot(), "material.salvage") >= materials:
+			break
+		app.transition("shelter")
+		app.command("clock.rest", {"target_minute": int(app.snapshot().game_time_minutes) + Workshop.SALVAGE_INTERVAL})
+		follow(app, "outside")
+		app.hero.position = Workshop.SALVAGE_POINT
+		app.scene_router.current_world().interact()
+	check(app.transition("shelter").ok and app.command("game.build", cabinet).ok and app.command("game.build", bed).ok, "salvage supports separate storage and housing upgrades")
+	var state: Dictionary = app.snapshot()
+	var base: int = int(app.rules().containers[1].capacity_units)
+	check(state.inventory.containers[1].capacity_units == base + Workshop.CABINET_CAPACITY and Work.duration(state, "resident_1") == Work.RESTED_DURATION, "cabinet adds storage and a bed shortens a resident shift")
+	state.inventory.items.append({"instance_id": "fixture:full-cabinet", "type_id": "material.salvage", "container_id": "storage", "quantity": base + 1})
+	check(app.save_store.write_checkpoint(state, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok and app.scene_router.current_world().building_bodies.has("1"), "expanded storage and cabinet restore together")
+	check(app.command("game.dismantle", {"cell": "1"}).code == "CAPACITY_EXCEEDED", "occupied capacity prevents cabinet demolition")
+	var moved: Dictionary = app.command("inventory.transfer", {"instance_id": "fixture:full-cabinet", "from_id": "storage", "to_id": "player", "quantity": 1})
+	check(moved.ok and app.command("game.dismantle", {"cell": "1"}).ok and app.snapshot().inventory.containers[1].capacity_units == base, "clearing excess stock allows demolition without item loss")
+
+func test_survival(seed_value: int) -> void:
+	var app = preload("res://game/scenes/main/playable.tscn").instantiate()
+	var path := "user://world-tests/survival-%d-%s.json" % [seed_value, Time.get_ticks_usec()]
+	app.save_location = path
+	app.starting_seed = seed_value
+	root.add_child(app)
+	app.ui.close_panel()
+	app.enemy().health = 0
+	app.enemy_defeated()
+	var exhausted: Dictionary = app.snapshot()
+	exhausted.wallet.system_coins = 0
+	var saved: bool = app.save_store.write_checkpoint(exhausted, Model.validate.bind(app.rules())).get("committed", false)
+	check(saved and app.load_game().ok and Logic.quantity(app.snapshot(), "seed.basic") == 0, "seed %d starts the recovery route without seed or money" % seed_value)
+	var viable := true
+	for day in range(3):
+		viable = follow(app, "outside") and viable
+		app.hero.position = app.scene_router.current_world().resource_point
+		app.scene_router.current_world().interact()
+		viable = app.last_result.ok and app.transition("shelter").ok and viable
+		viable = app.command("game.plant", {"plot_id": "plot_1"}).ok and app.command("game.water", {"plot_id": "plot_1"}).ok and viable
+		viable = app.command("clock.rest", {"target_minute": app.next_harvest_minute()}).ok and app.command("game.harvest", {"plot_id": "plot_1"}).ok and viable
+		viable = app.command("clock.rest", {"target_minute": (day + 1) * Camp.DAY}).ok and app.load_game().ok and viable
+	check(viable and Logic.quantity(app.snapshot(), "crop.potato") == 9 and app.snapshot().wallet.system_coins == 0, "seed %d sustains three days of harvests with no purchases or optional orders" % seed_value)
+	app.free()
+	await process_frame
+	for suffix in ["", ".bak"]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))

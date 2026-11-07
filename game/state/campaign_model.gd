@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldLayout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/state/gameplay_state.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
@@ -86,7 +87,13 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	for reward_id in state.claimed_reward_ids:
 		if not rules.rewards.has(reward_id):
 			return false
-	if state.inventory.containers != rules.containers:
+	var expected_containers: Array = rules.containers
+	if state.schema_version == 4:
+		var buildings = state.shelter.get("buildings", {})
+		if not buildings is Dictionary:
+			return false
+		expected_containers = Construction.storage_containers(expected_containers, buildings)
+	if state.inventory.containers != expected_containers:
 		return false
 	var capacities: Dictionary = {}
 	for container in state.inventory.containers:

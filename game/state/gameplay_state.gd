@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
@@ -93,31 +94,46 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
 	if state.schema_version == 4:
-		var known_fields := 5 + int(state.world_states.has("salvage_ready_at")) + int(state.world_states.has("camp_network"))
+		var known_fields := 5 + int(state.world_states.has("salvage_ready_at")) + int(state.world_states.has("camp_network")) + int(state.world_states.has("cleared_patrols"))
 		if state.world_states.size() != known_fields or not state.world_states.get("locations") is Dictionary:
 			return false
 		if not Construction.validate(state.shelter.get("buildings", {}), state.world_states.get("salvage_ready_at", {}), rules.scenes):
 			return false
 		if state.world_states.has("camp_network") and not Camp.valid_record(state.world_states.camp_network, int(state.game_time_minutes)):
 			return false
+		var cleared = state.world_states.get("cleared_patrols", [])
+		if not cleared is Array or cleared.size() > 3:
+			return false
+		var seen := {}
+		for id in cleared:
+			if not id is String or seen.has(id) or not Layout.street_has_patrol(id, state.world_states.layout):
+				return false
+			seen[id] = true
 		for id in state.world_states.locations:
 			if not id is String or not rules.scenes.has(id):
 				return false
 			var record = state.world_states.locations[id]
-			if not record is Dictionary or record.size() != 1:
+			if not record is Dictionary or record.is_empty():
 				return false
 			match Layout.kind(id):
 				"outside":
-					if id == "outside" or not integer(record.get("resource_ready_at")):
+					if id == "outside" or record.size() != 1 or not integer(record.get("resource_ready_at")):
 						return false
 				"house":
-					if not record.get("looted") is bool or not record.looted:
+					if record.size() != 1 or not record.get("looted") is bool or not record.looted:
 						return false
 				"hospital":
-					if id == "hospital" or not record.get("defeated") is bool or not record.defeated:
-						return false
+					for key in record:
+						if not record[key] is bool or not record[key]:
+							return false
+						if key == "defeated" and id != "hospital":
+							continue
+						if key != "cache_looted" or Layout.hospital_cache(id, state.world_states.layout).is_empty():
+							return false
 				_:
 					return false
+		if state.quests.has("expedition") and not Expedition.validate(state.quests.expedition, state, rules.scenes):
+			return false
 	elif state.world_states.size() != 3:
 		return false
 	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags) or state.world_states.first_enemy_defeated != ("system" in state.claimed_reward_ids):
@@ -150,5 +166,9 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 			return false
 	for resident in state.residents.records:
 		if resident.status == "joined" and rules.food.reserve_mode == "reserve" and food_by_resident.get(resident.id, 0) != rules.food.units_per_resident:
+			return false
+	if state.schema_version == 4 and rules.get("housing_required", false):
+		var housed: Array = state.residents.records.filter(func(resident): return resident.status == "joined")
+		if Construction.count(state.shelter.get("buildings", {}), "bed") < housed.size():
 			return false
 	return rules.food.reserve_mode == "reserve" or state.inventory.reservations.is_empty()

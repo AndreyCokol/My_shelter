@@ -8,6 +8,13 @@ const DISTRICTS = 4
 const FLOORS = 4
 const MAX_SEED = 2147483647
 const DOORS = [Vector2(65, 125), Vector2(575, 125), Vector2(65, 215), Vector2(575, 215), Vector2(65, 305), Vector2(575, 305)]
+const WORLD_BOUNDS := Rect2(30, 95, 580, 240)
+# These connected lanes protect the door approaches, default arrival and supply points.
+const PROTECTED_LANES := [
+	Rect2(60, 120, 30, 191), Rect2(550, 120, 30, 191),
+	Rect2(60, 297, 520, 20), Rect2(115, 252, 10, 55), Rect2(295, 262, 10, 55),
+]
+const FALLBACK_BLOCKS := [Rect2(210, 148, 50, 32)]
 const STREET_BLOCKS = [
 	[Rect2(185, 115, 118, 42), Rect2(382, 187, 96, 40)],
 	[Rect2(230, 160, 138, 34), Rect2(420, 105, 75, 52)],
@@ -31,6 +38,13 @@ const STREET_PROFILES = ["Перекрёсток", "Разбитое КПП", "�
 const HOUSE_PROFILES = ["Студия", "Семейная квартира", "Коммунальная квартира", "Мастерская в доме"]
 const HOSPITAL_PROFILES = ["Приёмное отделение", "Палаты", "Операционный блок", "Лаборатория"]
 
+const HOSPITAL_CACHES = [
+	{"label": "Склад приёмного отделения", "item": "material.salvage", "quantity": 2},
+	{"label": "Провизия персонала", "item": "crop.potato", "quantity": 1},
+	{"label": "Разобранное оборудование", "item": "material.salvage", "quantity": 3},
+	{"label": "Аварийное освещение", "item": "material.lamp_kit", "quantity": 1},
+]
+
 static func street(district: int) -> String:
 	return "outside" if district == 0 else "street_%d" % district
 
@@ -48,6 +62,15 @@ static func kind(id: String) -> String:
 	if id.begins_with("house_"):
 		return "house"
 	return id
+
+static func hospital_cache(id: String, data: Dictionary) -> Dictionary:
+	if int(data.generator_version) < 2 or kind(id) != "hospital":
+		return {}
+	var floor_index := 0 if id == "hospital" else int(id.get_slice("_", 2)) - 1
+	return HOSPITAL_CACHES[floor_index]
+
+static func street_has_patrol(id: String, data: Dictionary) -> bool:
+	return int(data.generator_version) >= 2 and id in ["street_1", "street_2", "street_3"]
 
 static func manifest(world_seed: int) -> Dictionary:
 	return {"seed": world_seed, "generator_version": VERSION, "catalog_version": CATALOG_VERSION}
@@ -69,8 +92,17 @@ static func _variant_order(world_seed: int, stream: String) -> Array:
 		result[other] = saved
 	return result
 
+static func checked_obstacles(obstacles: Array) -> Array:
+	for obstacle in obstacles:
+		if not obstacle is Rect2 or not obstacle.is_finite() or obstacle.size.x <= 0 or obstacle.size.y <= 0 or not WORLD_BOUNDS.encloses(obstacle):
+			return FALLBACK_BLOCKS
+		for lane in PROTECTED_LANES:
+			if obstacle.grow(10).intersects(lane):
+				return FALLBACK_BLOCKS
+	return obstacles
+
 static func _record(type: String, label: String, segment: String, obstacles: Array) -> Dictionary:
-	return {"kind": type, "label": label, "segment": segment, "obstacles": obstacles, "links": []}
+	return {"kind": type, "label": label, "segment": segment, "obstacles": checked_obstacles(obstacles), "links": []}
 
 static func _connect(nodes: Dictionary, left: String, right: String) -> void:
 	nodes[left].links.append(right)
@@ -128,6 +160,22 @@ static func build(world_seed: int, version: int = VERSION) -> Dictionary:
 	_connect(nodes, "outside", "louvre")
 	_connect(nodes, "outside", "shelter")
 	return nodes
+
+static func route(nodes: Dictionary, origin: String, destination: String) -> Array[String]:
+	var visited := {origin: ""}
+	var frontier: Array[String] = [origin]
+	while not frontier.is_empty() and not visited.has(destination):
+		var id: String = frontier.pop_front()
+		for neighbor in nodes[id].links:
+			if not visited.has(neighbor):
+				visited[neighbor] = id
+				frontier.append(neighbor)
+	var result: Array[String] = []
+	var cursor := destination
+	while visited.has(cursor) and not cursor.is_empty():
+		result.push_front(cursor)
+		cursor = visited[cursor]
+	return result
 
 static func entries() -> Dictionary:
 	# Trusted registry includes every possible marker. Actual links are checked against the save.

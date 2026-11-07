@@ -10,6 +10,9 @@ var location_label: String = ""
 var resource_point := Vector2(300, 190)
 var building_bodies := {}
 var buildings := {}
+var hospital_cache := {}
+var occlusion: Node2D
+var last_occlusion_position := Vector2.INF
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
@@ -36,6 +39,11 @@ func _ready() -> void:
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
 		add_wall(rect)
+	if not layout.get("obstacles", []).is_empty():
+		occlusion = Node2D.new()
+		occlusion.z_index = 21
+		occlusion.draw.connect(draw_occlusion)
+		add_child(occlusion)
 	if not layout.is_empty():
 		queue_redraw()
 		return
@@ -84,11 +92,17 @@ func bind(runtime) -> void:
 		foe.free()
 	foe = null
 	var state: Dictionary = app.snapshot()
+	hospital_cache = Layout.hospital_cache(location_id, state.world_states.layout) if state.schema_version == 4 else {}
 	var defeated: bool = state.world_states.first_enemy_defeated if location_id in ["", "hospital"] else state.world_states.get("locations", {}).get(location_id, {}).get("defeated", false)
-	if scene_id == "hospital" and not defeated:
+	var patrol: bool = state.schema_version == 4 and Layout.street_has_patrol(location_id, state.world_states.layout) and not location_id in state.world_states.get("cleared_patrols", [])
+	if (scene_id == "hospital" and not defeated) or patrol:
 		foe = preload("res://game/entities/enemies/enemy.gd").new()
 		foe.app = app
 		foe.position = Vector2(330, 190)
+		if patrol:
+			foe.patrol = PackedVector2Array([Vector2(235, 248), Vector2(455, 248), Vector2(455, 296), Vector2(235, 296)])
+			foe.patrol_index = floori(float(state.game_time_minutes) / 30) % foe.patrol.size()
+			foe.position = foe.patrol[foe.patrol_index]
 		add_child(foe)
 	refresh_buildings()
 	queue_redraw()
@@ -102,6 +116,8 @@ func interact() -> void:
 		app.command("game.salvage")
 	elif scene_id in ["outside", "house"] and app.hero.position.distance_to(resource_point) < 55:
 		app.command("game.resource_collect")
+	elif scene_id == "hospital" and not hospital_cache.is_empty() and app.hero.position.distance_to(resource_point) < 37:
+		app.command("game.hospital_cache")
 	elif scene_id == "shelter":
 		if app.hero.position.distance_to(Vector2(220, 195)) < 58:
 			app.ui.open_panel("farm")
@@ -113,6 +129,19 @@ func interact() -> void:
 			app.ui.open_panel("inventory")
 	elif scene_id == "louvre":
 		app.ui.open_panel("residents")
+
+func _process(_delta: float) -> void:
+	if occlusion != null and app != null and app.hero.position != last_occlusion_position:
+		last_occlusion_position = app.hero.position
+		occlusion.queue_redraw()
+
+func draw_occlusion() -> void:
+	if app == null:
+		return
+	for obstacle in layout.obstacles:
+		if app.hero.position.y < obstacle.end.y and obstacle.grow(18).has_point(app.hero.position):
+			occlusion.draw_rect(obstacle, Color("424a57"))
+			occlusion.draw_rect(obstacle.grow(-3), Color("353e49"))
 
 func draw_location_detail() -> void:
 	if layout.is_empty():
@@ -168,6 +197,11 @@ func _draw() -> void:
 		for x in [75, 170, 450]:
 			draw_rect(Rect2(x, 120, 44, 68), Color("62747c"))
 			draw_rect(Rect2(x + 5, 125, 34, 16), Color("d3d6c8"))
+	elif scene_id == "hospital" and not hospital_cache.is_empty():
+		var looted: bool = app.snapshot().world_states.locations.get(location_id, {}).get("cache_looted", false)
+		draw_rect(Rect2(resource_point - Vector2(11, 8), Vector2(22, 16)), Color("49595d") if looted else Color("8d876b"))
+		var label: String = "Пустой ящик" if looted else hospital_cache.label
+		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-62, -12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c1cbce"))
 	elif scene_id == "shelter":
 		draw_colored_polygon(PackedVector2Array([Vector2(360, 205), Vector2(405, 130), Vector2(450, 205)]), Color("bda16c"))
 		draw_rect(Rect2(392, 170, 27, 35), Color("594c39"))
@@ -192,6 +226,13 @@ func _draw() -> void:
 					"lamp":
 						draw_circle(rect.get_center(), 27, Color(1, 0.77, 0.33, 0.19))
 						draw_circle(rect.get_center(), 9, Color("f4c56f"))
+					"cabinet":
+						draw_rect(rect, Color("87664c"))
+						draw_line(rect.get_center() - Vector2(0, 8), rect.get_center() + Vector2(0, 8), Color("b59162"), 2)
+					"bed":
+						draw_rect(rect, Color("9c7b61"))
+						draw_rect(rect.grow(-3), Color("c2ac80"))
+						draw_rect(Rect2(rect.position + Vector2(3, 3), Vector2(7, 16)), Color("f0d4b0"))
 				draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 8), str(index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("eff0d6"))
 			draw_string(ThemeDB.fallback_font, Vector2(185, 245), "Стройплощадка [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
 	elif scene_id in ["outside", "house"]:

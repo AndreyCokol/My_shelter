@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
@@ -10,8 +11,9 @@ const Numbers = preload("res://game/state/gameplay_state.gd")
 static func normalize(request: Dictionary) -> Dictionary:
 	var fields := {
 		"game.enemy_defeated": [], "game.player_defeated": [], "game.resource_collect": [],
-		"game.salvage": [], "game.build": ["cell", "structure"], "game.dismantle": ["cell"], "game.craft": ["recipe"],
+		"game.salvage": [], "game.hospital_cache": [], "game.build": ["cell", "structure"], "game.dismantle": ["cell"], "game.craft": ["recipe"],
 		"game.expand_farm": [], "game.plant": ["plot_id"], "game.water": ["plot_id"], "game.harvest": ["plot_id"], "game.clear": ["plot_id"],
+		"game.accept_expedition": [], "game.claim_expedition": [],
 		"game.fulfill_contract": ["day", "faction"], "game.trade_camp": ["faction"],
 		"game.assign_shift": ["resident_id", "job"], "game.collect_shift": ["resident_id"],
 		"game.contact": ["resident_id"], "game.consent": ["resident_id", "accept"], "game.recruit": ["resident_id"],
@@ -102,10 +104,22 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 	var kind: String = request.command_type
 	var scene: String = state.scene.current_scene_id
 	if kind == "game.enemy_defeated":
-		if state.schema_version == 4 and scene != "hospital" and Layout.kind(scene) == "hospital":
-			if not state.world_states.first_enemy_defeated or state.world_states.locations.has(scene):
+		if state.schema_version == 4 and Layout.street_has_patrol(scene, state.world_states.layout):
+			var cleared: Array = state.world_states.get("cleared_patrols", [])
+			if not state.world_states.first_enemy_defeated or scene in cleared:
 				return fail("INVALID_STATE")
-			state.world_states.locations[scene] = {"defeated": true}
+			cleared.append(scene)
+			state.world_states.cleared_patrols = cleared
+			state.player.xp += 1
+			state.wallet.system_coins += 1
+			bump(state, ["world", "wallet"])
+			return success()
+		if state.schema_version == 4 and scene != "hospital" and Layout.kind(scene) == "hospital":
+			var location: Dictionary = state.world_states.locations.get(scene, {})
+			if not state.world_states.first_enemy_defeated or location.get("defeated", false):
+				return fail("INVALID_STATE")
+			location.defeated = true
+			state.world_states.locations[scene] = location
 			state.player.xp += 2
 			state.wallet.system_coins += 2
 			bump(state, ["world", "wallet"])
@@ -151,6 +165,19 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		else:
 			state.world_states.locations[scene] = {"resource_ready_at": ready_at}
 		return success({"ready_at": ready_at})
+	if kind == "game.hospital_cache":
+		if state.schema_version != 4:
+			return fail("UNAVAILABLE")
+		var cache := Layout.hospital_cache(scene, state.world_states.layout)
+		var location: Dictionary = state.world_states.locations.get(scene, {})
+		if cache.is_empty() or location.get("cache_looted", false):
+			return fail("UNAVAILABLE")
+		if not give(state, rules, cache.item, cache.quantity, request.action_id):
+			return fail("CAPACITY_EXCEEDED")
+		location.cache_looted = true
+		state.world_states.locations[scene] = location
+		bump(state, ["world"])
+		return success({"type_id": cache.item, "quantity": cache.quantity})
 	if kind == "game.salvage":
 		if state.schema_version != 4 or Layout.kind(scene) != "outside":
 			return fail("UNAVAILABLE")
@@ -163,6 +190,8 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		state.world_states.salvage_ready_at = ready
 		bump(state, ["world"])
 		return success({"ready_at": ready[scene]})
+	if kind in ["game.accept_expedition", "game.claim_expedition"]:
+		return plan_expedition(state, request)
 	if kind in ["game.fulfill_contract", "game.trade_camp"]:
 		return plan_camp(state, request, rules)
 	if kind in ["game.assign_shift", "game.collect_shift"]:
@@ -259,6 +288,10 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 			"game.recruit":
 				if not resident.consent:
 					return fail("REQUIRES_CONSENT")
+				if state.schema_version == 4 and rules.get("housing_required", false):
+					var housed: Array = state.residents.records.filter(func(entry): return entry.status == "joined")
+					if Construction.count(state.shelter.get("buildings", {}), "bed") <= housed.size():
+						return fail("NEEDS_HOUSING")
 				var needed: int = int(rules.food.units_per_resident)
 				var allocation: Array = []
 				var available_food: int = 0
@@ -291,6 +324,29 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		bump(state, ["residents"])
 		return success()
 	return fail("INVALID_ARGUMENT")
+
+static func plan_expedition(state: Dictionary, request: Dictionary) -> Dictionary:
+	if state.schema_version != 4 or state.scene.current_scene_id != "louvre":
+		return fail("UNAVAILABLE")
+	var order: Dictionary = state.quests.get("expedition", {})
+	if request.command_type == "game.accept_expedition":
+		if not order.is_empty():
+			return fail("INVALID_STATE")
+		order = {"target": Expedition.choose_target(state), "claimed": false}
+	else:
+		if order.is_empty() or order.claimed:
+			return fail("UNAVAILABLE")
+		if order.target.is_empty():
+			if not take(state, "material.salvage", Expedition.SUPPLY_COST):
+				return fail("INSUFFICIENT_RESOURCES")
+		elif not state.world_states.locations.get(order.target, {}).get("defeated", false):
+			return fail("UNAVAILABLE")
+		order.claimed = true
+		state.wallet.system_coins += Expedition.REWARD
+		bump(state, ["wallet"])
+	state.quests.expedition = order
+	bump(state, ["world"])
+	return success(order.duplicate())
 
 static func plan_camp(state: Dictionary, request: Dictionary, rules: Dictionary) -> Dictionary:
 	if state.schema_version != 4 or state.scene.current_scene_id != "louvre":
@@ -340,7 +396,7 @@ static func plan_shift(state: Dictionary, request: Dictionary, rules: Dictionary
 				return fail("INVALID_STATE")
 			if not take(state, Work.FOOD, 1):
 				return fail("INSUFFICIENT_RESOURCES")
-			resident.shift = {"job": p.job, "due": state.game_time_minutes + Work.DURATION, "ready": false}
+			resident.shift = {"job": p.job, "due": state.game_time_minutes + Work.duration(state, resident.id), "ready": false}
 		else:
 			if not resident.get("shift", {}).get("ready", false):
 				return fail("UNAVAILABLE")
@@ -372,9 +428,14 @@ static func plan_workshop(state: Dictionary, request: Dictionary, rules: Diction
 		return success({"type_id": recipe.output})
 	if not Construction.valid_cell(p.cell):
 		return fail("INVALID_ARGUMENT")
+	var previous_cabinets := Construction.count(buildings, "cabinet")
 	if request.command_type == "game.dismantle":
 		if not buildings.has(p.cell):
 			return fail("NOT_FOUND")
+		if buildings[p.cell] == "bed" and rules.get("housing_required", false):
+			var housed: Array = state.residents.records.filter(func(resident): return resident.status == "joined")
+			if Construction.count(buildings, "bed") <= housed.size():
+				return fail("NEEDS_HOUSING")
 		buildings.erase(p.cell)
 	else:
 		if not Construction.STRUCTURES.has(p.structure) or buildings.has(p.cell):
@@ -392,6 +453,17 @@ static func plan_workshop(state: Dictionary, request: Dictionary, rules: Diction
 		state.player.position = {"x": actor.x, "y": actor.y}
 		state.scene.positions.shelter = state.player.position.duplicate()
 		bump(state, ["scene"])
+	if Construction.count(buildings, "cabinet") != previous_cabinets:
+		var containers := Construction.storage_containers(rules.containers, buildings)
+		var used := 0
+		for item in state.inventory.items:
+			if item.container_id == "storage":
+				used += int(item.quantity)
+		for container in containers:
+			if container.id == "storage" and used > container.capacity_units:
+				return fail("CAPACITY_EXCEEDED")
+		state.inventory.containers = containers
+		bump(state, ["inventory:storage"])
 	state.shelter.buildings = buildings
 	bump(state, ["world"])
 	return success({"cell": p.cell})
