@@ -1,5 +1,6 @@
 extends Control
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
 
 var app
@@ -15,7 +16,7 @@ var heading_icon: TextureRect
 var rest_target: int = 0
 var _refresh_pending: bool = false
 const NAMES = {"hospital": "Больница", "outside": "Город", "shelter": "Убежище", "louvre": "Стоянка"}
-const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах"}
+const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
 const ERRORS = {"OK": "Готово", "ALREADY_APPLIED": "Действие уже выполнено", "UNAVAILABLE": "Сейчас недоступно. Проверьте условия или восстановите сохранение.", "INVALID_STATE": "Состояние изменилось: обновите действие или выберите резервную копию.", "INVALID_ARGUMENT": "Проверьте параметры действия.", "INSUFFICIENT_RESOURCES": "Не хватает доступных ресурсов. Зарезервированная еда не расходуется.", "CAPACITY_EXCEEDED": "Рюкзак заполнен. Перенесите предметы в хранилище.", "REQUIRES_CONSENT": "Сначала нужно добровольное согласие путника.", "STALE_REVISION": "Данные изменились. Экран обновлён — повторите выбор.", "NOT_IN_SAFE_AREA": "Отдых и работа с грядками доступны в убежище.", "SAVE_FAILED": "Не удалось записать сохранение. Действие не подтверждено.", "PAUSED": "Осталась другая причина паузы. Закройте её прежде, чем действовать.", "NOT_FOUND": "Объект не найден."}
 
@@ -198,7 +199,9 @@ func update_hud() -> void:
 		return
 	var state: Dictionary = app.snapshot()
 	var minute: int = int(state.game_time_minutes)
-	location.text = NAMES[state.scene.current_scene_id] + "  /  День %d · %02d:%02d" % [minute / 1440 + 1, (minute / 60) % 24, minute % 60]
+	var world = app.scene_router.current_world()
+	var title: String = world.location_label if is_instance_valid(world) and not world.location_label.is_empty() else NAMES.get(state.scene.current_scene_id, state.scene.current_scene_id)
+	location.text = title + "  /  День %d · %02d:%02d" % [minute / 1440 + 1, (minute / 60) % 24, minute % 60]
 	hud.text = "Здоровье %d  ·  Монеты %d  ·  Опыт героя %d  ·  Опыт убежища %d" % [app.hero.health, state.wallet.system_coins, state.player.xp, state.shelter.xp]
 
 func _event(_fact: Dictionary) -> void:
@@ -225,7 +228,7 @@ func render_panel() -> void:
 	var state: Dictionary = app.snapshot()
 	match panel_id:
 		"welcome":
-			line("Офлайн-песочница · первый игровой прототип")
+			line("Офлайн-песочница · процедурный город")
 			line("Победите противника в больнице. Откройте убежище, вырастите урожай и помогите двум путникам обустроиться. После обучения игра свободная.")
 			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище после открытия.")
 			if FileAccess.file_exists(app.save_location):
@@ -240,10 +243,28 @@ func render_panel() -> void:
 		"menu":
 			line("Симуляция и бой приостановлены. Закрытие меню не снимает паузу восстановления.")
 			button(body, "Продолжить", close_panel)
+			button(body, "Карта города", open_panel.bind("map"))
 			button(body, "Сохранение / загрузка", open_panel.bind("save"))
 			button(body, "Новая игра…", open_panel.bind("new_confirm"))
 			button(body, "Об игре и авторах", open_panel.bind("credits"))
 			button(body, "Выйти (несохранённое время будет потеряно)", func(): app.get_tree().quit())
+		"map":
+			if state.schema_version != 4:
+				line("В этом сохранении используются исходные локации.")
+			else:
+				var seed_value: int = int(state.world_states.layout.seed)
+				var nodes := Layout.build(seed_value)
+				var here: String = state.scene.current_scene_id
+				line("Мир %d · %s" % [seed_value, nodes[here].label])
+				var destinations: Array[String] = []
+				for id in nodes[here].links:
+					destinations.append(nodes[id].label)
+				line("Выходы: " + ", ".join(destinations))
+				line("Посещённые места")
+				for id in nodes:
+					if id == here or state.scene.positions.has(id):
+						line(("● " if id == here else "• ") + nodes[id].label)
+			button(body, "Назад", open_panel.bind("menu"))
 		"credits":
 			line("Моё пространственное убежище · игровой прототип")
 			if Art.texture("button_frame") != null:

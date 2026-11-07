@@ -66,7 +66,7 @@ func run() -> void:
 	for id in ["plot_1", "plot_2"]:
 		check(app.command("game.harvest", {"plot_id": id}).ok, "E2E02 durable harvest " + id)
 	check(app.snapshot().quests.records[2].status == "inactive", "E2E07 untracked story never blocks farming")
-	check(app.transition("louvre").ok, "step11 actual NPC world mounted")
+	check(app.transition("outside").ok and app.transition("louvre").ok, "step11 actual NPC world mounted")
 	for id in ["resident_1", "resident_2"]:
 		check(app.command("game.contact", {"resident_id": id}).ok and app.command("game.consent", {"resident_id": id, "accept": true}).ok and app.command("game.recruit", {"resident_id": id}).ok, "E2E04 consent food and resident " + id)
 	app.hero.position = Vector2(200, 270)

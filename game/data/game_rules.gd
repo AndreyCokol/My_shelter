@@ -14,6 +14,10 @@ static func build() -> Dictionary:
 		"resource_respawn_minutes": 60, "resource_quantity": 2}
 
 static func validate(rules: Dictionary) -> bool:
+	if rules.has("world_seed"):
+		var layout = preload("res://game/systems/world/world_layout.gd")
+		if not rules.world_seed is int or rules.world_seed < 0 or rules.world_seed > layout.MAX_SEED or rules.get("scenes") != layout.entries():
+			return false
 	if not rules.get("items") is Dictionary or not rules.get("scenes") is Dictionary or not rules.get("rewards") is Dictionary or not rules.rewards.get("system") is Dictionary:
 		return false
 	for id in ["seed.basic", "crop.potato", "tool.basic"]:

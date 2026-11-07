@@ -1,5 +1,6 @@
 extends RefCounted
 
+const WorldLayout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/state/gameplay_state.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
 
@@ -18,16 +19,21 @@ static func new_state(rules: Dictionary) -> Dictionary:
 
 	if rules.get("gameplay", false):
 		Gameplay.seed(state)
+		if rules.has("world_seed"):
+			state.schema_version = 4
+			state.world_states.layout = WorldLayout.manifest(rules.world_seed)
+			state.world_states.locations = {}
 	return state
 
 static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	var shape := new_state(rules)
+	var legacy: bool = shape.schema_version == 4 and state.get("schema_version") == 3
 	if state.size() != shape.size():
 		return false
 	for key in shape:
 		if not state.has(key):
 			return false
-	if state.schema_version != shape.schema_version or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
+	if (state.schema_version != shape.schema_version and not legacy) or state.scope != "campaign-core" or state.ruleset_version != rules.version or not state.save_id is String or state.save_id.is_empty():
 		return false
 	for value in [state.state_revision, state.game_time_minutes]:
 		if not Core.valid_integer(value):
@@ -39,12 +45,15 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 			return false
 	if not Core.valid_integer(state.player.get("xp")) or not Core.valid_integer(state.wallet.get("system_coins")) or not Core.valid_integer(state.shelter.get("xp")):
 		return false
-	if not state.scene.get("current_scene_id") in rules.scenes or not state.scene.get("return_scene_id") in rules.scenes or not state.scene.get("entry_point_id") in rules.scenes[state.scene.current_scene_id]:
+	var entries: Dictionary = rules.scenes
+	if legacy:
+		entries = {"hospital": ["default"], "outside": ["default"], "shelter": ["default"], "louvre": ["default"]}
+	if not state.scene.get("current_scene_id") in entries or not state.scene.get("return_scene_id") in entries or not state.scene.get("entry_point_id") in entries[state.scene.current_scene_id]:
 		return false
 	if not valid_position(state.player.get("position")) or not state.scene.get("positions") is Dictionary:
 		return false
 	for id in state.scene.positions:
-		if not id in rules.scenes or not valid_position(state.scene.positions[id]):
+		if not id in entries or not valid_position(state.scene.positions[id]):
 			return false
 	if state.scene.get("last_outside_position") != null and not valid_position(state.scene.last_outside_position):
 		return false

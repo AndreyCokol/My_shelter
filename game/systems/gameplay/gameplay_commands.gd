@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
+
 const Numbers = preload("res://game/state/gameplay_state.gd")
 
 static func normalize(request: Dictionary) -> Dictionary:
@@ -90,6 +92,14 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 	var kind: String = request.command_type
 	var scene: String = state.scene.current_scene_id
 	if kind == "game.enemy_defeated":
+		if state.schema_version == 4 and scene != "hospital" and Layout.kind(scene) == "hospital":
+			if not state.world_states.first_enemy_defeated or state.world_states.locations.has(scene):
+				return fail("INVALID_STATE")
+			state.world_states.locations[scene] = {"defeated": true}
+			state.player.xp += 2
+			state.wallet.system_coins += 2
+			bump(state, ["world", "wallet"])
+			return success()
 		if scene != "hospital" or state.world_states.first_enemy_defeated:
 			return fail("INVALID_STATE")
 		if not give(state, rules, "tool.basic", 1, request.action_id):
@@ -113,13 +123,24 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 	if not state.world_states.first_enemy_defeated:
 		return fail("UNAVAILABLE")
 	if kind == "game.resource_collect":
-		if scene != "outside" or state.game_time_minutes < state.world_states.resource_ready_at:
+		var type := Layout.kind(scene) if state.schema_version == 4 else scene
+		if type not in ["outside", "house"]:
+			return fail("UNAVAILABLE")
+		var local_state: Dictionary = state.world_states if scene == "outside" else state.world_states.locations.get(scene, {})
+		if local_state.get("looted", false) or state.game_time_minutes < local_state.get("resource_ready_at", 0):
 			return fail("UNAVAILABLE")
 		if not give(state, rules, "seed.basic", rules.resource_quantity, request.action_id):
 			return fail("CAPACITY_EXCEEDED")
-		state.world_states.resource_ready_at = state.game_time_minutes + rules.resource_respawn_minutes
 		bump(state, ["world"])
-		return success({"ready_at": state.world_states.resource_ready_at})
+		if type == "house":
+			state.world_states.locations[scene] = {"looted": true}
+			return success()
+		var ready_at: int = state.game_time_minutes + rules.resource_respawn_minutes
+		if scene == "outside":
+			state.world_states.resource_ready_at = ready_at
+		else:
+			state.world_states.locations[scene] = {"resource_ready_at": ready_at}
+		return success({"ready_at": ready_at})
 	if kind in ["game.plant", "game.water", "game.harvest", "game.clear"]:
 		if scene != "shelter":
 			return fail("NOT_IN_SAFE_AREA")

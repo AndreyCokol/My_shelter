@@ -148,6 +148,15 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			if not p.destination_scene_id in rules.scenes or not p.entry_point_id in rules.scenes[p.destination_scene_id] or p.destination_scene_id == state.scene.current_scene_id:
 				return fail("INVALID_ARGUMENT")
 			var old: String = state.scene.current_scene_id
+			if state.schema_version == 4:
+				var linked: bool = "from_" + old in rules.scenes[p.destination_scene_id]
+				var shelter_warp: bool = p.entry_point_id == "default" and (p.destination_scene_id == "shelter" or (old == "shelter" and p.destination_scene_id == state.scene.return_scene_id))
+				if not linked and not shelter_warp:
+					return fail("INVALID_ARGUMENT")
+				if p.entry_point_id != "default" and p.entry_point_id != "from_" + old:
+					return fail("INVALID_ARGUMENT")
+			elif p.destination_scene_id not in ["hospital", "outside", "shelter", "louvre"] and rules.has("world_seed"):
+				return fail("INVALID_ARGUMENT")
 			var arrival = request.context.get("arrival_position", state.scene.positions.get(p.destination_scene_id, {"x": 0.0, "y": 0.0}))
 			if not Model.valid_position(arrival):
 				return fail("INVALID_ARGUMENT")

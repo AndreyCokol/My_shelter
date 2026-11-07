@@ -1,5 +1,7 @@
 extends RefCounted
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
+
 static func integer(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= 9007199254740991 and value == floor(value)
 
@@ -78,7 +80,30 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if not flag in ["system_unlocked", "planted", "harvested", "contacted", "consented"] or flag in ids:
 			return false
 		ids.append(flag)
-	if state.world_states.size() != 3 or not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
+	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
+		return false
+	if state.schema_version == 4:
+		if state.world_states.size() != 5 or not Layout.valid_manifest(state.world_states.get("layout")) or not state.world_states.get("locations") is Dictionary:
+			return false
+		for id in state.world_states.locations:
+			if not id is String or not rules.scenes.has(id):
+				return false
+			var record = state.world_states.locations[id]
+			if not record is Dictionary or record.size() != 1:
+				return false
+			match Layout.kind(id):
+				"outside":
+					if id == "outside" or not integer(record.get("resource_ready_at")):
+						return false
+				"house":
+					if not record.get("looted") is bool or not record.looted:
+						return false
+				"hospital":
+					if id == "hospital" or not record.get("defeated") is bool or not record.defeated:
+						return false
+				_:
+					return false
+	elif state.world_states.size() != 3:
 		return false
 	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags) or state.world_states.first_enemy_defeated != ("system" in state.claimed_reward_ids):
 		return false
