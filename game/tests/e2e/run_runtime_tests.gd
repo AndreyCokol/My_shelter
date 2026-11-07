@@ -28,12 +28,19 @@ func run() -> void:
 		await physics_frame
 	Input.action_release("move_right")
 	check(app.hero.position.x > before.x, "step5 actual controller moves on physics frames")
-	app.hero.position = Vector2(605, 300)
+	app.hero.position = Vector2(600, 226)
+	Input.action_press("move_right")
+	for i in range(10):
+		await physics_frame
+	Input.action_release("move_right")
+	check(app.hero.position.x > 610 and app.camera.position.x > 600, "hero and camera cross the first interior sector")
+	var right_edge: float = app.scene_router.current_world().floor_rect().end.x - 15
+	app.hero.position = Vector2(right_edge, 300)
 	Input.action_press("move_right")
 	for i in range(8):
 		await physics_frame
 	Input.action_release("move_right")
-	check(app.hero.position.x <= 605, "step5 walls and world bounds constrain movement")
+	check(app.hero.position.x <= right_edge, "step5 walls and world bounds constrain movement")
 	check(app.hero.try_dodge() and not app.hero.try_dodge(), "step5 dodge cooldown prevents spam")
 	var hp: int = app.hero.health
 	check(not app.hero.take_damage(20) and app.hero.health == hp, "step5 dodge grants invulnerability")
@@ -96,12 +103,14 @@ func run() -> void:
 	app.hero.position = Vector2(500, 130)
 	app.hero.health = 11
 	var loaded_result: Dictionary = app.load_game()
-	if not (loaded_result.ok and app.snapshot() == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270)):
-		print("LOAD DETAIL ", loaded_result, " hp ", app.hero.health, " position ", app.hero.position)
-		for key in saved:
-			if saved[key] != app.snapshot()[key]:
-				print("DIFFERENT ", key, " before=", saved[key], " after=", app.snapshot()[key])
-	check(loaded_result.ok and app.snapshot() == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270), "E2E05 load installs all domains position and health")
+	var loaded: Dictionary = app.snapshot()
+	var positions_match: bool = loaded.scene.positions.keys().size() == saved.scene.positions.keys().size()
+	for id in saved.scene.positions:
+		var before_position: Dictionary = saved.scene.positions[id]
+		var after_position: Dictionary = loaded.scene.positions.get(id, {"x": INF, "y": INF})
+		positions_match = positions_match and Vector2(before_position.x, before_position.y) == Vector2(after_position.x, after_position.y)
+	loaded.scene.positions = saved.scene.positions
+	check(loaded_result.ok and positions_match and loaded == saved and app.hero.health == 73 and app.hero.position == Vector2(200, 270), "E2E05 load installs all domains position and health")
 	app.ui.open_panel("inventory")
 	var reserved_id: String = saved.inventory.reservations[0].instance_id
 	var reserved_stack: Dictionary = saved.inventory.items.filter(func(stack): return stack.instance_id == reserved_id)[0]

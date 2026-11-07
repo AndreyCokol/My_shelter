@@ -175,14 +175,22 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			bump(state, ["scene"])
 			return success({"from_scene_id": old, "to_scene_id": p.destination_scene_id})
 		"session.upgrade_world":
-			if not rules.has("world_seed") or state.schema_version != 3:
+			if not rules.has("world_seed"):
+				return fail("UNAVAILABLE")
+			var legacy: bool = state.schema_version == 3
+			if not legacy and (state.schema_version != 4 or state.world_states.layout.generator_version == Layout.VERSION):
 				return fail("UNAVAILABLE")
 			var rev := revisions(state, request, ["world", "scene"])
 			if not rev.ok:
 				return rev
-			state.schema_version = 4
-			state.world_states.layout = Layout.manifest(rules.world_seed)
-			state.world_states.locations = {}
+			var seed_value: int = rules.world_seed if legacy else int(state.world_states.layout.seed)
+			if legacy:
+				state.schema_version = 4
+				state.world_states.locations = {}
+			state.world_states.layout = Layout.manifest(seed_value)
+			var previous_entry: String = state.scene.entry_point_id
+			if previous_entry != "default" and not Layout.linked(rules.scenes, previous_entry.trim_prefix("from_"), state.scene.current_scene_id, state.world_states.layout):
+				state.scene.entry_point_id = "default"
 			var nodes := Layout.from_manifest(state.world_states.layout)
 			for id in state.scene.positions:
 				state.scene.positions[id] = safe_legacy_position(nodes[id], state.scene.positions[id])
@@ -195,7 +203,7 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 					return fail("INVALID_ARGUMENT")
 				state.player.hp = int(request.context.health)
 			bump(state, ["world", "scene"])
-			return success({"seed": rules.world_seed})
+			return success({"seed": seed_value})
 		"session.save":
 			if rules.get("gameplay", false) and request.context.has("health"):
 				if not Core.valid_integer(request.context.health) or request.context.health > 100:
@@ -205,12 +213,12 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	return fail("UNAVAILABLE")
 
 static func safe_legacy_position(node: Dictionary, position) -> Dictionary:
-	var bounds := Layout.WORLD_BOUNDS.grow(-10)
+	var bounds: Rect2 = node.bounds.grow(-15)
 	if Model.valid_position(position):
 		var point := Vector2(position.x, position.y)
 		if bounds.has_point(point) and node.obstacles.all(func(rect): return not rect.grow(10).has_point(point)):
 			return position.duplicate()
-	return {"x": 120.0, "y": 260.0}
+	return {"x": node.spawn.x, "y": node.spawn.y}
 
 func revisions(state: Dictionary, request: Dictionary, required: Array) -> Dictionary:
 	var expected = request.context.get("expected_resource_revisions")

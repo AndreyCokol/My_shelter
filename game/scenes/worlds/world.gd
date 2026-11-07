@@ -4,6 +4,7 @@ extends Node2D
 var app
 var foe
 var portals: Array = []
+var nearby_exit := ""
 var layout: Dictionary = {}
 var location_id: String = ""
 var location_label: String = ""
@@ -23,22 +24,36 @@ func configure_layout(nodes: Dictionary, id: String) -> void:
 	layout = nodes[id]
 	location_label = layout.label
 	scene_id = layout.kind
-	resource_point = Vector2(300, 267)
+	resource_point = layout.loot
 	var entries := get_node("EntryPoints")
+	entries.get_node("default").position = layout.spawn
 	for index in range(layout.links.size()):
 		var neighbor: String = layout.links[index]
 		var position: Vector2 = Layout.DOORS[index]
+		var inward := Vector2.RIGHT if position.x < 320 else Vector2.LEFT
+		var placement: Dictionary = layout.get("exits", {}).get(neighbor, {
+			"position": position, "arrival": position + inward * 22, "inward": inward,
+			"form": "stairs_up" if scene_id == "hospital" and nodes[neighbor].kind == "hospital" else "door",
+		})
 		var marker := Marker2D.new()
 		marker.name = "from_" + neighbor
-		marker.position = position + Vector2(22 if position.x < 320 else -22, 0)
+		marker.position = placement.arrival
 		entries.add_child(marker)
-		portals.append({"to": neighbor, "entry": "from_" + id, "position": position, "label": nodes[neighbor].label})
+		var portal := placement.duplicate()
+		portal.merge({"to": neighbor, "entry": "from_" + id, "label": nodes[neighbor].label})
+		portals.append(portal)
 
 
 func _ready() -> void:
 	z_index = -10
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	var walls := [Rect2(20, 85, 600, 10), Rect2(20, 335, 600, 10), Rect2(20, 85, 10, 260), Rect2(610, 85, 10, 260)]
+	var floor := floor_rect()
+	var walls := [
+		Rect2(floor.position, Vector2(floor.size.x, 10)),
+		Rect2(Vector2(floor.position.x, floor.end.y - 10), Vector2(floor.size.x, 10)),
+		Rect2(floor.position, Vector2(10, floor.size.y)),
+		Rect2(Vector2(floor.end.x - 10, floor.position.y), Vector2(10, floor.size.y)),
+	]
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
 		add_wall(rect)
@@ -59,6 +74,15 @@ func _ready() -> void:
 	else:
 		portals = [{"to": "outside", "position": Vector2(550, 280), "label": "Город"}]
 	queue_redraw()
+
+func salvage_point() -> Vector2:
+	return layout.get("salvage", Construction.SALVAGE_POINT)
+
+func event_point() -> Vector2:
+	return layout.get("event", DistrictEvents.POINT)
+
+func floor_rect() -> Rect2:
+	return layout.get("bounds", Layout.LEGACY_FLOOR)
 
 func add_wall(rect: Rect2) -> StaticBody2D:
 	var wall := StaticBody2D.new()
@@ -101,9 +125,9 @@ func bind(runtime) -> void:
 	if (scene_id == "hospital" and not defeated) or patrol:
 		foe = preload("res://game/entities/enemies/enemy.gd").new()
 		foe.app = app
-		foe.position = Vector2(330, 190)
+		foe.position = layout.get("enemy", Vector2(330, 190))
 		if patrol:
-			foe.patrol = PackedVector2Array([Vector2(235, 248), Vector2(455, 248), Vector2(455, 296), Vector2(235, 296)])
+			foe.patrol = layout.patrol
 			foe.patrol_index = floori(float(state.game_time_minutes) / 30) % foe.patrol.size()
 			foe.position = foe.patrol[foe.patrol_index]
 		add_child(foe)
@@ -112,13 +136,13 @@ func bind(runtime) -> void:
 
 func interact() -> void:
 	for portal in portals:
-		if app.hero.position.distance_to(portal.position) < (48 if layout.is_empty() else 36):
+		if exit_reached(portal):
 			app.transition(portal.to, portal.get("entry", "default"))
 			return
-	if scene_id == "outside" and app.hero.position.distance_to(DistrictEvents.POINT) < 28 and DistrictEvents.available(app.snapshot(), location_id):
+	if scene_id == "outside" and app.hero.position.distance_to(event_point()) < 28 and DistrictEvents.available(app.snapshot(), location_id):
 		app.ui.open_panel("district_event")
 		return
-	if scene_id == "outside" and not layout.is_empty() and app.hero.position.distance_to(Construction.SALVAGE_POINT) < 24:
+	if scene_id == "outside" and not layout.is_empty() and app.hero.position.distance_to(salvage_point()) < 24:
 		app.command("game.salvage")
 	elif scene_id in ["outside", "house"] and app.hero.position.distance_to(resource_point) < 55:
 		app.command("game.resource_collect")
@@ -133,10 +157,25 @@ func interact() -> void:
 			app.ui.open_panel("rest")
 		else:
 			app.ui.open_panel("inventory")
-	elif scene_id == "louvre":
+	elif scene_id == "louvre" and (not layout.has("exits") or app.hero.position.distance_to(Vector2(285, 190)) < 100):
 		app.ui.open_panel("residents")
 
+func exit_reached(portal: Dictionary) -> bool:
+	if portal.has("area"):
+		return portal.area.has_point(app.hero.position)
+	return app.hero.position.distance_to(portal.position) < (48 if layout.is_empty() else 36)
+
 func _process(_delta: float) -> void:
+	if app == null:
+		return
+	var current := ""
+	for portal in portals:
+		if exit_reached(portal):
+			current = portal.to
+			break
+	if nearby_exit != current:
+		nearby_exit = current
+		queue_redraw()
 	if occlusion != null and app != null and app.hero.position != last_occlusion_position:
 		last_occlusion_position = app.hero.position
 		occlusion.queue_redraw()
@@ -170,19 +209,12 @@ func draw_location_detail() -> void:
 
 func _draw() -> void:
 	var variant := int(str(layout.get("segment", "")).get_slice(":", 1))
-	WorldArt.ground(self, scene_id, variant)
+	WorldArt.ground(self, scene_id, variant, layout)
 	draw_location_detail()
-	for portal in portals:
-		var stairs: bool = scene_id == "hospital" and Layout.kind(portal.to) == "hospital"
-		if stairs:
-			WorldArt.stamp(self, "stairs", Rect2(portal.position - Vector2(17, 18), Vector2(34, 36)), WorldArt.COLD)
-		else:
-			draw_circle(portal.position, 21, Color("315957"))
-			if scene_id in ["hospital", "house"]:
-				WorldArt.stamp(self, "threshold", Rect2(portal.position - Vector2(18, 12), Vector2(36, 24)))
-		draw_arc(portal.position, 21, 0, TAU, 24, Color("8cd3b3"), 2)
 	for obstacle in layout.get("obstacles", []):
 		WorldArt.obstacle(self, scene_id, obstacle)
+	for kind in layout.get("facades", {}):
+		WorldArt.facade(self, layout.facades[kind], kind)
 	if scene_id == "hospital" and layout.is_empty():
 		for x in [75, 170, 450]:
 			draw_rect(Rect2(x, 120, 44, 68), Color("62747c"))
@@ -231,11 +263,11 @@ func _draw() -> void:
 		draw_rect(Rect2(resource_point - Vector2(16, 12), Vector2(32, 24)), Color("8e7954"))
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-49, -17), resource_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dce5ce"))
 		if scene_id == "outside" and not layout.is_empty():
-			var salvage := Construction.SALVAGE_POINT
+			var salvage := salvage_point()
 			draw_rect(Rect2(salvage - Vector2(10, 7), Vector2(20, 14)), Color("677b83"))
 			draw_string(ThemeDB.fallback_font, salvage + Vector2(16, 4), "Утиль [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
 		if scene_id == "outside" and app != null and DistrictEvents.available(app.snapshot(), location_id):
-			var point := DistrictEvents.POINT
+			var point := event_point()
 			draw_circle(point, 9, Color("ad8360"))
 			draw_string(ThemeDB.fallback_font, point + Vector2(-45, -13), "Выжившие [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e6d0a6"))
 	elif scene_id == "louvre":
@@ -243,6 +275,4 @@ func _draw() -> void:
 			draw_circle(Vector2(x, 190), 11, Color("d9bca5"))
 			draw_rect(Rect2(x - 10, 200, 20, 22), Color("a191b8"))
 	for portal in portals:
-		var position := Vector2(34 if portal.position.x < 320 else 400, portal.position.y - 22)
-		draw_string(ThemeDB.fallback_font, position + Vector2(1, 1), portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("101818"))
-		draw_string(ThemeDB.fallback_font, position, portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e0e7d8"))
+		WorldArt.exit_fixture(self, portal, floor_rect(), scene_id, nearby_exit == portal.to)

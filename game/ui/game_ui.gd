@@ -278,6 +278,12 @@ func render_panel() -> void:
 				schematic.custom_minimum_size = Vector2(480, 126)
 				body.add_child(schematic)
 				schematic.draw.connect(draw_city_map.bind(schematic, state))
+				if nodes[here].has("exits"):
+					line("План локации · вы отмечены золотым, переходы — бирюзовым")
+					var local_map := Control.new()
+					local_map.custom_minimum_size = Vector2(480, 134)
+					body.add_child(local_map)
+					local_map.draw.connect(draw_local_map.bind(local_map, nodes[here], app.hero.position))
 				var arrival: String = state.scene.entry_point_id
 				line("Выходы")
 				for id in nodes[here].links:
@@ -331,6 +337,9 @@ func render_panel() -> void:
 			if state.schema_version == 3:
 				line("Перенос сохраняет прогресс. Если старая точка занята новой стеной, герой появится у безопасного входа.")
 				button(body, "Перенести сохранение в процедурный город", run_command.bind("session.upgrade_world"))
+			elif state.schema_version == 4 and state.world_states.layout.generator_version < Layout.VERSION:
+				line("Расширить текущий мир с сохранением прогресса. Если старая точка перекрыта, герой появится у безопасного входа.")
+				button(body, "Перейти на большие карты", run_command.bind("session.upgrade_world"))
 			if app.hero.defeated:
 				button(body, "Повторить безопасное восстановление героя", _retry_defeat)
 		"inventory":
@@ -537,6 +546,20 @@ static func inventory_style(fill: Color, border: Color, thickness: int = 1) -> S
 	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
 		style.set_content_margin(side, 6)
 	return style
+
+func draw_local_map(canvas: Control, node: Dictionary, hero_position: Vector2) -> void:
+	var floor: Rect2 = node.bounds
+	var scale_factor := minf((canvas.size.x - 16) / floor.size.x, (canvas.size.y - 12) / floor.size.y)
+	var origin := (canvas.size - floor.size * scale_factor) / 2.0 - floor.position * scale_factor
+	canvas.draw_rect(Rect2(origin + floor.position * scale_factor, floor.size * scale_factor), Color("273334"))
+	for rect in node.get("roadways", node.get("rooms", [])):
+		canvas.draw_rect(Rect2(origin + rect.position * scale_factor, rect.size * scale_factor), Color("536060"))
+	for rect in node.obstacles:
+		canvas.draw_rect(Rect2(origin + rect.position * scale_factor, rect.size * scale_factor), Color("151b20"))
+	for exit in node.exits.values():
+		var point: Vector2 = origin + exit.position * scale_factor
+		canvas.draw_rect(Rect2(point - Vector2(3, 3), Vector2(6, 6)), Color("86cfb0"))
+	canvas.draw_circle(origin + hero_position * scale_factor, 4, Color("edbb6d"))
 
 func draw_city_map(canvas: Control, state: Dictionary) -> void:
 	var manifest: Dictionary = state.world_states.layout

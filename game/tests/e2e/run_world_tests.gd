@@ -51,6 +51,63 @@ func reachable_floor(record: Dictionary) -> bool:
 			return false
 	return seen.has(Vector2i(300, 265))
 
+func expanded_geometry(record: Dictionary) -> bool:
+	var bounds: Rect2 = record.bounds
+	var expected: Vector2 = Layout.STREET_SIZE if record.kind == "outside" else Layout.INTERIOR_SIZE
+	if bounds.size != expected or record.exits.size() != record.links.size():
+		return false
+	var walkable := bounds.grow(-15)
+	var points := [record.spawn]
+	if record.kind in ["outside", "house", "hospital"]:
+		points.append(record.loot)
+	if record.kind == "hospital":
+		points.append(record.enemy)
+	if record.kind == "outside":
+		points.append_array([record.salvage, record.event])
+		points.append_array(Array(record.patrol))
+	for exit in record.exits.values():
+		points.append_array([exit.position, exit.arrival])
+	for obstacle in record.obstacles:
+		if not bounds.encloses(obstacle):
+			return false
+		for point in points:
+			if obstacle.grow(9).has_point(point):
+				print("Blocked anchor ", record.segment, " at ", point, " by ", obstacle)
+				return false
+	return points.all(func(point): return walkable.has_point(point))
+
+func expanded_routes(record: Dictionary) -> bool:
+	var walkable: Rect2 = record.bounds.grow(-15)
+	var grid := AStarGrid2D.new()
+	var step := 16
+	grid.region = Rect2i(Vector2i.ZERO, Vector2i(walkable.size / step) + Vector2i.ONE)
+	grid.cell_size = Vector2(step, step)
+	grid.offset = walkable.position
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	grid.update()
+	for rect in record.obstacles:
+		var blocked: Rect2 = rect.grow(10)
+		var first := Vector2i(((blocked.position - walkable.position) / step).ceil())
+		var last := Vector2i(((blocked.end - walkable.position) / step).floor())
+		var cells := Rect2i(first, (last - first + Vector2i.ONE).max(Vector2i.ZERO)).intersection(grid.region)
+		grid.fill_solid_region(cells)
+	var start := Vector2i(((record.spawn - walkable.position) / step).round())
+	var targets := []
+	if record.kind in ["outside", "house", "hospital"]:
+		targets.append(record.loot)
+	if record.kind == "hospital":
+		targets.append(record.enemy)
+	if record.kind == "outside":
+		targets.append_array([record.salvage, record.event])
+	for exit in record.exits.values():
+		targets.append(exit.arrival)
+	for point in targets:
+		var cell := Vector2i(((point - walkable.position) / step).round()).clamp(Vector2i.ZERO, grid.region.end - Vector2i.ONE)
+		if grid.get_id_path(start, cell).is_empty():
+			print("Unreachable ", record.segment, " at ", point)
+			return false
+	return true
+
 func follow(app, target: String) -> bool:
 	var world = app.scene_router.current_world()
 	for portal in world.portals:
@@ -64,6 +121,8 @@ func run() -> void:
 	var geometry := {}
 	var signatures := {}
 	var road_signatures := {}
+	var expanded_samples := {}
+	var clearance := true
 	var valid_graphs := true
 	for seed_value in range(128):
 		var nodes := Layout.build(seed_value)
@@ -73,12 +132,15 @@ func run() -> void:
 		var used := {}
 		for id in nodes:
 			var entry: Dictionary = nodes[id]
+			clearance = expanded_geometry(entry) and clearance
+			var shape := "%s:%s" % [entry.segment, JSON.stringify(entry.exits.values().map(func(exit): return exit.position))]
+			expanded_samples[shape] = entry
 			valid_graphs = valid_graphs and entry.links.size() <= Layout.DOORS.size() and not used.has(entry.segment)
 			used[entry.segment] = true
 			for target in entry.links:
 				valid_graphs = valid_graphs and id in nodes[target].links
 			if not geometry.has(entry.segment):
-				geometry[entry.segment] = entry
+				geometry[entry.segment] = Layout.build(seed_value, 2)[id]
 		while not frontier.is_empty():
 			var id = frontier.pop_back()
 			for target in nodes[id].links:
@@ -88,6 +150,8 @@ func run() -> void:
 		valid_graphs = valid_graphs and reachable.size() == 26 and used.size() == 26
 		signatures[JSON.stringify(used.keys())] = true
 	check(valid_graphs and signatures.size() > 1, "128 seeds produce connected graphs and distinct assignments")
+	check(clearance, "128 seeds use exact map areas with clear arrival, exit and objective anchors")
+	check(expanded_samples.values().all(expanded_routes), "every expanded room and street profile connects its exits and objectives")
 	check(road_signatures.size() > 3, "new seeds vary the actual roads and keep every district reachable")
 	check(Layout.build(54) == Layout.build(54), "same seed reconstructs exact layout")
 	var passable := true
@@ -116,6 +180,9 @@ func run() -> void:
 	house_world.interact()
 	check(app.last_result.code == "UNAVAILABLE", "cleared house cannot duplicate its loot")
 	check(follow(app, "outside") and follow(app, "hospital") and follow(app, "hospital_0_2"), "hospital entry and stairs reach the selected floor")
+	var stairs = app.scene_router.current_world()
+	check(app.hero.position == stairs.layout.exits.hospital.arrival and stairs.layout.exits.hospital.form == "stairs_down", "upper floor arrives at the paired staircase landing")
+	check(follow(app, "hospital") and app.hero.position == app.scene_router.current_world().layout.exits.hospital_0_2.arrival and follow(app, "hospital_0_2"), "staircase returns to its paired lower landing")
 	var floor_enemy = app.enemy()
 	floor_enemy.health = 0
 	app.enemy_defeated()
@@ -158,6 +225,14 @@ func run() -> void:
 	check(original_city.outside.links == ["house_0", "hospital", "street_1", "street_2", "louvre", "shelter"], "original seed retains its road markers and order")
 	original.world_states.layout = current_layout
 	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok, "restore current layout for remaining gameplay checks")
+	original.world_states.layout.generator_version = 2
+	original.scene.current_scene_id = "outside"
+	original.scene.entry_point_id = "default"
+	original.player.position = {"x": 544, "y": 140}
+	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok and app.scene_router.current_world().floor_rect() == Layout.LEGACY_FLOOR, "prior generator opens its original map safely")
+	var before_upgrade: Dictionary = app.snapshot()
+	check(app.command("session.upgrade_world").ok and app.snapshot().world_states.layout.seed == 54 and app.scene_router.current_world().floor_rect().size == Layout.STREET_SIZE and app.hero.position == Layout.DEFAULT_SPAWN, "upgrade remounts the same street and moves a blocked position to the safe spawn")
+	check(app.snapshot().inventory == before_upgrade.inventory and app.snapshot().world_states.locations == before_upgrade.world_states.locations and app.transition("shelter").ok, "map upgrade keeps inventory and location progress")
 	test_workshop(app)
 	test_resident_work(app)
 	test_camp_network(app)
@@ -209,7 +284,7 @@ func test_workshop(app) -> void:
 	check(app.command("game.craft", recipe).code == "UNAVAILABLE", "crafting requires a workshop")
 	check(follow(app, "outside"), "leave shelter to collect construction supplies")
 	var street = app.scene_router.current_world()
-	app.hero.position = Workshop.SALVAGE_POINT
+	app.hero.position = app.scene_router.current_world().salvage_point()
 	street.interact()
 	check(app.last_result.ok and app.snapshot().world_states.salvage_ready_at.has("outside"), "street interaction collects salvage")
 	street.interact()
@@ -229,7 +304,7 @@ func test_workshop(app) -> void:
 	check(app.command("game.craft", recipe).code == "INSUFFICIENT_RESOURCES", "crafting rejects missing ingredients")
 	check(app.command("clock.rest", {"target_minute": int(app.snapshot().game_time_minutes) + Workshop.SALVAGE_INTERVAL}).ok, "advance time until supplies renew")
 	check(follow(app, "outside"), "return to the same salvage pile")
-	app.hero.position = Workshop.SALVAGE_POINT
+	app.hero.position = app.scene_router.current_world().salvage_point()
 	app.scene_router.current_world().interact()
 	check(app.last_result.ok and app.transition("shelter").ok, "salvage renews independently of the seed supply")
 	var before_craft: Dictionary = app.snapshot()
@@ -271,7 +346,7 @@ func test_camp_network(app) -> void:
 			missing = id
 	check(not missing.is_empty() and not app.transition(missing).ok, "cannot bypass an absent road with a default entry")
 	check(not neighbor.is_empty() and follow(app, neighbor) and follow(app, "outside"), "generated road works in both directions")
-	app.hero.position = Workshop.SALVAGE_POINT
+	app.hero.position = app.scene_router.current_world().salvage_point()
 	app.scene_router.current_world().interact()
 	check(app.last_result.ok and follow(app, "louvre"), "bring supplies to the camp")
 	var payload := {"day": day, "faction": "scouts"}
@@ -318,7 +393,7 @@ func test_patrol(app) -> void:
 	app.enemy_defeated()
 	check(road in app.snapshot().world_states.get("cleared_patrols", []), "patrol defeat is tracked per district")
 	check(app.load_game().ok and app.enemy() == null, "cleared patrol stays gone after reloading")
-	app.hero.position = DistrictEvents.POINT
+	app.hero.position = app.scene_router.current_world().event_point()
 	app.scene_router.current_world().interact()
 	check(app.ui.panel_id == "district_event", "cleared district exposes its encounter through an in-world interaction")
 	var event := DistrictEvents.event_for(app.snapshot(), road)
@@ -340,16 +415,26 @@ func measure_world_switches(app) -> void:
 	await process_frame
 	var before := OS.get_static_memory_usage()
 	var timings := PackedFloat64Array()
+	var streets := PackedFloat64Array()
+	var interiors := PackedFloat64Array()
 	var correct := true
 	var hero = app.hero
 	for index in range(24):
 		var destination := "house_0" if index % 2 == 0 else "outside"
 		var started := Time.get_ticks_usec()
 		correct = follow(app, destination) and correct
-		timings.append((Time.get_ticks_usec() - started) / 1000.0)
+		var milliseconds := (Time.get_ticks_usec() - started) / 1000.0
+		timings.append(milliseconds)
+		if destination == "outside":
+			streets.append(milliseconds)
+		else:
+			interiors.append(milliseconds)
 		correct = correct and app.get_node("WorldHost").get_child_count() == 3 and app.hero == hero
 		await process_frame
 	timings.sort()
+	streets.sort()
+	interiors.sort()
+	print("LARGE MAP LOAD %s street_median_ms=%.3f interior_median_ms=%.3f" % [OS.get_name(), streets[6], interiors[6]])
 	print("WORLD SWITCH METRICS %s n=%d median_ms=%.3f peak_ms=%.3f retained_engine_bytes=%d" % [OS.get_name(), timings.size(), timings[12], timings[23], OS.get_static_memory_usage() - before])
 	check(correct, "24 consecutive transitions keep one mounted world, one camera and the same hero")
 
@@ -399,7 +484,7 @@ func test_furniture(app) -> void:
 		app.transition("shelter")
 		app.command("clock.rest", {"target_minute": int(app.snapshot().game_time_minutes) + Workshop.SALVAGE_INTERVAL})
 		follow(app, "outside")
-		app.hero.position = Workshop.SALVAGE_POINT
+		app.hero.position = app.scene_router.current_world().salvage_point()
 		app.scene_router.current_world().interact()
 	check(app.transition("shelter").ok and app.command("game.build", cabinet).ok and app.command("game.build", bed).ok, "salvage supports separate storage and housing upgrades")
 	var state: Dictionary = app.snapshot()

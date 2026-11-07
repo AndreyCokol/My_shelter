@@ -5,6 +5,7 @@ const NEXT_GAME_META := &"shelter_next_campaign"
 const Rules = preload("res://game/data/game_rules.gd")
 const Logic = preload("res://game/systems/gameplay/gameplay_commands.gd")
 var hero
+var camera: Camera2D
 var ui
 var save_store
 var action_serial: int = 0
@@ -41,16 +42,16 @@ func _ready() -> void:
 	$UILayer.add_child(ui)
 	session.committed.connect(_committed)
 	session.state_loaded.connect(_loaded)
-	bind_world()
-	var camera := Camera2D.new()
-	camera.position = Vector2(320, 180)
+	camera = Camera2D.new()
 	$WorldHost.add_child(camera)
+	bind_world()
 	if next_game.is_empty():
 		ui.open_panel("welcome")
 	print("Playable prototype initialized; schema v4")
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	update_camera()
 	hud_elapsed += delta
 	if hud_elapsed >= 0.2:
 		hud_elapsed = 0
@@ -111,6 +112,26 @@ func bind_world() -> void:
 	var world = scene_router.current_world()
 	if is_instance_valid(world):
 		world.bind(self)
+	update_camera()
+
+func update_camera() -> void:
+	if camera == null or scene_router == null:
+		return
+	var world = scene_router.current_world()
+	if not is_instance_valid(world):
+		return
+	var floor: Rect2 = world.floor_rect()
+	if floor == Layout.LEGACY_FLOOR:
+		camera.position = Vector2(320, 180)
+	else:
+		# Reserve the fixed HUD and message bands in screen space.
+		var half := get_viewport().get_visible_rect().size * 0.5
+		var minimum := floor.position + half - Vector2(0, 80)
+		var maximum := floor.end - half + Vector2(0, 15)
+		var midpoint := (minimum + maximum) * 0.5
+		var target: Vector2 = hero.position - Vector2(0, 32.5)
+		camera.position = target.clamp(minimum.min(midpoint), maximum.max(midpoint)).round()
+	camera.force_update_scroll()
 
 func _committed(_result: Dictionary) -> void:
 	var world = scene_router.current_world()

@@ -9,6 +9,7 @@ var _store
 var _registry: Dictionary
 var _world: Node2D
 var _mounted_schema := 0
+var _mounted_generator := 0
 var _scene_id: String = ""
 var _pending_world: Node2D
 var _pending_scene: String = ""
@@ -80,7 +81,8 @@ func _request(action_id: String, kind: String, payload: Dictionary) -> Dictionar
 
 func prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	var target: String = candidate.scene.current_scene_id
-	if reason == "command" and target == _scene_id and candidate.schema_version == _mounted_schema and is_instance_valid(_world):
+	var generator: int = int(candidate.world_states.layout.generator_version) if candidate.schema_version == 4 else 0
+	if reason == "command" and target == _scene_id and candidate.schema_version == _mounted_schema and generator == _mounted_generator and is_instance_valid(_world):
 		return {"ok": true}
 	var staged: Dictionary
 	if reason == "command" and is_instance_valid(_pending_world) and _pending_scene == target:
@@ -95,7 +97,7 @@ func prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	return {"ok": true, "discard": func():
 		if is_instance_valid(world):
 			world.free(),
-		"install": func(): return _install(world, target, position, int(candidate.schema_version))}
+		"install": func(): return _install(world, target, position, int(candidate.schema_version), generator)}
 
 func _stage(scene_id: String, entry_id: String, state: Dictionary) -> Dictionary:
 	if not is_instance_valid(_host) or not is_instance_valid(_actor) or not _registry.get(scene_id) is PackedScene:
@@ -113,7 +115,7 @@ func _stage(scene_id: String, entry_id: String, state: Dictionary) -> Dictionary
 		return {"ok": false}
 	return {"ok": true, "world": world, "position": _position(entry.position)}
 
-func _install(world: Node2D, scene_id: String, position: Vector2, schema: int) -> bool:
+func _install(world: Node2D, scene_id: String, position: Vector2, schema: int, generator: int) -> bool:
 	if not is_instance_valid(_host) or not is_instance_valid(_actor):
 		world.free()
 		return false
@@ -130,6 +132,7 @@ func _install(world: Node2D, scene_id: String, position: Vector2, schema: int) -
 	_world = world
 	_scene_id = scene_id
 	_mounted_schema = schema
+	_mounted_generator = generator
 	_host.add_child(world)
 	if is_instance_valid(old):
 		# A door interaction can still be executing on the detached world.
