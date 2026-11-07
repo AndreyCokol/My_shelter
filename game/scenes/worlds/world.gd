@@ -181,7 +181,6 @@ func _draw() -> void:
 			if scene_id in ["hospital", "house"]:
 				WorldArt.stamp(self, "threshold", Rect2(portal.position - Vector2(18, 12), Vector2(36, 24)))
 		draw_arc(portal.position, 21, 0, TAU, 24, Color("8cd3b3"), 2)
-		draw_string(ThemeDB.fallback_font, Vector2(34 if portal.position.x < 320 else 400, portal.position.y - 22), portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e0e7d8"))
 	for obstacle in layout.get("obstacles", []):
 		WorldArt.obstacle(self, scene_id, obstacle)
 	if scene_id == "hospital" and layout.is_empty():
@@ -243,3 +242,7 @@ func _draw() -> void:
 		for x in [230, 340]:
 			draw_circle(Vector2(x, 190), 11, Color("d9bca5"))
 			draw_rect(Rect2(x - 10, 200, 20, 22), Color("a191b8"))
+	for portal in portals:
+		var position := Vector2(34 if portal.position.x < 320 else 400, portal.position.y - 22)
+		draw_string(ThemeDB.fallback_font, position + Vector2(1, 1), portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("101818"))
+		draw_string(ThemeDB.fallback_font, position, portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e0e7d8"))

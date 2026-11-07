@@ -401,7 +401,7 @@ func render_panel() -> void:
 		"shop":
 			line("2 семени — 3 монеты. Если монеты закончились, семена можно найти в городе: запасы возобновляются через час игрового времени.")
 			button(body, "Купить семена", run_command.bind("inventory.purchase", {"offer_id": "seed"}))
-	if not notice.text.is_empty():
+	if panel_id != "inventory" and not notice.text.is_empty():
 		line(notice.text)
 
 func render_inventory(state: Dictionary) -> void:
@@ -433,6 +433,14 @@ func render_inventory(state: Dictionary) -> void:
 	usage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	usage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tabs.add_child(usage)
+
+	if not notice.text.is_empty():
+		var feedback := Label.new()
+		feedback.text = notice.text
+		feedback.modulate = notice.modulate
+		feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		feedback.add_theme_font_size_override("font_size", 11)
+		body.add_child(feedback)
 
 	var content := HBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
