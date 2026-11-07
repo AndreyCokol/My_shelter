@@ -28,7 +28,7 @@ if result.returncode or not re.search(r'VISUAL TESTS: [1-9][0-9]* checks, 0 fail
 if any(item in result.stdout for item in ['SCRIPT ERROR:', 'ERROR:', 'instances leaked']):
     sys.exit(1)
 for name in ['welcome', 'shelter', 'inventory', 'farm', 'rest', 'residents', 'quests', 'shop', 'save', 'credits', 'workshop',
-             'jobs', 'map', 'journal', 'new_confirm', 'city', 'camp']:
+             'jobs', 'map', 'journal', 'new_confirm', 'hospital', 'city', 'camp']:
     image = Path('/tmp/shelter-visual') / (name + '.png')
     if not image.is_file() or image.stat().st_size < 1000:
         sys.exit('VISUAL CHECKS: FAIL missing rendered scene ' + name)

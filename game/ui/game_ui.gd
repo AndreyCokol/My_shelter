@@ -6,7 +6,18 @@ const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
+
+const ITEM_ICONS = {
+	"seed.basic": preload("res://game/assets/project/inventory/seed.svg"),
+	"crop.potato": preload("res://game/assets/project/inventory/potato.svg"),
+	"tool.basic": preload("res://game/assets/project/inventory/knife.svg"),
+	"material.salvage": preload("res://game/assets/project/inventory/salvage.svg"),
+	"material.lamp_kit": preload("res://game/assets/project/inventory/lamp_kit.svg"),
+}
+var inventory_container := "player"
+var inventory_selection := ""
 
 var app
 var panel_id: String = ""
@@ -323,15 +334,7 @@ func render_panel() -> void:
 			if app.hero.defeated:
 				button(body, "Повторить безопасное восстановление героя", _retry_defeat)
 		"inventory":
-			if state.schema_version == 4 and state.scene.current_scene_id == "shelter":
-				button(body, "Работа жителей", open_panel.bind("jobs"))
-			line("Системная посылка доступна после открытия убежища. Переносится весь свободный остаток стека.")
-			button(body, "Получить стартовую посылку", run_command.bind("inventory.claim_parcel", {"parcel_id": "starter"}))
-			for item in state.inventory.items:
-				var available: int = preload("res://game/systems/gameplay/gameplay_commands.gd").available(state, item)
-				line("%s ×%d · %s · свободно %d" % [app.rules().items[item.type_id].name, item.quantity, "рюкзак" if item.container_id == "player" else "хранилище", available])
-				if available > 0:
-					button(body, "В хранилище" if item.container_id == "player" else "В рюкзак", run_command.bind("inventory.transfer", {"instance_id": item.instance_id, "from_id": item.container_id, "to_id": "storage" if item.container_id == "player" else "player", "quantity": available}))
+			render_inventory(state)
 		"workshop":
 			if state.schema_version != 4 or state.scene.current_scene_id != "shelter":
 				line("Мастерская доступна на стройплощадке убежища.")
@@ -400,6 +403,132 @@ func render_panel() -> void:
 			button(body, "Купить семена", run_command.bind("inventory.purchase", {"offer_id": "seed"}))
 	if not notice.text.is_empty():
 		line(notice.text)
+
+func render_inventory(state: Dictionary) -> void:
+	var names := {"player": "Рюкзак", "storage": "Хранилище"}
+	var stacks: Array = state.inventory.items.filter(func(item): return item.container_id == inventory_container)
+	var used := 0
+	var capacity := 0
+	for container in state.inventory.containers:
+		if container.id == inventory_container:
+			capacity = int(container.capacity_units)
+	var selected := {}
+	for item in stacks:
+		used += int(item.quantity)
+		if item.instance_id == inventory_selection:
+			selected = item
+	if selected.is_empty() and not stacks.is_empty():
+		selected = stacks[0]
+	inventory_selection = selected.get("instance_id", "")
+	var tabs := HBoxContainer.new()
+	body.add_child(tabs)
+	var accent := Color("b9945a") if state.scene.current_scene_id == "shelter" else Color("bd744d")
+	for id in names:
+		var tab := button(tabs, names[id], select_inventory.bind(id, ""))
+		if id == inventory_container:
+			tab.name = "InventoryCurrentTab"
+			tab.add_theme_stylebox_override("normal", inventory_style(Color("472a23"), accent, 2))
+	var usage := Label.new()
+	usage.text = "%d / %d ед.    ·    Монеты %d" % [used, capacity, state.wallet.system_coins]
+	usage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	usage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tabs.add_child(usage)
+
+	var content := HBoxContainer.new()
+	content.add_theme_constant_override("separation", 8)
+	body.add_child(content)
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	content.add_child(grid)
+	var rules: Dictionary = app.rules()
+	for index in range(maxi(18, ceili(stacks.size() / 6.0) * 6)):
+		var item: Dictionary = stacks[index] if index < stacks.size() else {}
+		var slot := Button.new()
+		slot.custom_minimum_size = Vector2(47, 35)
+		slot.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		slot.add_theme_constant_override("icon_max_width", 23)
+		slot.add_theme_stylebox_override("normal", inventory_style(Color("211e1b"), Color("73523d")))
+		slot.add_theme_stylebox_override("disabled", inventory_style(Color("161516"), Color("443831")))
+		slot.add_theme_stylebox_override("hover", inventory_style(Color("382820"), accent))
+		slot.add_theme_stylebox_override("pressed", inventory_style(Color("503126"), accent, 2))
+		slot.add_theme_stylebox_override("focus", inventory_style(Color.TRANSPARENT, Color("f1c27a"), 2))
+		grid.add_child(slot)
+		if item.is_empty():
+			slot.disabled = true
+			continue
+		slot.icon = ITEM_ICONS.get(item.type_id, Art.texture("inventory"))
+		slot.tooltip_text = rules.items[item.type_id].name
+		slot.pressed.connect(select_inventory.bind(inventory_container, item.instance_id))
+		if item.instance_id == inventory_selection:
+			slot.name = "InventorySelectedSlot"
+			slot.add_theme_stylebox_override("normal", inventory_style(Color("382820"), accent, 2))
+		var count := Label.new()
+		count.text = str(item.quantity)
+		count.add_theme_font_size_override("font_size", 10)
+		count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(count)
+		count.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		count.offset_left = -19
+		count.offset_top = -14
+		count.offset_right = -3
+		count.offset_bottom = -1
+		count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", inventory_style(Color("231e1a"), accent))
+	content.add_child(card)
+	var details := VBoxContainer.new()
+	card.add_child(details)
+	var title := Label.new()
+	title.text = "Пусто" if selected.is_empty() else rules.items[selected.type_id].name
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.add_theme_color_override("font_color", Color("f2d6a4"))
+	details.add_child(title)
+	if selected.is_empty():
+		var hint := Label.new()
+		hint.text = "Здесь будут найденные или перенесённые предметы."
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details.add_child(hint)
+	else:
+		var available: int = Gameplay.available(state, selected)
+		var quantities := Label.new()
+		quantities.text = "Всего: %d
+Свободно: %d
+В резерве: %d" % [selected.quantity, available, int(selected.quantity) - available]
+		details.add_child(quantities)
+		var target := "storage" if inventory_container == "player" else "player"
+		var move := button(details, "В " + names[target].to_lower(), run_command.bind("inventory.transfer", {
+			"instance_id": selected.instance_id, "from_id": inventory_container, "to_id": target, "quantity": available,
+		}))
+		move.disabled = available <= 0
+	var actions := HBoxContainer.new()
+	body.add_child(actions)
+	if state.schema_version == 4 and state.scene.current_scene_id == "shelter":
+		button(actions, "Работа жителей", open_panel.bind("jobs"))
+	if "starter" not in state.shelter.claimed_parcel_ids:
+		button(actions, "Стартовая посылка", run_command.bind("inventory.claim_parcel", {"parcel_id": "starter"}))
+
+func select_inventory(container: String, instance_id: String) -> void:
+	inventory_container = container
+	inventory_selection = instance_id
+	render_panel()
+	var focus_name := "InventoryCurrentTab" if instance_id.is_empty() else "InventorySelectedSlot"
+	var focused := body.find_child(focus_name, true, false) as Button
+	if focused != null:
+		focused.grab_focus()
+
+static func inventory_style(fill: Color, border: Color, thickness: int = 1) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = border
+	style.set_border_width_all(thickness)
+	style.set_corner_radius_all(3)
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		style.set_content_margin(side, 6)
+	return style
 
 func draw_city_map(canvas: Control, state: Dictionary) -> void:
 	var manifest: Dictionary = state.world_states.layout

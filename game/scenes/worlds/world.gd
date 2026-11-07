@@ -15,6 +15,7 @@ var occlusion: Node2D
 var last_occlusion_position := Vector2.INF
 const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
+const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
@@ -36,6 +37,7 @@ func configure_layout(nodes: Dictionary, id: String) -> void:
 
 func _ready() -> void:
 	z_index = -10
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	var walls := [Rect2(20, 85, 600, 10), Rect2(20, 335, 600, 10), Rect2(20, 85, 10, 260), Rect2(610, 85, 10, 260)]
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
@@ -144,8 +146,7 @@ func draw_occlusion() -> void:
 		return
 	for obstacle in layout.obstacles:
 		if app.hero.position.y < obstacle.end.y and obstacle.grow(18).has_point(app.hero.position):
-			occlusion.draw_rect(obstacle, Color("424a57"))
-			occlusion.draw_rect(obstacle.grow(-3), Color("353e49"))
+			WorldArt.obstacle(occlusion, scene_id, obstacle)
 
 func draw_location_detail() -> void:
 	if layout.is_empty():
@@ -156,47 +157,33 @@ func draw_location_detail() -> void:
 	match scene_id:
 		"outside":
 			label = Layout.STREET_PROFILES[variant]
-			draw_rect(Rect2(91, 245, 459, 44), Color("303641"))
-			if variant == 0 or variant == 2:
-				for x in range(113, 548, 39):
-					draw_rect(Rect2(x, 264, 20, 3), Color("6a6660"))
-			elif variant == 1:
-				for x in range(116, 532, 16):
-					draw_rect(Rect2(x, 250, 7, 13), Color("756749"))
-			else:
-				for y in [247, 286]:
-					draw_line(Vector2(92, y), Vector2(548, y), Color("6f7678"), 2)
 		"house":
 			label = Layout.HOUSE_PROFILES[variant]
-			for y in range(104, 248, 12):
-				draw_rect(Rect2(126, y, 403, 1), Color("3e383c"))
 		"hospital":
 			label = Layout.HOSPITAL_PROFILES[variant]
 			var accents := [Color("677070"), Color("545875"), Color("435f59"), Color("5e526e")]
 			draw_rect(Rect2(105, 233, 431, 3), accents[variant])
 			for x in [131, 470]:
 				draw_rect(Rect2(x, 242, 32, 3), accents[variant])
-		"shelter":
-			draw_rect(Rect2(121, 137, 420, 103), Color("626646"))
-			for x in range(132, 530, 23):
-				draw_line(Vector2(x, 138), Vector2(x, 239), Color("6a6f4e"), 1)
 	if not label.is_empty():
 		draw_string(ThemeDB.fallback_font, Vector2(103, 323), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("b5c5cc"))
 
 func _draw() -> void:
-	var colors := {"hospital": Color("222b38"), "outside": Color("202c37"), "shelter": Color("485e43"), "louvre": Color("383744"), "house": Color("282d38")}
-	draw_rect(Rect2(20, 85, 600, 260), colors[scene_id])
-	for x in range(30, 610, 32):
-		for y in range(95, 335, 32):
-			draw_rect(Rect2(x, y, 31, 31), Color(1, 1, 1, 0.025))
+	var variant := int(str(layout.get("segment", "")).get_slice(":", 1))
+	WorldArt.ground(self, scene_id, variant)
 	draw_location_detail()
 	for portal in portals:
-		draw_circle(portal.position, 21, Color("315957"))
+		var stairs: bool = scene_id == "hospital" and Layout.kind(portal.to) == "hospital"
+		if stairs:
+			WorldArt.stamp(self, "stairs", Rect2(portal.position - Vector2(17, 18), Vector2(34, 36)), WorldArt.COLD)
+		else:
+			draw_circle(portal.position, 21, Color("315957"))
+			if scene_id in ["hospital", "house"]:
+				WorldArt.stamp(self, "threshold", Rect2(portal.position - Vector2(18, 12), Vector2(36, 24)))
 		draw_arc(portal.position, 21, 0, TAU, 24, Color("8cd3b3"), 2)
 		draw_string(ThemeDB.fallback_font, Vector2(34 if portal.position.x < 320 else 400, portal.position.y - 22), portal.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e0e7d8"))
 	for obstacle in layout.get("obstacles", []):
-		draw_rect(obstacle, Color("424a57"))
-		draw_rect(obstacle.grow(-3), Color("353e49"))
+		WorldArt.obstacle(self, scene_id, obstacle)
 	if scene_id == "hospital" and layout.is_empty():
 		for x in [75, 170, 450]:
 			draw_rect(Rect2(x, 120, 44, 68), Color("62747c"))
@@ -208,11 +195,11 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-62, -12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c1cbce"))
 	elif scene_id == "shelter":
 		draw_colored_polygon(PackedVector2Array([Vector2(360, 205), Vector2(405, 130), Vector2(450, 205)]), Color("bda16c"))
-		draw_rect(Rect2(392, 170, 27, 35), Color("594c39"))
+		WorldArt.tile(self, "wood", Rect2(386, 168, 40, 38), WorldArt.WARM)
 		var plots: Array = app.snapshot().crops.plots if app != null else []
 		for i in range(plots.size()):
 			var status: String = plots[i].status
-			draw_rect(Rect2(170 + i * 65, 175, 55, 50), Color("705442"))
+			WorldArt.tile(self, "soil", Rect2(170 + i * 65, 175, 55, 50), WorldArt.WARM)
 			if status != "empty":
 				var leaf := Color("98c46c") if status != "spoiled" else Color("907560")
 				for dx in [12, 30, 44]:

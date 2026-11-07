@@ -34,7 +34,10 @@ func run() -> void:
 		await physics_frame
 	await process_frame
 	check(app.snapshot().world_states.first_enemy_defeated, "step13 render scene keeps gameplay alive")
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("/tmp/shelter-visual/hospital.png")
 	app.transition("shelter")
+	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "populate inventory with real gameplay items")
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
