@@ -290,12 +290,14 @@ func render_panel() -> void:
 		"farm":
 			line("Посадите семена и полейте. Вода в убежище доступна. Рост идёт естественно или во время отдыха.")
 			for plot in state.crops.plots:
-				line("%s — %s" % ["Грядка 1" if plot.id == "plot_1" else "Грядка 2", STATUS[plot.status]])
+				line("Грядка %s — %s" % [plot.id.get_slice("_", 1), STATUS[plot.status]])
 				var actions := {"empty": ["Посадить (1 семя)", "game.plant"], "planted": ["Полить", "game.water"], "ripe": ["Собрать урожай", "game.harvest"], "spoiled": ["Очистить", "game.clear"]}
 				if actions.has(plot.status):
 					button(body, actions[plot.status][0], run_command.bind(actions[plot.status][1], {"plot_id": plot.id}))
 				if plot.status == "growing":
 					line("До зрелости: %d мин. До порчи: %d мин." % [plot.ripe_at - state.game_time_minutes, plot.spoil_at - state.game_time_minutes])
+			if state.schema_version == 4 and state.crops.plots.size() == 2:
+				button(body, "Построить третью грядку (%d монет)" % app.rules().farm_expansion_cost, run_command.bind("game.expand_farm"))
 			button(body, "План отдыха", open_panel.bind("rest"))
 		"rest":
 			line("Отдых доступен только в убежище. Перед подтверждением показаны срок и риск порчи.")

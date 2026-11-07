@@ -104,12 +104,10 @@ func _draw() -> void:
 	elif scene_id == "shelter":
 		draw_colored_polygon(PackedVector2Array([Vector2(360, 205), Vector2(405, 130), Vector2(450, 205)]), Color("bda16c"))
 		draw_rect(Rect2(392, 170, 27, 35), Color("594c39"))
-		for i in range(2):
-			var color := Color("705442")
-			var status: String = "empty"
-			if app != null:
-				status = app.snapshot().crops.plots[i].status
-			draw_rect(Rect2(170 + i * 65, 175, 55, 50), color)
+		var plots: Array = app.snapshot().crops.plots if app != null else []
+		for i in range(plots.size()):
+			var status: String = plots[i].status
+			draw_rect(Rect2(170 + i * 65, 175, 55, 50), Color("705442"))
 			if status != "empty":
 				var leaf := Color("98c46c") if status != "spoiled" else Color("907560")
 				for dx in [12, 30, 44]:

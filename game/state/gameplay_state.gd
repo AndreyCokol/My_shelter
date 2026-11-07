@@ -5,6 +5,9 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 static func integer(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= 9007199254740991 and value == floor(value)
 
+static func empty_plot(id: String) -> Dictionary:
+	return {"id": id, "status": "empty", "planted_at": 0, "ripe_at": 0, "spoil_at": 0}
+
 static func seed(state: Dictionary) -> void:
 	state.schema_version = 3
 	state.scene.current_scene_id = "hospital"
@@ -12,7 +15,7 @@ static func seed(state: Dictionary) -> void:
 	state.player.hp = 100
 	state.crops.plots = []
 	for id in ["plot_1", "plot_2"]:
-		state.crops.plots.append({"id": id, "status": "empty", "planted_at": 0, "ripe_at": 0, "spoil_at": 0})
+		state.crops.plots.append(empty_plot(id))
 	state.residents.records = []
 	for id in ["resident_1", "resident_2"]:
 		state.residents.records.append({"id": id, "status": "unknown", "consent": false, "food_receipt_id": ""})
@@ -26,11 +29,13 @@ static func seed(state: Dictionary) -> void:
 static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not integer(state.player.get("hp")) or state.player.hp > 100:
 		return false
-	if not state.crops.get("plots") is Array or state.crops.plots.size() != 2:
+	var plot_counts := [2, 3] if state.schema_version == 4 else [2]
+	if not state.crops.get("plots") is Array or not state.crops.plots.size() in plot_counts:
 		return false
 	var ids: Array = []
+	var allowed_plots := ["plot_1", "plot_2", "plot_3"] if state.crops.plots.size() == 3 else ["plot_1", "plot_2"]
 	for plot in state.crops.plots:
-		if not plot is Dictionary or not plot.get("id") in ["plot_1", "plot_2"] or plot.id in ids or not plot.get("status") in ["empty", "planted", "growing", "ripe", "spoiled"]:
+		if not plot is Dictionary or not plot.get("id") in allowed_plots or plot.id in ids or not plot.get("status") in ["empty", "planted", "growing", "ripe", "spoiled"]:
 			return false
 		ids.append(plot.id)
 		for key in ["planted_at", "ripe_at", "spoil_at"]:

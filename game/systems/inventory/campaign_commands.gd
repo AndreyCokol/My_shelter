@@ -65,7 +65,10 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 		if kind in ["scene.transition", "inventory.purchase", "inventory.claim_parcel"] and not state.world_states.first_enemy_defeated:
 			return fail("UNAVAILABLE")
 		if kind.begins_with("game."):
-			var checked := revisions(state, request, ["world", "farm", "residents", "inventory:player", "inventory:storage"])
+			var keys := ["world", "farm", "residents", "inventory:player", "inventory:storage"]
+			if kind == "game.expand_farm":
+				keys.append("wallet")
+			var checked := revisions(state, request, keys)
 			if not checked.ok:
 				return checked
 			return Gameplay.plan(state, request, rules)

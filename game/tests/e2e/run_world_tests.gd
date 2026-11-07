@@ -119,6 +119,24 @@ func run() -> void:
 	app.starting_seed = 777
 	root.add_child(app)
 	check(app.load_game().ok and app.snapshot() == saved and app.enemy() == null and app.scene_router.current_world().layout == Layout.build(54).hospital_0_2, "fresh game instance restores saved seed, loot, floor and defeated enemy")
+	check(app.command("game.expand_farm").code == "NOT_IN_SAFE_AREA", "farm can only be expanded in the shelter")
+	check(app.transition("shelter").ok and app.command("game.expand_farm").code == "INSUFFICIENT_RESOURCES", "expansion requires the full cost")
+	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "starter coins can contribute to building")
+	var before_expansion: Dictionary = app.snapshot()
+	app.save_store.fault = "before_replace"
+	check(app.command("game.expand_farm").code == "SAVE_FAILED" and app.snapshot() == before_expansion, "failed save leaves both wallet and farm unchanged")
+	app.save_store.fault = ""
+	app.ui.open_panel("farm")
+	var upgrade_buttons: Array = app.ui.body.get_children().filter(func(node): return node is Button and node.text.begins_with("Построить третью грядку"))
+	if not upgrade_buttons.is_empty():
+		upgrade_buttons[0].pressed.emit()
+	app.ui.close_panel()
+	var expanded: Dictionary = app.snapshot()
+	check(expanded.crops.plots.size() == 3 and expanded.wallet.system_coins == before_expansion.wallet.system_coins - app.rules().farm_expansion_cost, "farm button builds a third plot and charges once")
+	check(app.command("game.expand_farm").code == "INVALID_STATE" and app.snapshot() == expanded, "already built plot cannot be purchased again")
+	check(app.command("game.plant", {"plot_id": "plot_3"}).ok and app.command("game.water", {"plot_id": "plot_3"}).ok, "third plot uses the existing planting and watering flow")
+	check(app.command("clock.rest", {"target_minute": app.next_harvest_minute()}).ok and app.snapshot().crops.plots[2].status == "ripe", "new plot matures on the shared calendar")
+	check(app.load_game().ok and app.snapshot().crops.plots[2].status == "ripe" and app.command("game.harvest", {"plot_id": "plot_3"}).ok, "expanded farm reloads and yields crops")
 	var legacy = Campaign.new(Rules.build())
 	check(app.save_store.write_checkpoint(legacy.coordinator.get_snapshot(), Model.validate.bind(app.rules())).get("committed", false), "legacy fixture writes version 3 checkpoint")
 	check(app.load_game().ok and app.snapshot().schema_version == 3 and app.scene_router.current_world().layout.is_empty(), "old version 3 saves load with original geometry")

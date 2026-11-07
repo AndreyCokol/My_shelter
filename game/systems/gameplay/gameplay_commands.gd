@@ -7,7 +7,7 @@ const Numbers = preload("res://game/state/gameplay_state.gd")
 static func normalize(request: Dictionary) -> Dictionary:
 	var fields := {
 		"game.enemy_defeated": [], "game.player_defeated": [], "game.resource_collect": [],
-		"game.plant": ["plot_id"], "game.water": ["plot_id"], "game.harvest": ["plot_id"], "game.clear": ["plot_id"],
+		"game.expand_farm": [], "game.plant": ["plot_id"], "game.water": ["plot_id"], "game.harvest": ["plot_id"], "game.clear": ["plot_id"],
 		"game.contact": ["resident_id"], "game.consent": ["resident_id", "accept"], "game.recruit": ["resident_id"],
 		"game.quest_track": ["quest_id"]}
 	var kind = request.get("command_type")
@@ -141,6 +141,20 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		else:
 			state.world_states.locations[scene] = {"resource_ready_at": ready_at}
 		return success({"ready_at": ready_at})
+	if kind == "game.expand_farm":
+		if state.schema_version != 4:
+			return fail("UNAVAILABLE")
+		if scene != "shelter":
+			return fail("NOT_IN_SAFE_AREA")
+		if state.crops.plots.size() != 2:
+			return fail("INVALID_STATE")
+		var cost: int = rules.farm_expansion_cost
+		if state.wallet.system_coins < cost:
+			return fail("INSUFFICIENT_RESOURCES")
+		state.wallet.system_coins -= cost
+		state.crops.plots.append(Numbers.empty_plot("plot_3"))
+		bump(state, ["wallet", "farm"])
+		return success({"plot_id": "plot_3", "cost": cost})
 	if kind in ["game.plant", "game.water", "game.harvest", "game.clear"]:
 		if scene != "shelter":
 			return fail("NOT_IN_SAFE_AREA")

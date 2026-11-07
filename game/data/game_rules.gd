@@ -11,12 +11,14 @@ static func build() -> Dictionary:
 		"rewards": {"system": {"type_id": "tool.basic", "quantity": 1, "hero_xp": 10, "coins": 8, "eligible": false}},
 		"crop": {"grow_minutes": 180, "spoil_minutes": 120, "yield_units": 3},
 		"food": {"accepted_food_type_ids": ["crop.potato"], "units_per_resident": 2, "reserve_mode": "reserve"},
-		"resource_respawn_minutes": 60, "resource_quantity": 2}
+		"resource_respawn_minutes": 60, "resource_quantity": 2, "farm_expansion_cost": 12}
 
 static func validate(rules: Dictionary) -> bool:
 	if rules.has("world_seed"):
 		var layout = preload("res://game/systems/world/world_layout.gd")
 		if not rules.world_seed is int or rules.world_seed < 0 or rules.world_seed > layout.MAX_SEED or rules.get("scenes") != layout.entries():
+			return false
+		if not rules.get("farm_expansion_cost") is int or rules.farm_expansion_cost <= 0:
 			return false
 	if not rules.get("items") is Dictionary or not rules.get("scenes") is Dictionary or not rules.get("rewards") is Dictionary or not rules.rewards.get("system") is Dictionary:
 		return false
