@@ -51,9 +51,13 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		entries = {"hospital": ["default"], "outside": ["default"], "shelter": ["default"], "louvre": ["default"]}
 	if not state.scene.get("current_scene_id") in entries or not state.scene.get("return_scene_id") in entries or not state.scene.get("entry_point_id") in entries[state.scene.current_scene_id]:
 		return false
+	var generator := 0
 	if state.schema_version == 4:
 		var manifest = state.world_states.get("layout")
 		if not WorldLayout.valid_manifest(manifest):
+			return false
+		generator = int(manifest.generator_version)
+		if not WorldLayout.building_exists(state.scene.current_scene_id, generator) or not WorldLayout.building_exists(state.scene.return_scene_id, generator):
 			return false
 		var entry: String = state.scene.entry_point_id
 		if entry != "default" and not WorldLayout.linked(entries, entry.trim_prefix("from_"), state.scene.current_scene_id, manifest):
@@ -61,7 +65,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not valid_position(state.player.get("position")) or not state.scene.get("positions") is Dictionary:
 		return false
 	for id in state.scene.positions:
-		if not id in entries or not valid_position(state.scene.positions[id]):
+		if not id in entries or not WorldLayout.building_exists(id, generator) or not valid_position(state.scene.positions[id]):
 			return false
 	if state.scene.get("last_outside_position") != null and not valid_position(state.scene.last_outside_position):
 		return false

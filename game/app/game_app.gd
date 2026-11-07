@@ -106,6 +106,9 @@ func transition(destination: String, entry_id: String = "default") -> Dictionary
 	ui.show_result(result)
 	if result.ok:
 		bind_world()
+		var direction: Vector2 = scene_router.current_world().entry_direction(entry_id)
+		if direction != Vector2.ZERO:
+			hero.facing = direction
 	return result
 
 func bind_world() -> void:

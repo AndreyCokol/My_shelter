@@ -1,6 +1,8 @@
 extends RefCounted
 
-const VERSION = 3
+const Plans = preload("res://game/systems/world/building_plan.gd")
+const VERSION = 4
+const BUILDING_VERSION = 4
 const SEGMENT_VERSION = 1
 const ORIGINAL_ROADS = [[0, 1], [0, 2], [1, 3], [2, 3]]
 const CATALOG_VERSION = 1
@@ -56,8 +58,11 @@ static func street(district: int) -> String:
 static func hospital(district: int, floor_index: int) -> String:
 	return "hospital" if district == 0 and floor_index == 0 else "hospital_%d_%d" % [district, floor_index + 1]
 
-static func house(district: int) -> String:
-	return "house_%d" % district
+static func house(district: int, floor: int = 1) -> String:
+	return "house_%d" % district if floor == 1 else "house_%d_%d" % [district, floor]
+
+static func building_exists(id: String, version: int) -> bool:
+	return not (id.begins_with("house_") and not id.get_slice("_", 2).is_empty()) or version >= BUILDING_VERSION
 
 static func kind(id: String) -> String:
 	if id == "outside" or id.begins_with("street_"):
@@ -84,7 +89,7 @@ static func valid_manifest(value) -> bool:
 	if not value is Dictionary or value.size() != 3:
 		return false
 	var seed_value = value.get("seed")
-	return (seed_value is int or seed_value is float) and is_finite(seed_value) and seed_value >= 0 and seed_value <= MAX_SEED and seed_value == floor(seed_value) and value.get("generator_version") in [1, 2, VERSION] and value.get("catalog_version") == CATALOG_VERSION
+	return (seed_value is int or seed_value is float) and is_finite(seed_value) and seed_value >= 0 and seed_value <= MAX_SEED and seed_value == floor(seed_value) and value.get("generator_version") in [1, 2, 3, VERSION] and value.get("catalog_version") == CATALOG_VERSION
 
 # Local streams prevent future loot rolls from changing the geometry.
 static func _variant_order(world_seed: int, stream: String) -> Array:
@@ -155,6 +160,19 @@ static func _expand_interior(node: Dictionary, variant: int) -> void:
 		node.loot = Vector2(769 + variant * 75, 326)
 		node.enemy = Vector2(902, 253)
 
+static func _apply_floor_plan(node: Dictionary, world_seed: int, building: String, floor: int, variant: int) -> void:
+	var fingerprint := ("%d:%s:floor-plan" % [world_seed, building]).sha256_text().substr(0, 8)
+	var pattern := variant * 2 + fingerprint.hex_to_int() % 2
+	var plan := Plans.get_plan(node.kind, floor, pattern)
+	node.bounds = Rect2(LEGACY_FLOOR.position, INTERIOR_SIZE)
+	node.building_id = building
+	node.floor_number = floor
+	node.floor_plan = plan
+	node.obstacles = plan.walls + plan.furniture.map(func(item): return item.rect)
+	node.spawn = plan.spawn
+	node.loot = plan.loot
+	node.enemy = plan.enemy
+
 static func _expand_service(node: Dictionary) -> void:
 	node.bounds = Rect2(LEGACY_FLOOR.position, INTERIOR_SIZE)
 	node.rooms = [Rect2(684, 147, 360, 239), Rect2(206, 389, 345, 147)]
@@ -175,6 +193,7 @@ static func _make_exits(nodes: Dictionary, world_seed: int, version: int) -> voi
 			var position := Vector2(1110, 560)
 			var inward := Vector2.UP
 			var form := "door"
+			var threshold := Vector2.INF
 			if node.kind == "outside":
 				inward = Vector2.DOWN
 				match destination:
@@ -190,6 +209,15 @@ static func _make_exits(nodes: Dictionary, world_seed: int, version: int) -> voi
 						position = Vector2(2010, 561)
 						inward = Vector2.LEFT
 						form = "gate"
+			elif node.has("floor_plan"):
+				if destination == "outside":
+					threshold = node.floor_plan.entrance
+					position = threshold + Vector2(0, -24)
+				else:
+					var upward: bool = nodes[target].floor_number > node.floor_number
+					position = node.floor_plan.stairs_up if upward else node.floor_plan.stairs_down
+					inward = Vector2.LEFT if upward else Vector2.RIGHT
+					form = "stairs_up" if upward else "stairs_down"
 			elif node.kind == "house" or node.kind == "hospital":
 				position = Vector2(180, 566)
 				if destination == "hospital":
@@ -201,6 +229,12 @@ static func _make_exits(nodes: Dictionary, world_seed: int, version: int) -> voi
 				"position": position, "arrival": position + inward * 25, "inward": inward, "form": form,
 				"area": Rect2(position - Vector2(27, 23), Vector2(54, 46)),
 			}
+			if threshold.is_finite():
+				node.exits[target].threshold = threshold
+			if version >= BUILDING_VERSION:
+				var pair := [id, target]
+				pair.sort()
+				node.exits[target].connector_id = "__".join(pair)
 		if node.kind == "outside":
 			var main_road: Rect2 = node.roadways[0]
 			var has_west: bool = node.exits.values().any(func(exit): return exit.form == "road" and exit.inward == Vector2.RIGHT)
@@ -231,6 +265,8 @@ static func roads(world_seed: int, version: int) -> Array:
 	return edges
 
 static func linked(entries: Dictionary, from: String, to: String, data: Dictionary) -> bool:
+	if not building_exists(from, int(data.generator_version)) or not building_exists(to, int(data.generator_version)):
+		return false
 	if kind(from) != "outside" or kind(to) != "outside":
 		return "from_" + from in entries.get(to, [])
 	for edge in roads(int(data.seed), int(data.generator_version)):
@@ -256,7 +292,14 @@ static func build(world_seed: int, version: int = VERSION) -> Dictionary:
 			_expand_street(nodes[exterior], streets[district])
 		var interiors := ROOM_BLOCKS if version == 1 else HOUSE_BLOCKS
 		nodes[residence] = _record("house", "Жилой дом · район %d" % (district + 1), "house:%d" % houses[district], interiors[houses[district]])
-		if version >= 3:
+		if version >= BUILDING_VERSION:
+			nodes[residence].label += " · этаж 1"
+			_apply_floor_plan(nodes[residence], world_seed, residence, 1, houses[district])
+			var upper := house(district, 2)
+			nodes[upper] = _record("house", "Жилой дом · район %d · этаж 2" % (district + 1), "house:%d:upper" % houses[district], [])
+			_apply_floor_plan(nodes[upper], world_seed, residence, 2, houses[district])
+			_connect(nodes, residence, upper)
+		elif version >= 3:
 			_expand_interior(nodes[residence], houses[district])
 		_connect(nodes, exterior, residence)
 		for floor_index in range(FLOORS):
@@ -266,7 +309,9 @@ static func build(world_seed: int, version: int = VERSION) -> Dictionary:
 			# Each functional floor has a distinct obstacle in the west room.
 			obstacles.append(Rect2(101 + 18 * floor_index, 112 + 11 * floor_index, 20, 26))
 			nodes[id] = _record("hospital", "Больница %d · этаж %d" % [district + 1, floor_index + 1], "hospital:%d:%d" % [floor_index, variant], obstacles)
-			if version >= 3:
+			if version >= BUILDING_VERSION:
+				_apply_floor_plan(nodes[id], world_seed, hospital(district, 0), floor_index + 1, variant)
+			elif version >= 3:
 				_expand_interior(nodes[id], variant)
 			_connect(nodes, exterior if floor_index == 0 else hospital(district, floor_index - 1), id)
 	for edge in roads(world_seed, version):
@@ -309,4 +354,9 @@ static func entries() -> Dictionary:
 				if street(district) != id:
 					markers.append("from_" + street(district))
 		result[id] = markers
+	for district in range(DISTRICTS):
+		var ground := house(district)
+		var upper := house(district, 2)
+		result[ground].append("from_" + upper)
+		result[upper] = ["default", "from_" + ground]
 	return result

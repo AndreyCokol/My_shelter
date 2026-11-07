@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Plans = preload("res://game/systems/world/building_plan.gd")
 const ROOT = "res://game/assets/project/world/"
 const HOSPITAL = ["hospital_teal", "hospital_beige", "hospital_blue", "hospital_blue"]
 const HOMES = ["parquet", "linoleum", "ceramic", "concrete"]
@@ -21,6 +22,9 @@ static func stamp(canvas: CanvasItem, id: String, rect: Rect2, tint: Color = Col
 
 static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dictionary) -> void:
 	var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
+	if layout.has("floor_plan"):
+		plan_ground(canvas, layout.floor_plan)
+		return
 	if layout.has("roadways"):
 		street_ground(canvas, bounds, layout.roadways, layout.aprons, variant)
 		return
@@ -55,6 +59,42 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 
 	if layout.has("rooms"):
 		room_ground(canvas, kind, layout.rooms, variant)
+
+static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
+	for room in plan.rooms.values():
+		var surface := "parquet"
+		if plan.kind == "hospital":
+			surface = "hospital_blue" if room.kind in ["surgery", "lab", "prep"] else "hospital_teal"
+		elif room.kind in ["lobby", "corridor", "storage"]:
+			surface = "concrete"
+		elif room.kind in ["living", "studio"]:
+			surface = "linoleum"
+		if room.kind == "bath":
+			surface = "ceramic"
+		tile(canvas, surface, room.rect, DIM)
+
+static func plan_details(canvas: CanvasItem, plan: Dictionary) -> void:
+	for item in plan.furniture:
+		var rect: Rect2 = item.rect
+		canvas.draw_rect(rect, Color("1f252a"))
+		if item.kind in ["bedroom", "ward", "recovery"]:
+			canvas.draw_rect(rect.grow(-2), Color("696870"))
+			canvas.draw_rect(Rect2(rect.position + Vector2(4, 4), Vector2(rect.size.x - 8, 8)), Color("afb3b1"))
+		else:
+			tile(canvas, "wood" if plan.kind == "house" else "concrete", rect.grow(-2), DIM)
+	for door in plan.doors:
+		var point: Vector2 = door.position
+		var size := Vector2(door.width, 10) if door.horizontal else Vector2(10, door.width)
+		canvas.draw_rect(Rect2(point - size * 0.5, size), Color("686159"))
+		if door.from == "corridor" and plan.rooms[door.to].kind == "foyer":
+			var unit: Dictionary = plan.units[plan.rooms[door.to].unit]
+			canvas.draw_string(ThemeDB.fallback_font, point + Vector2(-17, 4), "Кв. %d" % unit.number, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("eee0bb"))
+	for room in plan.rooms.values():
+		if room.kind == "foyer":
+			continue
+		var rect: Rect2 = room.rect
+		var label: String = Plans.LABELS[room.kind]
+		canvas.draw_string(ThemeDB.fallback_font, rect.position + Vector2(9, 15), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14, 10, Color("d9d7c5"))
 
 static func room_ground(canvas: CanvasItem, kind: String, rooms: Array, variant: int) -> void:
 	var materials: Array = []
@@ -137,7 +177,7 @@ static func exit_fixture(canvas: CanvasItem, portal: Dictionary, floor: Rect2, s
 			var sign := "↑" if form == "stairs_up" else "↓"
 			canvas.draw_string(ThemeDB.fallback_font, position + Vector2(25, -4), sign, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("eee5c6"))
 		_:
-			var door := position - inward * 17
+			var door: Vector2 = portal.get("threshold", position - inward * 17)
 			var rect := Rect2(door - Vector2(18, 13), Vector2(36, 26))
 			canvas.draw_rect(rect.grow(3), Color("292626"))
 			canvas.draw_rect(rect, edge)

@@ -7,6 +7,7 @@ const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Logic = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Workshop = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const Plans = preload("res://game/systems/world/building_plan.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Rules = preload("res://game/data/game_rules.gd")
 const Campaign = preload("res://game/systems/core/campaign_session.gd")
@@ -101,6 +102,9 @@ func expanded_routes(record: Dictionary) -> bool:
 		targets.append_array([record.salvage, record.event])
 	for exit in record.exits.values():
 		targets.append(exit.arrival)
+	if record.has("floor_plan"):
+		for room in record.floor_plan.rooms.values():
+			targets.append(room.rect.get_center())
 	for point in targets:
 		var cell := Vector2i(((point - walkable.position) / step).round()).clamp(Vector2i.ZERO, grid.region.end - Vector2i.ONE)
 		if grid.get_id_path(start, cell).is_empty():
@@ -117,6 +121,45 @@ func follow(app, target: String) -> bool:
 			return app.snapshot().scene.current_scene_id == target
 	return false
 
+func move_for(action: String, frames: int) -> void:
+	Input.action_press(action)
+	for frame in range(frames + 1):
+		await physics_frame
+	Input.action_release(action)
+
+func test_apartment(app):
+	var reached := follow(app, "outside") and follow(app, "house_0") and follow(app, "house_0_2")
+	check(reached, "player enters a house from its facade and climbs to the second floor")
+	if not reached:
+		return app
+	var world = app.scene_router.current_world()
+	var plan: Dictionary = world.layout.floor_plan
+	var unit: Dictionary = plan.units.apt_01
+	var foyer: Dictionary = plan.rooms[unit.entry]
+	var living: Dictionary = plan.rooms[unit.rooms[1]]
+	var entry: Dictionary = plan.doors.filter(func(door): return door.to == foyer.id)[0]
+	var internal: Dictionary = plan.doors.filter(func(door): return door.to == living.id)[0]
+	app.hero.position = entry.position + Vector2(0, 20)
+	await move_for("move_up", 24)
+	check(foyer.rect.has_point(app.hero.position), "movement crosses the real opening into the apartment foyer")
+	var shift: float = internal.position.x - app.hero.position.x
+	await move_for("move_left" if shift < 0 else "move_right", roundi(absf(shift) * 60 / 115))
+	await move_for("move_up", 34)
+	check(living.rect.has_point(app.hero.position), "movement through the foyer reaches the apartment living area")
+	var saved_position: Vector2 = app.hero.position
+	var path: String = app.save_location
+	check(app.save_game().ok, "player can save inside an apartment")
+	app.free()
+	await process_frame
+	app = preload("res://game/scenes/main/playable.tscn").instantiate()
+	app.save_location = path
+	app.starting_seed = 777
+	root.add_child(app)
+	check(app.load_game().ok and app.snapshot().scene.current_scene_id == "house_0_2" and app.hero.position == saved_position and app.scene_router.current_world().layout.floor_plan == plan, "restarting restores the same apartment and position upstairs")
+	check(follow(app, "house_0") and follow(app, "outside") and app.hero.position == app.scene_router.current_world().layout.exits.house_0.arrival, "going downstairs returns to the original street facade")
+	check(app.transition("shelter").ok, "the shelter remains accessible after leaving the house")
+	return app
+
 func run() -> void:
 	var geometry := {}
 	var signatures := {}
@@ -124,36 +167,56 @@ func run() -> void:
 	var expanded_samples := {}
 	var clearance := true
 	var valid_graphs := true
+	var valid_plans := true
+	var distinct_plans := true
 	for seed_value in range(128):
 		var nodes := Layout.build(seed_value)
+		var old_nodes := Layout.build(seed_value, 2)
 		road_signatures[JSON.stringify(nodes.outside.links)] = true
 		var reachable := {"shelter": true}
 		var frontier := ["shelter"]
 		var used := {}
+		var plans := {}
 		for id in nodes:
 			var entry: Dictionary = nodes[id]
 			clearance = expanded_geometry(entry) and clearance
 			var shape := "%s:%s" % [entry.segment, JSON.stringify(entry.exits.values().map(func(exit): return exit.position))]
+			if entry.has("floor_plan"):
+				var plan: Dictionary = entry.floor_plan
+				shape = "%s:%d:%d" % [entry.kind, entry.floor_number, plan.pattern]
+				if plans.has(shape):
+					distinct_plans = false
+				plans[shape] = true
+				var expected_pattern: int = int(entry.segment.get_slice(":", 1 if entry.kind == "house" else 2)) * 2
+				valid_plans = valid_plans and plan.pattern in [expected_pattern, expected_pattern + 1]
 			expanded_samples[shape] = entry
 			valid_graphs = valid_graphs and entry.links.size() <= Layout.DOORS.size() and not used.has(entry.segment)
 			used[entry.segment] = true
 			for target in entry.links:
-				valid_graphs = valid_graphs and id in nodes[target].links
-			if not geometry.has(entry.segment):
-				geometry[entry.segment] = Layout.build(seed_value, 2)[id]
+				var exit: Dictionary = entry.exits[target]
+				var paired: Dictionary = nodes[target].exits[id]
+				valid_graphs = valid_graphs and id in nodes[target].links and exit.connector_id == paired.connector_id
+				if exit.form.begins_with("stairs"):
+					valid_graphs = valid_graphs and exit.position == paired.position and exit.form != paired.form
+			if old_nodes.has(id) and not geometry.has(entry.segment):
+				geometry[entry.segment] = old_nodes[id]
 		while not frontier.is_empty():
 			var id = frontier.pop_back()
 			for target in nodes[id].links:
 				if not reachable.has(target):
 					reachable[target] = true
 					frontier.append(target)
-		valid_graphs = valid_graphs and reachable.size() == 26 and used.size() == 26
+		valid_graphs = valid_graphs and reachable.size() == 30 and used.size() == 30
 		signatures[JSON.stringify(used.keys())] = true
 	check(valid_graphs and signatures.size() > 1, "128 seeds produce connected graphs and distinct assignments")
 	check(clearance, "128 seeds use exact map areas with clear arrival, exit and objective anchors")
+	check(valid_plans and distinct_plans, "128 seeds generate distinct checked plans for all four hospitals and houses")
 	check(expanded_samples.values().all(expanded_routes), "every expanded room and street profile connects its exits and objectives")
 	check(road_signatures.size() > 3, "new seeds vary the actual roads and keep every district reachable")
 	check(Layout.build(54) == Layout.build(54), "same seed reconstructs exact layout")
+	var broken: Dictionary = Plans.get_plan("house", 2, 5).duplicate(true)
+	broken.walls.append(Rect2(broken.doors[0].position - Vector2(10, 10), Vector2(20, 20)))
+	check(not Plans.valid(broken) and Plans.checked(broken, "house", 2, 5) == Plans.get_plan("house", 2, 2), "blocked doorway activates an aligned, checked fallback floor")
 	var passable := true
 	for record in geometry.values():
 		passable = passable and reachable_floor(record)
@@ -223,6 +286,10 @@ func run() -> void:
 	check(app.scene_router.current_world().layout == Layout.build(54, 1).shelter, "older layout version is selected from the checkpoint")
 	var original_city := Layout.from_manifest(original.world_states.layout)
 	check(original_city.outside.links == ["house_0", "hospital", "street_1", "street_2", "louvre", "shelter"], "original seed retains its road markers and order")
+	original.world_states.layout.generator_version = 3
+	var version_three := Layout.from_manifest(original.world_states.layout)
+	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok and app.scene_router.current_world().layout == version_three.shelter, "version-three procedural saves retain their map")
+	check(not version_three.has("house_0_2") and follow(app, "outside") and follow(app, "house_0") and not app.scene_router.current_world().layout.has("floor_plan"), "version-three house retains its original ground floor")
 	original.world_states.layout = current_layout
 	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok, "restore current layout for remaining gameplay checks")
 	original.world_states.layout.generator_version = 2
@@ -233,6 +300,7 @@ func run() -> void:
 	var before_upgrade: Dictionary = app.snapshot()
 	check(app.command("session.upgrade_world").ok and app.snapshot().world_states.layout.seed == 54 and app.scene_router.current_world().floor_rect().size == Layout.STREET_SIZE and app.hero.position == Layout.DEFAULT_SPAWN, "upgrade remounts the same street and moves a blocked position to the safe spawn")
 	check(app.snapshot().inventory == before_upgrade.inventory and app.snapshot().world_states.locations == before_upgrade.world_states.locations and app.transition("shelter").ok, "map upgrade keeps inventory and location progress")
+	app = await test_apartment(app)
 	test_workshop(app)
 	test_resident_work(app)
 	test_camp_network(app)

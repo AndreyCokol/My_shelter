@@ -68,6 +68,26 @@ func run() -> void:
 	app.hero.position = interior.layout.exits.outside.position
 	interior.interact()
 	check(app.snapshot().scene.current_scene_id == "outside", "rendered indoor exit returns to the street facade")
+	street = app.scene_router.current_world()
+	app.hero.position = street.layout.exits.house_0.position
+	await capture("house_door")
+	street.interact()
+	check(app.snapshot().scene.current_scene_id == "house_0", "rendered residential facade leads to its lobby")
+	interior = app.scene_router.current_world()
+	app.hero.position = interior.layout.exits.house_0_2.position
+	interior.interact()
+	check(app.snapshot().scene.current_scene_id == "house_0_2", "rendered residential stairs lead to an apartment floor")
+	interior = app.scene_router.current_world()
+	var plan: Dictionary = interior.layout.floor_plan
+	var apartment: Dictionary = plan.units.apt_01
+	app.hero.position = plan.rooms[apartment.rooms[1]].rect.get_center()
+	await capture("apartment")
+	app.hero.position = interior.layout.exits.house_0.position
+	interior.interact()
+	interior = app.scene_router.current_world()
+	app.hero.position = interior.layout.exits.outside.position
+	interior.interact()
+	check(app.snapshot().scene.current_scene_id == "outside" and app.hero.position == app.scene_router.current_world().layout.exits.house_0.arrival, "rendered house exit returns to the same facade")
 	check(app.transition("louvre").ok, "render the camp board in its scene")
 	app.ui.open_panel("camp")
 	await process_frame

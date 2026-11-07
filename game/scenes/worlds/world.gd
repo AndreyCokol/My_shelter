@@ -54,6 +54,8 @@ func _ready() -> void:
 		Rect2(floor.position, Vector2(10, floor.size.y)),
 		Rect2(Vector2(floor.end.x - 10, floor.position.y), Vector2(10, floor.size.y)),
 	]
+	if layout.has("floor_plan"):
+		walls.clear()
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
 		add_wall(rect)
@@ -74,6 +76,12 @@ func _ready() -> void:
 	else:
 		portals = [{"to": "outside", "position": Vector2(550, 280), "label": "Город"}]
 	queue_redraw()
+
+func entry_direction(id: String) -> Vector2:
+	for portal in portals:
+		if "from_" + portal.to == id:
+			return portal.get("inward", Vector2.DOWN)
+	return Vector2.ZERO
 
 func salvage_point() -> Vector2:
 	return layout.get("salvage", Construction.SALVAGE_POINT)
@@ -183,12 +191,12 @@ func _process(_delta: float) -> void:
 func draw_occlusion() -> void:
 	if app == null:
 		return
-	for obstacle in layout.obstacles:
+	for obstacle in layout.get("floor_plan", {}).get("walls", layout.obstacles):
 		if app.hero.position.y < obstacle.end.y and obstacle.grow(18).has_point(app.hero.position):
 			WorldArt.obstacle(occlusion, scene_id, obstacle)
 
 func draw_location_detail() -> void:
-	if layout.is_empty():
+	if layout.is_empty() or layout.has("floor_plan"):
 		return
 	var segment: String = layout.segment
 	var variant := int(segment.get_slice(":", 1))
@@ -211,8 +219,10 @@ func _draw() -> void:
 	var variant := int(str(layout.get("segment", "")).get_slice(":", 1))
 	WorldArt.ground(self, scene_id, variant, layout)
 	draw_location_detail()
-	for obstacle in layout.get("obstacles", []):
+	for obstacle in layout.get("floor_plan", {}).get("walls", layout.get("obstacles", [])):
 		WorldArt.obstacle(self, scene_id, obstacle)
+	if layout.has("floor_plan"):
+		WorldArt.plan_details(self, layout.floor_plan)
 	for kind in layout.get("facades", {}):
 		WorldArt.facade(self, layout.facades[kind], kind)
 	if scene_id == "hospital" and layout.is_empty():

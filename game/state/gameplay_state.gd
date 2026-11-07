@@ -115,7 +115,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if not DistrictEvents.validate(state.world_states.get("district_events", {}), cleared):
 			return false
 		for id in state.world_states.locations:
-			if not id is String or not rules.scenes.has(id):
+			if not id is String or not rules.scenes.has(id) or not Layout.building_exists(id, int(state.world_states.layout.generator_version)):
 				return false
 			var record = state.world_states.locations[id]
 			if not record is Dictionary or record.is_empty():

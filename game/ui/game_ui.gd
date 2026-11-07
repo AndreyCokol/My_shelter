@@ -339,7 +339,8 @@ func render_panel() -> void:
 				button(body, "Перенести сохранение в процедурный город", run_command.bind("session.upgrade_world"))
 			elif state.schema_version == 4 and state.world_states.layout.generator_version < Layout.VERSION:
 				line("Расширить текущий мир с сохранением прогресса. Если старая точка перекрыта, герой появится у безопасного входа.")
-				button(body, "Перейти на большие карты", run_command.bind("session.upgrade_world"))
+				var label := "Перейти на большие карты" if int(state.world_states.layout.generator_version) < 3 else "Обновить планировки зданий"
+				button(body, label, run_command.bind("session.upgrade_world"))
 			if app.hero.defeated:
 				button(body, "Повторить безопасное восстановление героя", _retry_defeat)
 		"inventory":
@@ -554,6 +555,14 @@ func draw_local_map(canvas: Control, node: Dictionary, hero_position: Vector2) -
 	canvas.draw_rect(Rect2(origin + floor.position * scale_factor, floor.size * scale_factor), Color("273334"))
 	for rect in node.get("roadways", node.get("rooms", [])):
 		canvas.draw_rect(Rect2(origin + rect.position * scale_factor, rect.size * scale_factor), Color("536060"))
+	if node.has("floor_plan"):
+		for room in node.floor_plan.rooms.values():
+			var rect: Rect2 = room.rect
+			var tint := Color("536060") if room.unit.is_empty() else Color("56514d")
+			canvas.draw_rect(Rect2(origin + rect.position * scale_factor, rect.size * scale_factor), tint)
+		for door in node.floor_plan.doors:
+			var point: Vector2 = origin + door.position * scale_factor
+			canvas.draw_circle(point, 2, Color("aa9777"))
 	for rect in node.obstacles:
 		canvas.draw_rect(Rect2(origin + rect.position * scale_factor, rect.size * scale_factor), Color("151b20"))
 	for exit in node.exits.values():
