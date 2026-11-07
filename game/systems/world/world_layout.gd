@@ -203,10 +203,10 @@ static func _make_exits(nodes: Dictionary, world_seed: int, version: int) -> voi
 			}
 		if node.kind == "outside":
 			var main_road: Rect2 = node.roadways[0]
-			var west := node.exits.values().any(func(exit): return exit.form == "road" and exit.inward == Vector2.RIGHT)
-			var east := node.exits.values().any(func(exit): return exit.form == "road" and exit.inward == Vector2.LEFT)
-			var start := main_road.position.x if west else main_road.position.x + 90
-			var finish := main_road.end.x if east else main_road.end.x - 150
+			var has_west: bool = node.exits.values().any(func(exit): return exit.form == "road" and exit.inward == Vector2.RIGHT)
+			var has_east: bool = node.exits.values().any(func(exit): return exit.form == "road" and exit.inward == Vector2.LEFT)
+			var start := main_road.position.x if has_west else main_road.position.x + 90
+			var finish := main_road.end.x if has_east else main_road.end.x - 150
 			node.roadways[0] = Rect2(start, main_road.position.y, finish - start, main_road.size.y)
 
 static func hospital_floor(id: String) -> int:
