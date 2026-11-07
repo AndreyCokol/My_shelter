@@ -1,5 +1,8 @@
 extends RefCounted
 
+const Camp = preload("res://game/systems/world/camp_network.gd")
+const Work = preload("res://game/systems/shelter/resident_work.gd")
+const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
 static func integer(value) -> bool:
@@ -56,6 +59,8 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if not resident is Dictionary or not resident.get("id") in ["resident_1", "resident_2"] or resident.id in ids or not resident.get("status") in ["unknown", "contacted", "declined", "AWAITING_SUPPLIES", "joined"] or not resident.get("consent") is bool or not resident.get("food_receipt_id") is String:
 			return false
 		ids.append(resident.id)
+		if resident.has("shift") and (state.schema_version != 4 or resident.status != "joined" or not Work.valid_shift(resident.shift, int(state.game_time_minutes))):
+			return false
 		if resident.status in ["AWAITING_SUPPLIES", "joined"] and not resident.consent:
 			return false
 		if resident.status == "joined" and (resident.food_receipt_id.is_empty() or not state.completed_actions.has(resident.food_receipt_id)):
@@ -88,7 +93,12 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
 	if state.schema_version == 4:
-		if state.world_states.size() != 5 or not Layout.valid_manifest(state.world_states.get("layout")) or not state.world_states.get("locations") is Dictionary:
+		var known_fields := 5 + int(state.world_states.has("salvage_ready_at")) + int(state.world_states.has("camp_network"))
+		if state.world_states.size() != known_fields or not state.world_states.get("locations") is Dictionary:
+			return false
+		if not Construction.validate(state.shelter.get("buildings", {}), state.world_states.get("salvage_ready_at", {}), rules.scenes):
+			return false
+		if state.world_states.has("camp_network") and not Camp.valid_record(state.world_states.camp_network, int(state.game_time_minutes)):
 			return false
 		for id in state.world_states.locations:
 			if not id is String or not rules.scenes.has(id):

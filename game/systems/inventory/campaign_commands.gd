@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
@@ -66,7 +67,7 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			return fail("UNAVAILABLE")
 		if kind.begins_with("game."):
 			var keys := ["world", "farm", "residents", "inventory:player", "inventory:storage"]
-			if kind == "game.expand_farm":
+			if kind in ["game.expand_farm", "game.fulfill_contract", "game.trade_camp"]:
 				keys.append("wallet")
 			var checked := revisions(state, request, keys)
 			if not checked.ok:
@@ -152,7 +153,7 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 				return fail("INVALID_ARGUMENT")
 			var old: String = state.scene.current_scene_id
 			if state.schema_version == 4:
-				var linked: bool = "from_" + old in rules.scenes[p.destination_scene_id]
+				var linked := Layout.linked(rules.scenes, old, p.destination_scene_id, state.world_states.layout)
 				var shelter_warp: bool = p.entry_point_id == "default" and (p.destination_scene_id == "shelter" or (old == "shelter" and p.destination_scene_id == state.scene.return_scene_id))
 				if not linked and not shelter_warp:
 					return fail("INVALID_ARGUMENT")

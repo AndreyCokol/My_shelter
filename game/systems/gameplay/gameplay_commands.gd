@@ -1,5 +1,8 @@
 extends RefCounted
 
+const Camp = preload("res://game/systems/world/camp_network.gd")
+const Work = preload("res://game/systems/shelter/resident_work.gd")
+const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
 const Numbers = preload("res://game/state/gameplay_state.gd")
@@ -7,7 +10,10 @@ const Numbers = preload("res://game/state/gameplay_state.gd")
 static func normalize(request: Dictionary) -> Dictionary:
 	var fields := {
 		"game.enemy_defeated": [], "game.player_defeated": [], "game.resource_collect": [],
+		"game.salvage": [], "game.build": ["cell", "structure"], "game.dismantle": ["cell"], "game.craft": ["recipe"],
 		"game.expand_farm": [], "game.plant": ["plot_id"], "game.water": ["plot_id"], "game.harvest": ["plot_id"], "game.clear": ["plot_id"],
+		"game.fulfill_contract": ["day", "faction"], "game.trade_camp": ["faction"],
+		"game.assign_shift": ["resident_id", "job"], "game.collect_shift": ["resident_id"],
 		"game.contact": ["resident_id"], "game.consent": ["resident_id", "accept"], "game.recruit": ["resident_id"],
 		"game.quest_track": ["quest_id"]}
 	var kind = request.get("command_type")
@@ -17,7 +23,11 @@ static func normalize(request: Dictionary) -> Dictionary:
 	var normalized: Dictionary = {}
 	for key in fields[kind]:
 		var value = payload.get(key)
-		if key == "accept":
+		if key == "day":
+			if not Numbers.integer(value):
+				return {"ok": false}
+			value = int(value)
+		elif key == "accept":
 			if not value is bool:
 				return {"ok": false}
 		elif not value is String or value.is_empty():
@@ -141,6 +151,24 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		else:
 			state.world_states.locations[scene] = {"resource_ready_at": ready_at}
 		return success({"ready_at": ready_at})
+	if kind == "game.salvage":
+		if state.schema_version != 4 or Layout.kind(scene) != "outside":
+			return fail("UNAVAILABLE")
+		var ready: Dictionary = state.world_states.get("salvage_ready_at", {})
+		if state.game_time_minutes < ready.get(scene, 0):
+			return fail("UNAVAILABLE")
+		if not give(state, rules, "material.salvage", Construction.SALVAGE_AMOUNT, request.action_id):
+			return fail("CAPACITY_EXCEEDED")
+		ready[scene] = state.game_time_minutes + Construction.SALVAGE_INTERVAL
+		state.world_states.salvage_ready_at = ready
+		bump(state, ["world"])
+		return success({"ready_at": ready[scene]})
+	if kind in ["game.fulfill_contract", "game.trade_camp"]:
+		return plan_camp(state, request, rules)
+	if kind in ["game.assign_shift", "game.collect_shift"]:
+		return plan_shift(state, request, rules)
+	if kind in ["game.build", "game.dismantle", "game.craft"]:
+		return plan_workshop(state, request, rules)
 	if kind == "game.expand_farm":
 		if state.schema_version != 4:
 			return fail("UNAVAILABLE")
@@ -263,6 +291,110 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		bump(state, ["residents"])
 		return success()
 	return fail("INVALID_ARGUMENT")
+
+static func plan_camp(state: Dictionary, request: Dictionary, rules: Dictionary) -> Dictionary:
+	if state.schema_version != 4 or state.scene.current_scene_id != "louvre":
+		return fail("UNAVAILABLE")
+	var p: Dictionary = request.payload
+	if not Camp.FACTIONS.has(p.faction):
+		return fail("INVALID_ARGUMENT")
+	var faction: Dictionary = Camp.FACTIONS[p.faction]
+	var current := Camp.schedule(int(state.game_time_minutes), int(state.world_states.layout.seed))
+	var network: Dictionary = state.world_states.get("camp_network", Camp.empty_state())
+	if request.command_type == "game.fulfill_contract":
+		if not current.active or current.day != p.day or current.faction != p.faction or network.last_contract_day == current.day:
+			return fail("UNAVAILABLE")
+		if not take(state, faction.request, faction.quantity):
+			return fail("INSUFFICIENT_RESOURCES")
+		state.wallet.system_coins += faction.reward
+		network.last_contract_day = current.day
+		network.reputation[p.faction] = network.reputation.get(p.faction, 0) + 1
+	else:
+		if not network.reputation.has(p.faction) or network.last_trade.get(p.faction, -1) == current.day:
+			return fail("UNAVAILABLE")
+		if state.wallet.system_coins < faction.price:
+			return fail("INSUFFICIENT_RESOURCES")
+		if not give(state, rules, faction.goods, faction.goods_quantity, request.action_id):
+			return fail("CAPACITY_EXCEEDED")
+		state.wallet.system_coins -= faction.price
+		network.last_trade[p.faction] = current.day
+	state.world_states.camp_network = network
+	bump(state, ["wallet", "world"])
+	return success({"faction": p.faction})
+
+static func plan_shift(state: Dictionary, request: Dictionary, rules: Dictionary) -> Dictionary:
+	if state.schema_version != 4:
+		return fail("UNAVAILABLE")
+	if state.scene.current_scene_id != "shelter":
+		return fail("NOT_IN_SAFE_AREA")
+	var p: Dictionary = request.payload
+	for resident in state.residents.records:
+		if resident.id != p.resident_id:
+			continue
+		if resident.status != "joined":
+			return fail("UNAVAILABLE")
+		if request.command_type == "game.assign_shift":
+			if not Work.JOBS.has(p.job):
+				return fail("INVALID_ARGUMENT")
+			if resident.has("shift"):
+				return fail("INVALID_STATE")
+			if not take(state, Work.FOOD, 1):
+				return fail("INSUFFICIENT_RESOURCES")
+			resident.shift = {"job": p.job, "due": state.game_time_minutes + Work.DURATION, "ready": false}
+		else:
+			if not resident.get("shift", {}).get("ready", false):
+				return fail("UNAVAILABLE")
+			var job: Dictionary = Work.JOBS[resident.shift.job]
+			if not give(state, rules, job.output, job.quantity, request.action_id):
+				return fail("CAPACITY_EXCEEDED")
+			resident.erase("shift")
+		bump(state, ["residents"])
+		return success({"resident_id": resident.id})
+	return fail("NOT_FOUND")
+
+static func plan_workshop(state: Dictionary, request: Dictionary, rules: Dictionary) -> Dictionary:
+	if state.schema_version != 4:
+		return fail("UNAVAILABLE")
+	if state.scene.current_scene_id != "shelter":
+		return fail("NOT_IN_SAFE_AREA")
+	var p: Dictionary = request.payload
+	var buildings: Dictionary = state.shelter.get("buildings", {})
+	if request.command_type == "game.craft":
+		if not Construction.RECIPES.has(p.recipe):
+			return fail("INVALID_ARGUMENT")
+		if not "bench" in buildings.values():
+			return fail("UNAVAILABLE")
+		var recipe: Dictionary = Construction.RECIPES[p.recipe]
+		if not take(state, recipe.input, recipe.cost):
+			return fail("INSUFFICIENT_RESOURCES")
+		if not give(state, rules, recipe.output, 1, request.action_id):
+			return fail("CAPACITY_EXCEEDED")
+		return success({"type_id": recipe.output})
+	if not Construction.valid_cell(p.cell):
+		return fail("INVALID_ARGUMENT")
+	if request.command_type == "game.dismantle":
+		if not buildings.has(p.cell):
+			return fail("NOT_FOUND")
+		buildings.erase(p.cell)
+	else:
+		if not Construction.STRUCTURES.has(p.structure) or buildings.has(p.cell):
+			return fail("INVALID_ARGUMENT")
+		var pos = request.context.get("live_position", state.player.position)
+		if not pos is Dictionary or not (pos.get("x") is float or pos.get("x") is int) or not (pos.get("y") is float or pos.get("y") is int):
+			return fail("INVALID_ARGUMENT")
+		var actor := Vector2(pos.x, pos.y)
+		if not actor.is_finite() or Construction.cell_rect(p.cell).grow(10).has_point(actor):
+			return fail("INVALID_STATE")
+		var structure: Dictionary = Construction.STRUCTURES[p.structure]
+		if not take(state, structure.item, structure.cost):
+			return fail("INSUFFICIENT_RESOURCES")
+		buildings[p.cell] = p.structure
+		state.player.position = {"x": actor.x, "y": actor.y}
+		state.scene.positions.shelter = state.player.position.duplicate()
+		bump(state, ["scene"])
+	state.shelter.buildings = buildings
+	bump(state, ["world"])
+	return success({"cell": p.cell})
 
 static func refresh_quests(state: Dictionary) -> void:
 	var joined: int = 0

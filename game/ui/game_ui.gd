@@ -1,5 +1,8 @@
 extends Control
 
+const Camp = preload("res://game/systems/world/camp_network.gd")
+const Work = preload("res://game/systems/shelter/resident_work.gd")
+const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
 
@@ -14,9 +17,10 @@ var body: VBoxContainer
 var heading: Label
 var heading_icon: TextureRect
 var rest_target: int = 0
+var building_cell := "0"
 var _refresh_pending: bool = false
 const NAMES = {"hospital": "Больница", "outside": "Город", "shelter": "Убежище", "louvre": "Стоянка"}
-const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города"}
+const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города", "workshop": "Строительство и мастерская", "jobs": "Работа жителей", "camp": "Объявления и торговля"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
 const ERRORS = {"OK": "Готово", "ALREADY_APPLIED": "Действие уже выполнено", "UNAVAILABLE": "Сейчас недоступно. Проверьте условия или восстановите сохранение.", "INVALID_STATE": "Состояние изменилось: обновите действие или выберите резервную копию.", "INVALID_ARGUMENT": "Проверьте параметры действия.", "INSUFFICIENT_RESOURCES": "Не хватает доступных ресурсов. Зарезервированная еда не расходуется.", "CAPACITY_EXCEEDED": "Рюкзак заполнен. Перенесите предметы в хранилище.", "REQUIRES_CONSENT": "Сначала нужно добровольное согласие путника.", "STALE_REVISION": "Данные изменились. Экран обновлён — повторите выбор.", "NOT_IN_SAFE_AREA": "Отдых и работа с грядками доступны в убежище.", "SAVE_FAILED": "Не удалось записать сохранение. Действие не подтверждено.", "PAUSED": "Осталась другая причина паузы. Закройте её прежде, чем действовать.", "NOT_FOUND": "Объект не найден."}
 
@@ -253,7 +257,7 @@ func render_panel() -> void:
 				line("В этом сохранении используются исходные локации.")
 			else:
 				var seed_value: int = int(state.world_states.layout.seed)
-				var nodes := Layout.build(seed_value)
+				var nodes := Layout.from_manifest(state.world_states.layout)
 				var here: String = state.scene.current_scene_id
 				line("Мир %d · %s" % [seed_value, nodes[here].label])
 				var destinations: Array[String] = []
@@ -280,6 +284,8 @@ func render_panel() -> void:
 			if app.hero.defeated:
 				button(body, "Повторить безопасное восстановление героя", _retry_defeat)
 		"inventory":
+			if state.schema_version == 4 and state.scene.current_scene_id == "shelter":
+				button(body, "Работа жителей", open_panel.bind("jobs"))
 			line("Системная посылка доступна после открытия убежища. Переносится весь свободный остаток стека.")
 			button(body, "Получить стартовую посылку", run_command.bind("inventory.claim_parcel", {"parcel_id": "starter"}))
 			for item in state.inventory.items:
@@ -287,6 +293,11 @@ func render_panel() -> void:
 				line("%s ×%d · %s · свободно %d" % [app.rules().items[item.type_id].name, item.quantity, "рюкзак" if item.container_id == "player" else "хранилище", available])
 				if available > 0:
 					button(body, "В хранилище" if item.container_id == "player" else "В рюкзак", run_command.bind("inventory.transfer", {"instance_id": item.instance_id, "from_id": item.container_id, "to_id": "storage" if item.container_id == "player" else "player", "quantity": available}))
+		"workshop":
+			if state.schema_version != 4 or state.scene.current_scene_id != "shelter":
+				line("Мастерская доступна на стройплощадке убежища.")
+			else:
+				render_workshop(state)
 		"farm":
 			line("Посадите семена и полейте. Вода в убежище доступна. Рост идёт естественно или во время отдыха.")
 			for plot in state.crops.plots:
@@ -308,7 +319,13 @@ func render_panel() -> void:
 				if preview.ok:
 					line("Конечная минута: %d. Испорченных грядок: %d." % [preview.data.actual_to_minute, preview.data.spoiled_plots])
 					button(body, "Подтвердить отдых", run_command.bind("clock.rest", {"target_minute": rest_target}))
+		"jobs":
+			render_jobs(state)
+		"camp":
+			render_camp(state)
 		"residents":
+			if state.schema_version == 4 and state.scene.current_scene_id == "louvre":
+				button(body, "Объявления и торговля", open_panel.bind("camp"))
 			line("Путники присоединяются добровольно. Для каждого нужен запас: %d ед. еды. Резерв нельзя расходовать повторно." % app.rules().food.units_per_resident)
 			for resident in state.residents.records:
 				line("%s: %s" % ["Путник 1" if resident.id == "resident_1" else "Путник 2", STATUS[resident.status]])
@@ -334,6 +351,80 @@ func render_panel() -> void:
 			button(body, "Купить семена", run_command.bind("inventory.purchase", {"offer_id": "seed"}))
 	if not notice.text.is_empty():
 		line(notice.text)
+
+func render_camp(state: Dictionary) -> void:
+	if state.schema_version != 4 or state.scene.current_scene_id != "louvre":
+		line("Доска объявлений находится на стоянке.")
+		return
+	var offer := Camp.schedule(int(state.game_time_minutes), int(state.world_states.layout.seed))
+	var network: Dictionary = state.world_states.get("camp_network", Camp.empty_state())
+	if offer.active and network.last_contract_day != offer.day:
+		var faction: Dictionary = Camp.FACTIONS[offer.faction]
+		var item: String = app.rules().items[faction.request].name
+		line("%s просят %s ×%d до 18:00. Награда — %d монет и доверие." % [faction.name, item.to_lower(), faction.quantity, faction.reward])
+		button(body, "Передать припасы", run_command.bind("game.fulfill_contract", {"day": offer.day, "faction": offer.faction}))
+	elif network.last_contract_day == offer.day:
+		line("Сегодняшняя просьба выполнена.")
+	else:
+		line("Просьбы принимают с 06:00 до 18:00.")
+	for id in Camp.FACTIONS:
+		var faction: Dictionary = Camp.FACTIONS[id]
+		var reputation: int = network.reputation.get(id, 0)
+		line("%s · доверие %d" % [faction.name, reputation])
+		if reputation > 0 and network.last_trade.get(id, -1) != offer.day:
+			var item: String = app.rules().items[faction.goods].name
+			button(body, "Купить %s ×%d за %d монет" % [item.to_lower(), faction.goods_quantity, faction.price], run_command.bind("game.trade_camp", {"faction": id}))
+	button(body, "К путникам", open_panel.bind("residents"))
+
+func render_jobs(state: Dictionary) -> void:
+	if state.schema_version != 4 or state.scene.current_scene_id != "shelter":
+		line("Назначить работу можно в убежище.")
+		return
+	line("Работают только поселившиеся путники. Для смены нужен 1 свободный картофель. Смена длится %d мин." % Work.DURATION)
+	for resident in state.residents.records:
+		if resident.status != "joined":
+			continue
+		line("Путник " + resident.id.get_slice("_", 1))
+		var shift: Dictionary = resident.get("shift", {})
+		if shift.is_empty():
+			for id in Work.JOBS:
+				var job: Dictionary = Work.JOBS[id]
+				button(body, "%s · %s ×%d" % [job.label, app.rules().items[job.output].name, job.quantity], run_command.bind("game.assign_shift", {"resident_id": resident.id, "job": id}))
+		elif shift.ready:
+			button(body, "Забрать результат", run_command.bind("game.collect_shift", {"resident_id": resident.id}))
+		else:
+			line("%s · осталось %d мин." % [Work.JOBS[shift.job].label, shift.due - state.game_time_minutes])
+
+func render_workshop(state: Dictionary) -> void:
+	button(body, "Работа жителей", open_panel.bind("jobs"))
+	var buildings: Dictionary = state.shelter.get("buildings", {})
+	var grid := GridContainer.new()
+	grid.columns = Construction.COLUMNS
+	body.add_child(grid)
+	for index in range(Construction.COLUMNS * Construction.ROWS):
+		var cell := str(index)
+		var label: String = Construction.STRUCTURES[buildings[cell]].label if buildings.has(cell) else "·"
+		var tile := button(grid, "%d  %s" % [index + 1, label], select_building_cell.bind(cell))
+		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tile.disabled = cell == building_cell
+	line("Клетка %d" % (int(building_cell) + 1))
+	if buildings.has(building_cell):
+		button(body, "Разобрать без возврата материалов", run_command.bind("game.dismantle", {"cell": building_cell}))
+	else:
+		for id in Construction.STRUCTURES:
+			var spec: Dictionary = Construction.STRUCTURES[id]
+			var item: String = app.rules().items[spec.item].name
+			button(body, "Построить %s · %s ×%d" % [spec.label.to_lower(), item, spec.cost], run_command.bind("game.build", {"cell": building_cell, "structure": id}))
+	if "bench" in buildings.values():
+		for id in Construction.RECIPES:
+			var recipe: Dictionary = Construction.RECIPES[id]
+			button(body, "Изготовить %s · %s ×%d" % [recipe.label.to_lower(), app.rules().items[recipe.input].name, recipe.cost], run_command.bind("game.craft", {"recipe": id}))
+	else:
+		line("Верстак открывает ремесло. Утиль можно найти на улицах города.")
+
+func select_building_cell(cell: String) -> void:
+	building_cell = cell
+	schedule_refresh()
 
 func _prepare_rest(target: int) -> void:
 	rest_target = target

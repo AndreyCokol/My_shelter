@@ -79,7 +79,10 @@ func command(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return _execute(kind, payload)
 
 func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
-	last_result = session.execute(_request(kind, payload), save_store)
+	var request := _request(kind, payload)
+	if kind == "game.build":
+		request.context.live_position = {"x": hero.position.x, "y": hero.position.y}
+	last_result = session.execute(request, save_store)
 	if ui != null:
 		ui.show_result(last_result)
 	return last_result
@@ -100,6 +103,7 @@ func bind_world() -> void:
 func _committed(_result: Dictionary) -> void:
 	var world = scene_router.current_world()
 	if is_instance_valid(world):
+		world.refresh_buildings()
 		world.queue_redraw()
 	update_hud()
 

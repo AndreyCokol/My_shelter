@@ -104,7 +104,7 @@ func _stage(scene_id: String, entry_id: String, state: Dictionary) -> Dictionary
 		world.free()
 		return {"ok": false}
 	if state.schema_version == 4 and world.has_method("configure_layout"):
-		world.configure_layout(Layout.build(int(state.world_states.layout.seed)), scene_id)
+		world.configure_layout(Layout.from_manifest(state.world_states.layout), scene_id)
 	var entries = world.get_node_or_null("EntryPoints")
 	var entry = entries.get_node_or_null(NodePath(entry_id)) if entries is Node2D and entry_id.is_valid_identifier() else null
 	if not entry is Marker2D or world.transform != Transform2D.IDENTITY or entries.transform != Transform2D.IDENTITY:

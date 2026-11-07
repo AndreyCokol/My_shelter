@@ -3,7 +3,8 @@ extends RefCounted
 # Original prototype balance. Candidate values; UX duration is not yet measured.
 static func build() -> Dictionary:
 	return {"version": "prototype-v1", "gameplay": true, "minutes_per_real_second": 1.0, "discovery_xp": 5,
-		"items": {"seed.basic": {"name": "Семена"}, "crop.potato": {"name": "Картофель"}, "tool.basic": {"name": "Походный нож"}},
+		"items": {"seed.basic": {"name": "Семена"}, "crop.potato": {"name": "Картофель"}, "tool.basic": {"name": "Походный нож"},
+			"material.salvage": {"name": "Утиль"}, "material.lamp_kit": {"name": "Комплект фонаря"}},
 		"containers": [{"id": "player", "capacity_units": 30}, {"id": "storage", "capacity_units": 120}],
 		"scenes": {"hospital": ["default"], "outside": ["default"], "shelter": ["default"], "louvre": ["default"]},
 		"offers": {"seed": {"type_id": "seed.basic", "quantity": 2, "price": 3}},
@@ -22,7 +23,10 @@ static func validate(rules: Dictionary) -> bool:
 			return false
 	if not rules.get("items") is Dictionary or not rules.get("scenes") is Dictionary or not rules.get("rewards") is Dictionary or not rules.rewards.get("system") is Dictionary:
 		return false
-	for id in ["seed.basic", "crop.potato", "tool.basic"]:
+	var item_ids := ["seed.basic", "crop.potato", "tool.basic"]
+	if rules.has("world_seed"):
+		item_ids.append_array(["material.salvage", "material.lamp_kit"])
+	for id in item_ids:
 		if not rules.items.get(id) is Dictionary or not rules.items[id].get("name") is String or rules.items[id].name.is_empty():
 			return false
 	for id in ["hospital", "outside", "shelter", "louvre"]:

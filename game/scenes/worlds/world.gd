@@ -8,6 +8,9 @@ var layout: Dictionary = {}
 var location_id: String = ""
 var location_label: String = ""
 var resource_point := Vector2(300, 190)
+var building_bodies := {}
+var buildings := {}
+const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
@@ -32,14 +35,7 @@ func _ready() -> void:
 	var walls := [Rect2(20, 85, 600, 10), Rect2(20, 335, 600, 10), Rect2(20, 85, 10, 260), Rect2(610, 85, 10, 260)]
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
-		var wall := StaticBody2D.new()
-		var collider := CollisionShape2D.new()
-		var shape := RectangleShape2D.new()
-		shape.size = rect.size
-		collider.shape = shape
-		wall.position = rect.get_center()
-		wall.add_child(collider)
-		add_child(wall)
+		add_wall(rect)
 	if not layout.is_empty():
 		queue_redraw()
 		return
@@ -51,6 +47,35 @@ func _ready() -> void:
 		portals = [{"to": "outside", "position": Vector2(550, 280), "label": "Город"}]
 	else:
 		portals = [{"to": "outside", "position": Vector2(550, 280), "label": "Город"}]
+	queue_redraw()
+
+func add_wall(rect: Rect2) -> StaticBody2D:
+	var wall := StaticBody2D.new()
+	var collider := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = rect.size
+	collider.shape = shape
+	wall.position = rect.get_center()
+	wall.add_child(collider)
+	add_child(wall)
+	return wall
+
+func refresh_buildings() -> void:
+	if scene_id != "shelter" or layout.is_empty() or app == null:
+		return
+	var current: Dictionary = app.snapshot().shelter.get("buildings", {})
+	if buildings == current:
+		return
+	for cell in building_bodies.keys():
+		if not current.has(cell):
+			var wall: StaticBody2D = building_bodies[cell]
+			remove_child(wall)
+			wall.queue_free()
+			building_bodies.erase(cell)
+	for cell in current:
+		if not building_bodies.has(cell):
+			building_bodies[cell] = add_wall(Construction.cell_rect(cell))
+	buildings = current
 	queue_redraw()
 
 func bind(runtime) -> void:
@@ -65,6 +90,7 @@ func bind(runtime) -> void:
 		foe.app = app
 		foe.position = Vector2(330, 190)
 		add_child(foe)
+	refresh_buildings()
 	queue_redraw()
 
 func interact() -> void:
@@ -72,11 +98,15 @@ func interact() -> void:
 		if app.hero.position.distance_to(portal.position) < (48 if layout.is_empty() else 36):
 			app.transition(portal.to, portal.get("entry", "default"))
 			return
-	if scene_id in ["outside", "house"] and app.hero.position.distance_to(resource_point) < 55:
+	if scene_id == "outside" and not layout.is_empty() and app.hero.position.distance_to(Construction.SALVAGE_POINT) < 24:
+		app.command("game.salvage")
+	elif scene_id in ["outside", "house"] and app.hero.position.distance_to(resource_point) < 55:
 		app.command("game.resource_collect")
 	elif scene_id == "shelter":
 		if app.hero.position.distance_to(Vector2(220, 195)) < 58:
 			app.ui.open_panel("farm")
+		elif not layout.is_empty() and Rect2(167, 239, 245, 91).has_point(app.hero.position):
+			app.ui.open_panel("workshop")
 		elif app.hero.position.distance_to(Vector2(400, 180)) < 58:
 			app.ui.open_panel("rest")
 		else:
@@ -84,12 +114,49 @@ func interact() -> void:
 	elif scene_id == "louvre":
 		app.ui.open_panel("residents")
 
+func draw_location_detail() -> void:
+	if layout.is_empty():
+		return
+	var segment: String = layout.segment
+	var variant := int(segment.get_slice(":", 1))
+	var label := ""
+	match scene_id:
+		"outside":
+			label = Layout.STREET_PROFILES[variant]
+			draw_rect(Rect2(91, 245, 459, 44), Color("303641"))
+			if variant == 0 or variant == 2:
+				for x in range(113, 548, 39):
+					draw_rect(Rect2(x, 264, 20, 3), Color("6a6660"))
+			elif variant == 1:
+				for x in range(116, 532, 16):
+					draw_rect(Rect2(x, 250, 7, 13), Color("756749"))
+			else:
+				for y in [247, 286]:
+					draw_line(Vector2(92, y), Vector2(548, y), Color("6f7678"), 2)
+		"house":
+			label = Layout.HOUSE_PROFILES[variant]
+			for y in range(104, 248, 12):
+				draw_rect(Rect2(126, y, 403, 1), Color("3e383c"))
+		"hospital":
+			label = Layout.HOSPITAL_PROFILES[variant]
+			var accents := [Color("677070"), Color("545875"), Color("435f59"), Color("5e526e")]
+			draw_rect(Rect2(105, 233, 431, 3), accents[variant])
+			for x in [131, 470]:
+				draw_rect(Rect2(x, 242, 32, 3), accents[variant])
+		"shelter":
+			draw_rect(Rect2(121, 137, 420, 103), Color("626646"))
+			for x in range(132, 530, 23):
+				draw_line(Vector2(x, 138), Vector2(x, 239), Color("6a6f4e"), 1)
+	if not label.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(103, 323), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("b5c5cc"))
+
 func _draw() -> void:
-	var colors := {"hospital": Color("222b38"), "outside": Color("202c37"), "shelter": Color("3d5743"), "louvre": Color("383744"), "house": Color("282d38")}
+	var colors := {"hospital": Color("222b38"), "outside": Color("202c37"), "shelter": Color("485e43"), "louvre": Color("383744"), "house": Color("282d38")}
 	draw_rect(Rect2(20, 85, 600, 260), colors[scene_id])
 	for x in range(30, 610, 32):
 		for y in range(95, 335, 32):
 			draw_rect(Rect2(x, y, 31, 31), Color(1, 1, 1, 0.025))
+	draw_location_detail()
 	for portal in portals:
 		draw_circle(portal.position, 21, Color("315957"))
 		draw_arc(portal.position, 21, 0, TAU, 24, Color("8cd3b3"), 2)
@@ -113,11 +180,29 @@ func _draw() -> void:
 				for dx in [12, 30, 44]:
 					draw_circle(Vector2(170 + i * 65 + dx, 198), 5 if status == "ripe" else 3, leaf)
 		draw_string(ThemeDB.fallback_font, Vector2(185, 162), "Грядки", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dce5ce"))
+		if not layout.is_empty():
+			for index in range(Construction.COLUMNS * Construction.ROWS):
+				var cell := str(index)
+				var rect := Construction.cell_rect(cell)
+				draw_rect(rect.grow(5), Color("8da774"), false)
+				match buildings.get(cell, ""):
+					"bench":
+						draw_rect(rect, Color("a66e45"))
+						draw_line(rect.position + Vector2(3, 5), rect.position + Vector2(20, 5), Color("e1b282"), 3)
+					"lamp":
+						draw_circle(rect.get_center(), 27, Color(1, 0.77, 0.33, 0.19))
+						draw_circle(rect.get_center(), 9, Color("f4c56f"))
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 8), str(index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("eff0d6"))
+			draw_string(ThemeDB.fallback_font, Vector2(185, 245), "Стройплощадка [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
 	elif scene_id in ["outside", "house"]:
 		var exhausted: bool = scene_id == "house" and app != null and app.snapshot().world_states.locations.get(location_id, {}).get("looted", false)
 		var resource_label := "Пустой тайник" if exhausted else "Запасы семян"
 		draw_rect(Rect2(resource_point - Vector2(16, 12), Vector2(32, 24)), Color("8e7954"))
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-49, -17), resource_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dce5ce"))
+		if scene_id == "outside" and not layout.is_empty():
+			var salvage := Construction.SALVAGE_POINT
+			draw_rect(Rect2(salvage - Vector2(10, 7), Vector2(20, 14)), Color("677b83"))
+			draw_string(ThemeDB.fallback_font, salvage + Vector2(16, 4), "Утиль [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
 	elif scene_id == "louvre":
 		for x in [230, 340]:
 			draw_circle(Vector2(x, 190), 11, Color("d9bca5"))
