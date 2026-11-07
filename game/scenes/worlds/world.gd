@@ -13,6 +13,7 @@ var buildings := {}
 var hospital_cache := {}
 var occlusion: Node2D
 var last_occlusion_position := Vector2.INF
+const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 
@@ -112,6 +113,9 @@ func interact() -> void:
 		if app.hero.position.distance_to(portal.position) < (48 if layout.is_empty() else 36):
 			app.transition(portal.to, portal.get("entry", "default"))
 			return
+	if scene_id == "outside" and app.hero.position.distance_to(DistrictEvents.POINT) < 28 and DistrictEvents.available(app.snapshot(), location_id):
+		app.ui.open_panel("district_event")
+		return
 	if scene_id == "outside" and not layout.is_empty() and app.hero.position.distance_to(Construction.SALVAGE_POINT) < 24:
 		app.command("game.salvage")
 	elif scene_id in ["outside", "house"] and app.hero.position.distance_to(resource_point) < 55:
@@ -244,6 +248,10 @@ func _draw() -> void:
 			var salvage := Construction.SALVAGE_POINT
 			draw_rect(Rect2(salvage - Vector2(10, 7), Vector2(20, 14)), Color("677b83"))
 			draw_string(ThemeDB.fallback_font, salvage + Vector2(16, 4), "Утиль [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
+		if scene_id == "outside" and app != null and DistrictEvents.available(app.snapshot(), location_id):
+			var point := DistrictEvents.POINT
+			draw_circle(point, 9, Color("ad8360"))
+			draw_string(ThemeDB.fallback_font, point + Vector2(-45, -13), "Выжившие [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e6d0a6"))
 	elif scene_id == "louvre":
 		for x in [230, 340]:
 			draw_circle(Vector2(x, 190), 11, Color("d9bca5"))

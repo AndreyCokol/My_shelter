@@ -1,5 +1,6 @@
 extends RefCounted
 
+const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
@@ -13,7 +14,7 @@ static func normalize(request: Dictionary) -> Dictionary:
 		"game.enemy_defeated": [], "game.player_defeated": [], "game.resource_collect": [],
 		"game.salvage": [], "game.hospital_cache": [], "game.build": ["cell", "structure"], "game.dismantle": ["cell"], "game.craft": ["recipe"],
 		"game.expand_farm": [], "game.plant": ["plot_id"], "game.water": ["plot_id"], "game.harvest": ["plot_id"], "game.clear": ["plot_id"],
-		"game.accept_expedition": [], "game.claim_expedition": [],
+		"game.resolve_district": ["choice"], "game.accept_expedition": [], "game.claim_expedition": [],
 		"game.fulfill_contract": ["day", "faction"], "game.trade_camp": ["faction"],
 		"game.assign_shift": ["resident_id", "job"], "game.collect_shift": ["resident_id"],
 		"game.contact": ["resident_id"], "game.consent": ["resident_id", "accept"], "game.recruit": ["resident_id"],
@@ -190,6 +191,22 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 		state.world_states.salvage_ready_at = ready
 		bump(state, ["world"])
 		return success({"ready_at": ready[scene]})
+	if kind == "game.resolve_district":
+		if not p.choice in ["helped", "declined"]:
+			return fail("INVALID_ARGUMENT")
+		if not DistrictEvents.available(state, scene):
+			return fail("UNAVAILABLE")
+		if p.choice == "helped":
+			var event := DistrictEvents.event_for(state, scene)
+			if not take(state, event.item, event.cost):
+				return fail("INSUFFICIENT_RESOURCES")
+			state.wallet.system_coins += event.reward
+			bump(state, ["wallet"])
+		var outcomes: Dictionary = state.world_states.get("district_events", {})
+		outcomes[scene] = p.choice
+		state.world_states.district_events = outcomes
+		bump(state, ["world"])
+		return success({"choice": p.choice})
 	if kind in ["game.accept_expedition", "game.claim_expedition"]:
 		return plan_expedition(state, request)
 	if kind in ["game.fulfill_contract", "game.trade_camp"]:

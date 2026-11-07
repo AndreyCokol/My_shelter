@@ -1,5 +1,6 @@
 extends Control
 
+const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
@@ -21,7 +22,7 @@ var rest_target: int = 0
 var building_cell := "0"
 var _refresh_pending: bool = false
 const NAMES = {"hospital": "Больница", "outside": "Город", "shelter": "Убежище", "louvre": "Стоянка"}
-const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города", "workshop": "Строительство и мастерская", "jobs": "Работа жителей", "camp": "Объявления и торговля", "journal": "Журнал находок"}
+const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города", "workshop": "Строительство и мастерская", "jobs": "Работа жителей", "camp": "Объявления и торговля", "journal": "Журнал находок", "district_event": "Встреча в районе"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
 const ERRORS = {"INVALID_WORLD_SEED": "Введите целое число от 0 до 2147483647 или оставьте поле пустым.", "OK": "Готово", "ALREADY_APPLIED": "Действие уже выполнено", "UNAVAILABLE": "Сейчас недоступно. Проверьте условия или восстановите сохранение.", "INVALID_STATE": "Состояние изменилось: обновите действие или выберите резервную копию.", "INVALID_ARGUMENT": "Проверьте параметры действия.", "INSUFFICIENT_RESOURCES": "Не хватает доступных ресурсов. Зарезервированная еда не расходуется.", "CAPACITY_EXCEEDED": "В рюкзаке или хранилище не хватает места.", "NEEDS_HOUSING": "Для жильцов нужна свободная кровать.", "REQUIRES_CONSENT": "Сначала нужно добровольное согласие путника.", "STALE_REVISION": "Данные изменились. Экран обновлён — повторите выбор.", "NOT_IN_SAFE_AREA": "Отдых и работа с грядками доступны в убежище.", "SAVE_FAILED": "Не удалось записать сохранение. Действие не подтверждено.", "PAUSED": "Осталась другая причина паузы. Закройте её прежде, чем действовать.", "NOT_FOUND": "Объект не найден."}
 
@@ -262,6 +263,10 @@ func render_panel() -> void:
 				var nodes := Layout.from_manifest(state.world_states.layout)
 				var here: String = state.scene.current_scene_id
 				line("Мир %d · %s" % [seed_value, nodes[here].label])
+				var schematic := Control.new()
+				schematic.custom_minimum_size = Vector2(480, 126)
+				body.add_child(schematic)
+				schematic.draw.connect(draw_city_map.bind(schematic, state))
 				var arrival: String = state.scene.entry_point_id
 				line("Выходы")
 				for id in nodes[here].links:
@@ -296,6 +301,9 @@ func render_panel() -> void:
 						line("Угроза устранена · " + nodes[id].label)
 				for id in state.world_states.get("cleared_patrols", []):
 					line("Патруль устранён · " + nodes[id].label)
+				for id in state.world_states.get("district_events", {}):
+					var helped: bool = state.world_states.district_events[id] == "helped"
+					line(("Выжившим оказана помощь · " if helped else "В помощи отказано · ") + nodes[id].label)
 			button(body, "Назад", open_panel.bind("menu"))
 		"credits":
 			line("Моё пространственное убежище · игровой прототип")
@@ -352,6 +360,16 @@ func render_panel() -> void:
 					button(body, "Подтвердить отдых", run_command.bind("clock.rest", {"target_minute": rest_target}))
 		"jobs":
 			render_jobs(state)
+		"district_event":
+			var id: String = state.scene.current_scene_id
+			if DistrictEvents.available(state, id):
+				var event := DistrictEvents.event_for(state, id)
+				line(event.title)
+				line(event.description)
+				button(body, "Помочь", run_command.bind("game.resolve_district", {"choice": "helped"}))
+				button(body, "Отказаться", run_command.bind("game.resolve_district", {"choice": "declined"}))
+			else:
+				line("Встреча завершилась.")
 		"camp":
 			render_camp(state)
 		"residents":
@@ -382,6 +400,33 @@ func render_panel() -> void:
 			button(body, "Купить семена", run_command.bind("inventory.purchase", {"offer_id": "seed"}))
 	if not notice.text.is_empty():
 		line(notice.text)
+
+func draw_city_map(canvas: Control, state: Dictionary) -> void:
+	var manifest: Dictionary = state.world_states.layout
+	var version: int = int(manifest.generator_version)
+	var roads := Layout.roads(int(manifest.seed), version)
+	var order := [0, 1, 3, 2]
+	if version != 1:
+		order = [roads[0][0], roads[0][1], roads[1][1], roads[2][1]]
+	var positions := {}
+	var corners := [Vector2(67, 27), Vector2(398, 27), Vector2(398, 88), Vector2(67, 88)]
+	var visible_districts := {}
+	var here: String = state.scene.current_scene_id
+	var active := int(here.get_slice("_", 1))
+	for index in range(order.size()):
+		var id := Layout.street(order[index])
+		positions[order[index]] = corners[index]
+		visible_districts[order[index]] = order[index] == active or state.scene.positions.has(id)
+	canvas.draw_rect(Rect2(Vector2.ZERO, Vector2(canvas.size.x, 121)), Color("1c292f"))
+	for edge in roads:
+		if visible_districts[edge[0]] or visible_districts[edge[1]]:
+			canvas.draw_line(positions[edge[0]], positions[edge[1]], Color("64887f"), 3)
+	for district in order:
+		var center: Vector2 = positions[district]
+		var tint := Color("d1ae70") if district == active else Color("7ca99b") if visible_districts[district] else Color("4d6264")
+		canvas.draw_circle(center, 10, tint)
+		var caption := "Район %d" % (district + 1) if visible_districts[district] else "?"
+		canvas.draw_string(ThemeDB.fallback_font, center + Vector2(-24, 24), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
 
 func render_seed_entry(button_text: String) -> void:
 	line("Начальное число мира от 0 до 2147483647. Пустое поле создаёт случайный мир.")

@@ -1,5 +1,6 @@
 extends SceneTree
 
+const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
@@ -317,6 +318,20 @@ func test_patrol(app) -> void:
 	app.enemy_defeated()
 	check(road in app.snapshot().world_states.get("cleared_patrols", []), "patrol defeat is tracked per district")
 	check(app.load_game().ok and app.enemy() == null, "cleared patrol stays gone after reloading")
+	app.hero.position = DistrictEvents.POINT
+	app.scene_router.current_world().interact()
+	check(app.ui.panel_id == "district_event", "cleared district exposes its encounter through an in-world interaction")
+	var event := DistrictEvents.event_for(app.snapshot(), road)
+	var before: Dictionary = app.snapshot()
+	if Logic.quantity(before, event.item) >= event.cost:
+		app.ui.run_command("game.resolve_district", {"choice": "helped"})
+		check(app.last_result.ok and app.snapshot().wallet.system_coins == before.wallet.system_coins + event.reward, "helping consumes the required supplies and pays the stated reward")
+	else:
+		app.ui.run_command("game.resolve_district", {"choice": "helped"})
+		check(app.last_result.code == "INSUFFICIENT_RESOURCES" and app.snapshot() == before, "encounter refuses to spend unavailable supplies")
+		app.ui.run_command("game.resolve_district", {"choice": "declined"})
+	app.ui.close_panel()
+	check(app.load_game().ok and app.snapshot().world_states.district_events.has(road) and app.command("game.resolve_district", {"choice": "helped"}).code == "UNAVAILABLE", "encounter outcome persists and cannot pay twice")
 
 func measure_world_switches(app) -> void:
 	if not follow(app, "outside"):

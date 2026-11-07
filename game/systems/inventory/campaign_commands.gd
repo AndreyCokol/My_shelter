@@ -67,7 +67,7 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			return fail("UNAVAILABLE")
 		if kind.begins_with("game."):
 			var keys := ["world", "farm", "residents", "inventory:player", "inventory:storage"]
-			if kind in ["game.expand_farm", "game.fulfill_contract", "game.trade_camp", "game.claim_expedition"]:
+			if kind in ["game.expand_farm", "game.fulfill_contract", "game.trade_camp", "game.claim_expedition", "game.resolve_district"]:
 				keys.append("wallet")
 			var checked := revisions(state, request, keys)
 			if not checked.ok:

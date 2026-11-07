@@ -1,5 +1,6 @@
 extends RefCounted
 
+const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Expedition = preload("res://game/systems/world/expedition_order.gd")
 const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
@@ -94,7 +95,9 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
 	if state.schema_version == 4:
-		var known_fields := 5 + int(state.world_states.has("salvage_ready_at")) + int(state.world_states.has("camp_network")) + int(state.world_states.has("cleared_patrols"))
+		var known_fields := 5
+		for key in ["salvage_ready_at", "camp_network", "cleared_patrols", "district_events"]:
+			known_fields += int(state.world_states.has(key))
 		if state.world_states.size() != known_fields or not state.world_states.get("locations") is Dictionary:
 			return false
 		if not Construction.validate(state.shelter.get("buildings", {}), state.world_states.get("salvage_ready_at", {}), rules.scenes):
@@ -109,6 +112,8 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 			if not id is String or seen.has(id) or not Layout.street_has_patrol(id, state.world_states.layout):
 				return false
 			seen[id] = true
+		if not DistrictEvents.validate(state.world_states.get("district_events", {}), cleared):
+			return false
 		for id in state.world_states.locations:
 			if not id is String or not rules.scenes.has(id):
 				return false
