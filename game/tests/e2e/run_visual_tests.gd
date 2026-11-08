@@ -56,6 +56,7 @@ func run() -> void:
 	check(app.ui.radial.visible and app.ui.radial.items.size() >= 2, "render the radial HUD with real backpack items")
 	await capture("radial")
 	app.ui.close_radial()
+	await check_full_hd_interface(app)
 	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save", "credits", "workshop", "jobs", "map", "journal", "new_confirm"]:
 		app.ui.open_panel(panel)
 		await process_frame
@@ -110,6 +111,61 @@ func run() -> void:
 	print("VISUAL TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
+
+
+# Automated software-rendered coverage of the second target desktop
+# resolution. It is NOT a replacement for the human Windows GUI smoke.
+# The viewport remains 640×360 while the rendered output scales 3×.
+func check_full_hd_interface(app) -> void:
+	var previous_window_size: Vector2i = DisplayServer.window_get_size()
+	DisplayServer.window_set_size(Vector2i(1920, 1080))
+	for index in range(5):
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var screenshot: Image = root.get_texture().get_image()
+	check(screenshot.get_size() == Vector2i(1920, 1080),
+		"Full HD software renderer produces actual 1920x1080 pixels")
+	check(app.ui.get_viewport_rect().size == Vector2(640, 360),
+		"Full HD retains the 640x360 logical pixel-art interface")
+	var logical_rect: Rect2 = Rect2(Vector2.ZERO, app.ui.get_viewport_rect().size)
+	for section in [app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation]:
+		check(logical_rect.encloses(section.get_global_rect()),
+			"Full HD HUD remains in logical view: " + section.name)
+	check(logical_rect.encloses(app.ui.shelter_nav_button.get_global_rect()),
+		"Full HD G shelter button remains visible and usable")
+	check(screenshot.save_png("/tmp/shelter-visual/shelter_1080p.png") == OK,
+		"Full HD shelter PNG saved from real renderer")
+	app.ui.toggle_radial()
+	await process_frame
+	check(app.ui.radial.visible and app.session.pauses.is_paused(),
+		"Full HD left-Ctrl wheel preserves the radial pause contract")
+	var center: Vector2 = app.ui.radial.wheel_center()
+	var wheel := Rect2(center - Vector2.ONE * app.ui.radial.RADIUS,
+		Vector2.ONE * app.ui.radial.RADIUS * 2.0)
+	check(logical_rect.encloses(wheel)
+		and not wheel.intersects(app.ui.hud.map_node.get_global_rect())
+		and not wheel.intersects(app.ui.hud.navigation.get_global_rect()),
+		"Full HD radial menu does not obscure minimap or navigation")
+	await capture("radial_1080p")
+	app.ui.close_radial()
+	for panel_id in ["inventory", "farm", "rest", "residents", "quests", "shop", "save",
+			"credits", "workshop", "jobs", "map", "journal", "new_confirm"]:
+		app.ui.open_panel(panel_id)
+		await process_frame
+		await process_frame
+		var modal_rect: Rect2 = app.ui.modal.get_child(0).get_global_rect()
+		check(logical_rect.encloses(modal_rect)
+			and app.ui.heading.text.length() > 0 and app.ui.modal.visible,
+			"Full HD panel fully fits the viewport: " + panel_id)
+		await capture(panel_id + "_1080p")
+		app.ui.close_panel()
+	DisplayServer.window_set_size(previous_window_size)
+	for index in range(4):
+		await process_frame
+	await RenderingServer.frame_post_draw
+	check(root.get_texture().get_image().get_size() == previous_window_size
+		and not app.session.pauses.is_paused(),
+		"Returning to original PC resolution preserves pause and viewport")
 
 func capture(name: String) -> void:
 	await process_frame
