@@ -14,6 +14,7 @@ class ArenaApp extends RefCounted:
 	var state: Dictionary
 	var catalog: Dictionary
 	var target
+	var full_snapshot_requested := false
 	func running() -> bool:
 		return true
 	func snapshot() -> Dictionary:
