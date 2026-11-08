@@ -69,6 +69,32 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # Temporary PRIVATE owner handoff. Do not merge packaging into main.
+      - name: Prepare source-pinned visual prototype README
+        shell: pwsh
+        run: |
+          @'
+          My Shelter / Мое пространственное убежище - Windows x64 private test
+          Game source SHA: 8f2ead0902c48c7018a9d805b9fbfb4fb14537d7
+          Includes survivor/zombie 64x64 top-down directional PNG animations,
+          live warm/cold visual HUD prototype R1–R4, AI pathfinding/persistence,
+          durable save recovery and other gameplay fixes.
+          Extract ZIP and launch MyShelter.exe.
+          Important: R1–R4 pixel-perfect match NOT YET ACCEPTED.
+          Windows manual GUI 15–35 minute playtest NOT YET COMPLETED.
+          Public redistributions require art and literary rights review.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (-not (Test-Path build/windows/MyShelter.exe)) { throw 'Missing MyShelter.exe' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Implausible Windows executable size' }
+      - name: Upload one-day personal Windows x64 visual preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-VisualSprites-20261108
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
