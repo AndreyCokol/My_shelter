@@ -128,6 +128,12 @@ func bind(runtime) -> void:
 		foe.free()
 	foe = null
 	var state: Dictionary = app.snapshot()
+	if scene_id == "shelter" and not state.world_states.first_enemy_defeated:
+		for portal in portals:
+			if portal.to == "outside":
+				portal.to = state.scene.return_scene_id
+				portal.entry = "default"
+				portal.label = "Вернуться в больницу"
 	hospital_cache = Layout.hospital_cache(location_id, state.world_states.layout) if state.schema_version == 4 else {}
 	var current_id: String = state.scene.current_scene_id
 	if GameplayState.has_live_enemy(state, current_id):

@@ -272,7 +272,17 @@ func show_result(result: Dictionary) -> void:
 	var code: String = result.get("code", "UNAVAILABLE")
 	notice.text = ERRORS.get(code, "Ошибка: " + code)
 	notice.modulate = Color("b6e5ca") if result.get("ok", false) else Color("f2b39f")
+	if app.session.requires_recovery():
+		if panel_id == "save":
+			schedule_refresh()
+		else:
+			# Panel commands finish restoring their own pause before switching views.
+			call_deferred("_open_recovery_panel")
 	update_hud()
+
+func _open_recovery_panel() -> void:
+	if app.session.requires_recovery() and panel_id != "save":
+		open_panel("save")
 
 func update_hud() -> void:
 	if hud == null:
@@ -348,8 +358,13 @@ func render_panel() -> void:
 			line("Офлайн-песочница · процедурный город")
 			line("Убежище доступно сразу: G переносит туда из любого района, даже до первого боя. Повторная G возвращает к месту выхода. Победите врага в больнице для получения Системы.")
 			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище всегда. Левый Ctrl — быстрое меню рюкзака; 1–4 — открыть предмет в рюкзаке.")
-			if FileAccess.file_exists(app.save_location):
-				button(body, "Продолжить сохранённую игру", app.load_game)
+			var has_primary := FileAccess.file_exists(app.save_location)
+			var has_backup := FileAccess.file_exists(app.save_location + ".bak")
+			if has_primary or has_backup:
+				if has_primary:
+					button(body, "Продолжить сохранённую игру", app.load_game)
+				if has_backup:
+					button(body, "Восстановить резервную копию", app.load_game.bind(true))
 				button(body, "Новая игра…", open_panel.bind("new_confirm"))
 			else:
 				render_seed_entry("Начать игру")
@@ -431,10 +446,19 @@ func render_panel() -> void:
 			line("Движок: Godot. Сведения о лицензиях движка и использованных материалов входят в комплект игры.")
 			button(body, "Назад", open_panel.bind("menu"))
 		"save":
-			line("Сохранение включает позиции, здоровье героя, часы, грядки, ресурсы, жителей и квитанции действий.")
-			button(body, "Сохранить сейчас", app.save_game)
+			var recovering: bool = app.session.requires_recovery()
+			if recovering:
+				line("Игра приостановлена. Загрузите основной файл, чтобы восстановить последнее записанное состояние. Если файл повреждён, выберите резервную копию.")
+				var code: String = app.last_result.get("code", "")
+				if code in ["INVALID_STATE", "SAVE_FAILED"]:
+					line(ERRORS[code])
+			else:
+				line("Сохранение включает позиции, здоровье героя, часы, грядки, ресурсы, жителей и квитанции действий.")
+				button(body, "Сохранить сейчас", app.save_game)
 			button(body, "Загрузить основной файл", app.load_game)
 			button(body, "Восстановить резервную копию", app.load_game.bind(true))
+			if recovering:
+				return
 			if state.schema_version == 3:
 				line("Перенос сохраняет прогресс. Если старая точка занята новой стеной, герой появится у безопасного входа.")
 				button(body, "Перенести сохранение в процедурный город", run_command.bind("session.upgrade_world"))
