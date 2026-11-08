@@ -102,3 +102,14 @@
 
 **Точное заключение:** `SHIPPED_ZIP=PR83_SHA / LATEST_INTEGRATION=PR93_SHA / CI_CORE_LINUX_WINDOWS=PASS / 1280_VISUAL=PASS / 1920_ON_LATEST=NOT_RUN / WINDOWS_GUI=NOT_RUN / ENEMY_AI_PERSISTENCE=SOURCE_GAP / ART_64_ANIM=NOT_IMPLEMENTED / G0_G4=NOT_ACCEPTED`.
 
+
+## 6. Результат повторной упаковки актуального прототипа
+
+После фиксации первоначального реестра создан отдельный [временный PR #100](https://github.com/AndreyCokol/My_shelter/pull/100) без изменения игрового кода: Windows x64 preview **на исходном SHA `db10a24db888b0a62c81f85229f67e8233bc46aa`** из PR #93, упакован только после тестов. Встроенный README указывает SHA, ZIP проверен локально на наличие `MyShelter.exe` размером **110 047 384 байта** + README 307 байт; SHA256 ZIP: `08025d6ff65767fecf871c3c51199bff0cabef54caad939cbe98bc3f64e3d323`.
+
+- GitHub Actions [Windows run 42510049562](https://github.com/AndreyCokol/My_shelter/actions/runs/42510049562) **SUCCESS**, [Godot Linux run 42510049609](https://github.com/AndreyCokol/My_shelter/actions/runs/42510049609) **SUCCESS**. Windows сам скомпилировал EXE и выполнил headless smoke (не GUI click testing).
+- GitHub artifact `MyShelter-Windows-x64-PR93-preview`, id `13629505183`, **retention 1 day**. Распакованный ZIP передан в текущем чате. Не путать с предыдущим выданным `MyShelter-Windows-x64-preview.zip` (SHA83).
+- **BLD-01:** версия исправлена **для нового временного архива**, старый архив остаётся прежней ревизией. Не заменять историческую запись без явного указания версии.
+- **CT-91:** `BUILD/CHECKSUM/HEADLESS=PASS`, `MANUAL_GUI=NOT_RUN`, `15–35 MIN UX=NOT_RUN`.
+- Ни PR #100, ни временная упаковка не являются продуктовым release approval; для G0/G4 и публичного распространения нужны отдельные решения и проверки.
+
