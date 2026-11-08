@@ -81,8 +81,13 @@ func _ready() -> void:
 	hover.bg_color = Color("44311b")
 	theme.set_stylebox("hover", "Button", hover)
 	theme.set_stylebox("pressed", "Button", hover)
-	# VIS-02: keep consistent brass pixel frames even when optional vendor UI is present.
-	# Vendor icons remain available through Art.icon() but cannot replace golden borders.
+	# Preserve imported Kibyra pixel-art texture states required by visual QA.
+	# Tint their actual frames to the owner's R1–R4 brass/dark palette.
+	if Art.apply_buttons(theme):
+		theme.set_stylebox("normal", "Button", Art.textured_style("button_frame", 8, Color("d0a86f")))
+		theme.set_stylebox("hover", "Button", Art.textured_style("button_frame", 8, Color("ffda92")))
+		theme.set_stylebox("pressed", "Button", Art.textured_style("button_frame", 8, Color("aa7c48")))
+		theme.set_stylebox("focus", "Button", Art.textured_style("focus_frame", 8, Color("f4cc80")))
 	self.theme = theme
 	hud = ExplorationHUD.new()
 	hud.name = "ExplorationHUD"
