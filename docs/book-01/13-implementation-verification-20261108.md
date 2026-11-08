@@ -29,7 +29,15 @@
 
 Добавлен тест `game/tests/core/run_performance_tests.gd` и включён в `tools/run_godot_checks.py`; для 100 / 1 000 / 10 000 **синтетических** receipt проверяет valid campaign state и измеряет `json_bytes/json_ms/duplicate_ms/validate_ms`.
 
-**Статус числовых результатов на момент создания этого документа:** `PENDING_CI`. Точные результаты должны быть считаны из Linux/Windows CI **этого документационного PR** и зафиксированы в комментарии/последующей ревизии, с SHA, ОС, точной командой и лимитами. Замеры не представляют реальную 3/7/14-дневную игру.
+**Фактическая CI-верификация на SHA `9d81ff83db916b5df6a37e81fc8b9916a2073f31`:** [Linux job](https://github.com/AndreyCokol/My_shelter/actions/runs/42495846416) PASS, [native Windows job](https://github.com/AndreyCokol/My_shelter/actions/runs/42495846511) PASS, [docs job](https://github.com/AndreyCokol/My_shelter/actions/runs/42495846421) PASS. Команда в стандартном runner: `Godot_v4.7.2-stable --headless --path . --script game/tests/core/run_performance_tests.gd`; `PERFORMANCE TESTS: 3 checks, 0 failures` на обеих ОС.
+
+| Количество receipt | JSON байты | Linux serialize / clone / validate, мс | Windows serialize / clone / validate, мс |
+|---|---:|---|---|
+| 100 | 22 396 | 0.615 / 0.125 / 0.283 | 0.533 / 0.199 / 0.234 |
+| 1 000 | 219 498 | 5.704 / 1.126 / 2.092 | 5.874 / 2.260 / 2.292 |
+| 10 000 | 2 217 500 | 71.087 / 25.746 / 23.011 | 71.707 / 31.373 / 31.963 |
+
+**Вывод по тесту:** размер JSON и стоимость сериализации/валидации существенно растут с журналом; это экспериментальное подтверждение **риска масштабирования**, не определённое доказательство реального FPS-блокера. Тест использует synthetically generated valid receipts и не моделирует полную игровую 3/7/14-дневную сессию или HDD/SSD latency. Метрики runner зависят от машины GitHub Actions; независимый Windows GUI profiler ещё нужен.
 
 **Решение по A0-F05:** пока не удалять persisted `completed_actions`: `action_id` в действующем коде произвольный и не ограничен надёжно последовательным watermark, поэтому удаление старого receipt может повторить уникальную награду. Безопасное сжатие потребует отдельного контрактного изменения, replayer compatibility, версии схемы и миграции старых checkpoint. Синтетический benchmark не является разрешением удалять данные.
 
