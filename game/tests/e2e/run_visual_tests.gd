@@ -121,6 +121,9 @@ func run() -> void:
 func check_full_hd_interface(app) -> void:
 	var previous_window_size: Vector2i = DisplayServer.window_get_size()
 	DisplayServer.window_set_size(Vector2i(1920, 1080))
+	# DisplayServer can resize only the native window under Xvfb; the root
+	# Window viewport must also be resized for genuine 1920-pixel captures.
+	root.size = Vector2i(1920, 1080)
 	for index in range(5):
 		await process_frame
 	await RenderingServer.frame_post_draw
@@ -163,6 +166,7 @@ func check_full_hd_interface(app) -> void:
 		await capture(panel_id + "_1080p")
 		app.ui.close_panel()
 	DisplayServer.window_set_size(previous_window_size)
+	root.size = previous_window_size
 	for index in range(4):
 		await process_frame
 	await RenderingServer.frame_post_draw
