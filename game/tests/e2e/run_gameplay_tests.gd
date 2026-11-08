@@ -98,5 +98,16 @@ func _run_domains(rules: Dictionary) -> void:
 	corrupt = session.get_snapshot()
 	corrupt.residents.records[0].consent = false
 	check(not Model.validate(corrupt, rules), "step3 joined resident without consent rejected")
+	# F05: joined residents refer to durable food receipts. Pruning old
+	# completed_actions by age would corrupt a valid, loadable save.
+	var joined: Dictionary = session.get_snapshot()
+	var receipt_id: String = joined.residents.records[0].food_receipt_id
+	check(not receipt_id.is_empty() and joined.completed_actions.has(receipt_id)
+		and Model.validate(joined, rules), "F05 joined resident retains its original food receipt")
+	var pruned: Dictionary = joined.duplicate(true)
+	pruned.completed_actions.erase(receipt_id)
+	check(not Model.validate(pruned, rules),
+		"F05 deleting a resident-linked receipt invalidates the campaign")
+
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
