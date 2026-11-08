@@ -116,6 +116,28 @@ func _initialize() -> void:
 	# receipts: domain writes are guarded by persisted CoreSession action IDs.
 	bounded.reset_history()
 	check(bounded._seen.is_empty() and bounded._seen_order.is_empty() and bounded._seen_offset == 0, "A0-F04 loading clears both dedup lookup and ring window")
+	# F04 stress: far beyond one compaction cycle, there must be no
+	# accumulation of 100k event IDs in the in-memory transport cache.
+	# Expired IDs are intentionally not authoritative domain replay tokens.
+	var storm = Bus.new()
+	var published := 0
+	var started := Time.get_ticks_usec()
+	for index in range(100000):
+		if storm.publish_after_commit(fact("f04-stress-" + str(index))):
+			published += 1
+	var spent_ms: float = float(Time.get_ticks_usec() - started) / 1000.0
+	check(published == 100000 and storm._seen.size() == Bus.MAX_RECENT_EVENT_IDS
+		and storm._seen_order.size() <= Bus.MAX_RECENT_EVENT_IDS * 2
+		and storm._seen_offset < Bus.MAX_RECENT_EVENT_IDS,
+		"F04 100k unique events retain only the bounded 4096 recent IDs")
+	check(not storm.publish_after_commit(fact("f04-stress-99999"))
+		and storm.publish_after_commit(fact("f04-stress-0")),
+		"F04 recent event stays deduplicated while evicted old ID is transport-only")
+	storm.reset_history()
+	check(storm._seen.is_empty() and storm._seen_order.is_empty() and storm._seen_offset == 0,
+		"F04 100k event cache resets without retaining the large history")
+	print("F04 EVENT STRESS unique=100000 recent_bound=%d event_ms=%.3f" %
+		[Bus.MAX_RECENT_EVENT_IDS, spent_ms])
 	var campaign = Campaign.new(Fixtures.rules())
 	var session = campaign.coordinator
 	var store = Store.new("user://event-tests/" + str(Time.get_ticks_usec()) + ".json")
