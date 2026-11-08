@@ -10,6 +10,10 @@ var alert_remaining := 0.0
 var last_noise := Vector2.ZERO
 const VIEW_RANGE := 88.0
 const SEARCH_DURATION := 3.5
+const ActorPainter = preload("res://game/entities/visual/pixel_actor.gd")
+var visual_stride := 0.0
+var visual_facing := Vector2.DOWN
+var damage_flash := 0.0
 
 func _ready() -> void:
 	z_index = 8
@@ -28,12 +32,16 @@ func _physics_process(delta: float) -> void:
 			app.call_deferred("enemy_defeated")
 		return
 	hit_cooldown = maxf(0, hit_cooldown - delta)
+	damage_flash = maxf(0, damage_flash - delta)
 	var target = app.hero
 	var distance: float = global_position.distance_to(target.global_position)
 	if patrol.is_empty():
 		velocity = global_position.direction_to(target.global_position) * 43 if distance > 23 else Vector2.ZERO
 	else:
 		update_patrol(target, distance, delta)
+	if velocity.length_squared() > 0.01:
+		visual_facing = velocity.normalized()
+		visual_stride += delta * 8.0
 	move_and_slide()
 	if distance < 28 and hit_cooldown <= 0:
 		target.take_damage(15)
@@ -63,17 +71,15 @@ func take_damage(amount: int) -> void:
 	if health <= 0:
 		return
 	health = maxi(0, health - amount)
+	damage_flash = 0.19
 	queue_redraw()
 
 func _draw() -> void:
+	ActorPainter.zombie(self, visual_facing, visual_stride,
+		damage_flash > 0, alert_remaining > 0, health <= 0)
 	if health <= 0:
-		draw_circle(Vector2.ZERO, 10, Color("505c56"))
 		return
-	draw_circle(Vector2.ZERO, 11, Color("c98b67") if alert_remaining > 0 else Color("bb796d"))
-	if alert_remaining > 0:
-		draw_rect(Rect2(-1, -32, 3, 5), Color("f4c56f"))
-		draw_rect(Rect2(-1, -26, 3, 2), Color("f4c56f"))
-	draw_rect(Rect2(-13, -22, 26, 3), Color("362a30"))
-	draw_rect(Rect2(-13, -22, 26.0 * health / 100, 3), Color("df8e78"))
-	draw_circle(Vector2(-4, -2), 2, Color("242830"))
-	draw_circle(Vector2(4, -2), 2, Color("242830"))
+	# Health is attached to the enemy, not to world decor.
+	draw_rect(Rect2(-14, -30, 28, 4), Color("211b1b"))
+	draw_rect(Rect2(-13, -29, 26.0 * health / 100.0, 2),
+		Color("d76855") if damage_flash > 0 else Color("bd4841"))
