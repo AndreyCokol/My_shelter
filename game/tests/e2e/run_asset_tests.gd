@@ -104,6 +104,11 @@ func run() -> void:
 	enemy_actor.attack_pose_remaining = 0.1
 	enemy_actor._update_pixel_animation(false)
 	check(enemy_actor.pixel_sprite.animation == "attack_left", "CT-88 zombie melee selects four-frame west claw attack sprite")
+	player_actor.restore(100)
+	check(player_actor.take_damage(100) and player_actor.defeated
+		and player_actor.pixel_sprite.modulate == Color("656666")
+		and not player_actor.pixel_sprite.is_playing(),
+		"CT-88 a lethal hit immediately freezes the muted player sprite rather than the hurt flash")
 	app.free()
 	await process_frame
 	finish()
