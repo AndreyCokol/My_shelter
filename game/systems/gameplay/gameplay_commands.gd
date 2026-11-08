@@ -69,6 +69,30 @@ static func take(state: Dictionary, type_id: String, count: int) -> bool:
 	bump(state, ["inventory:player", "inventory:storage"])
 	return true
 
+# A shift consumes exactly one FREE unit of a configured, explicitly edible
+# item. Candidate order is the accepted food priority, then instance_id, not
+# the incidental inventory array order. Resident reservations are immutable.
+# Return the actual paid stack for the durable command receipt; no saved shift
+# layout change is needed for old checkpoints.
+static func consume_shift_ration(state: Dictionary, rules: Dictionary) -> Dictionary:
+	for food_id in rules.food.accepted_food_type_ids:
+		if not rules.items.has(food_id) or rules.items[food_id].get("edible") != true:
+			continue
+		var chosen: Dictionary = {}
+		for item in state.inventory.items:
+			if item.type_id == food_id and available(state, item) >= Work.FOOD_UNITS_PER_SHIFT:
+				if chosen.is_empty() or str(item.instance_id) < str(chosen.instance_id):
+					chosen = item
+		if chosen.is_empty():
+			continue
+		var spent_id: String = chosen.instance_id
+		chosen.quantity -= Work.FOOD_UNITS_PER_SHIFT
+		if chosen.quantity == 0:
+			state.inventory.items.erase(chosen)
+		bump(state, ["inventory:player", "inventory:storage"])
+		return {"ok": true, "type_id": str(food_id), "instance_id": spent_id, "quantity": Work.FOOD_UNITS_PER_SHIFT}
+	return {"ok": false}
+
 static func give(state: Dictionary, rules: Dictionary, type_id: String, count: int, id: String) -> bool:
 	var used: int = 0
 	var capacity: int = 0
@@ -432,9 +456,12 @@ static func plan_shift(state: Dictionary, request: Dictionary, rules: Dictionary
 				return fail("INVALID_ARGUMENT")
 			if resident.has("shift"):
 				return fail("INVALID_STATE")
-			if not take(state, Work.FOOD, 1):
+			var ration: Dictionary = consume_shift_ration(state, rules)
+			if not ration.ok:
 				return fail("INSUFFICIENT_RESOURCES")
 			resident.shift = {"job": p.job, "due": state.game_time_minutes + Work.duration(state, resident.id), "ready": false}
+			bump(state, ["residents"])
+			return success({"resident_id": resident.id, "work_ration": {"instance_id": ration.instance_id, "type_id": ration.type_id, "quantity": ration.quantity}})
 		else:
 			if not resident.get("shift", {}).get("ready", false):
 				return fail("UNAVAILABLE")
