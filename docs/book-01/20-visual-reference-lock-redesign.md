@@ -1,0 +1,88 @@
+# VIS-LOCK-01 — Обязательный визуальный эталон и полная переработка внешнего вида
+
+**Дата решения владельца:** 08.11.2026 · **Статус:** `OWNER_VISUAL_DIRECTION_APPROVED / IMPLEMENTATION_IN_PROGRESS / PIXEL_ACCEPTANCE_NOT_YET_PASSED` · **Владелец:** A5 (весь UI, художественная интеграция), A2 (физическая геометрия и боевые эффекты), A3 (убежище), A1 (ресурсы, стабильность), A4 (тексты и контент), A0 (независимое сравнение).
+
+**Цель:** рабочая игра «Моё пространственное убежище» должна стать визуально **максимально близкой 1:1** к четырём предоставленным владельцем изображениям. Это **первичный visual source of truth**, а не просто moodboard. **Старый примитивный визуал не защищён от полной замены.** Механики и state/save/schema4 при этом не ломаются.
+
+## 1. Четыре обязательных оригинала
+
+Каждый оригинал имеет **1672×941 px**, RGBA и точный `SHA-256` в [манифесте](../visual-references/reference_manifest.json).
+
+| ID | Файл оригинала | Мир / назначение | Цвет, объекты, UI |
+|---|---|---|---|
+| **R1** | `R1_shelter.png` | Убежище, центральная база | Тёплая зелень и дерево, мастерская/стройплощадка, настоящие грядки, костёр, колодец, палатка, склады, настенные фонари, 5×2 застройка; приглушённые золотые/тёмные HUD-рамки |
+| **R2** | `R2_zombie_street.png` | Улица в зомби-мире, бой | Мокрый потрескавшийся асфальт, разрушенные машины, больничный фасад, лужи, отражения, заросли, два врага, кровь, лут-подсказка; холодный ночной свет |
+| **R3** | `R3_hospital.png` | Больница, этаж / коридор | Читаемые комнаты и лестница, рентген/процедурная, палаты/аптека, медтайник, коридорный бой, аварийный свет, боковое окно лута |
+| **R4** | `R4_apartment.png` | Квартира/подъезд, этаж | Кухня, гостиная, санузел, спальня, проходы и двери, мебель/быт, локальные лампы и мрачные края, лут в комнатах, враг в коридоре |
+
+**Важно о хранении:** предоставленные владельцем PNG собраны без изменений в `my_shelter_visual_reference_pack_v1.zip` (передан в переписке вместе с этой задачей); в GitHub сейчас записаны их проверяемые SHA, имена, зоны сравнения и критерии. **Полноразмерные PNG ещё необходимо поместить в `docs/visual-references/originals/` при наличии бинарного транспорта**. Ни одна уменьшенная/перерисованная картинка не должна выдаваться за оригинал. До размещения оригиналов рядом со спекой локальный reference pack — обязательная часть приёмки. Включение неподлинного заменителя блокируется совпадением SHA.
+
+## 2. Визуальные инварианты
+
+1. **Игровой вид строго top-down 90°**, не изометрия. Декоративные фасады и мебель допустимы лишь при сохранении точных коллизий, входов, расстояний оружия и видимых интерактивных проходов.
+2. **Зомби-мир (R2–R4)** — холодный, запущенный, мокрый, тревожный: грязные сине-серые/серо-зелёные материалы, ржавчина и трещины, локальные тёплые аварийные огни, ясный контраст героя и заражённых.
+3. **Пространственное убежище (R1)** — светлое, безопасное, тёплое: живая трава, деревянные строения, ферма, вода и производство, мягкие золотистые акценты, отсутствие агрессивного тумана.
+4. **Общий HUD** — золотисто-латунные пиксельные обводки на тёмном прозрачном фоне. Отдельные: верхний левый title, портрет, три реальные шкалы (если соответствующие игровые показатели существуют), XP/монеты/время, панель текущего задания; сверху по центру локация/день, миникарта справа; снизу hotbar и действия. **Нельзя показывать выдуманные статы, погоду и предметы**: для отсутствующего домена показывать `—` либо удалить индикатор, не подменять данными другого показателя.
+5. **Компоненты игровой логики сохраняют контракт:** `G` в убежище в любой момент вне критического recovery, `Left Ctrl` открывает радиальное меню, `E` взаимодействует, `Space` уклоняется, реальное оружие/лут/HP/сейвы/враги и переходы; сюжетные квесты не блокируют песочницу.
+6. Референс R1 не даёт права размещать обманчивую декоративную постройку вместо работающего узла; связность/физическая зона строительства и сохранность inventory обязательны.
+7. **Процедурность:** 4 больницы × 4 реально уникальных этажа (16 геометрий), отличающиеся дома/улицы, корректные двери/лестницы и обратная совместимость генератора v4; внешний вид должен **меняться вместе с layout**, а не быть одним статическим фоном на все seed.
+8. **Пиксельность:** блоки пикселей одинаковой плотности; не смешивать 128×128 floor sources, 64×64 actor frames и произвольную высокочастотную графику без документированного масштаба. Ресурсные оригиналы 128/64 не означают, что логическая сетка мира обязана стать 128px.
+
+## 3. Координатная сетка оригиналов и критерии пиксельного аудита
+
+Всё далее в **исходных пикселях 1672×941**, прямоугольники `[left,top,right,bottom]` приблизительны и уточняются при первом QA, **не являются координатами Godot 640×360**:
+
+| Область | Прямоугольник | Инвариант сравнения |
+|---|---|---|
+| Заголовок | `[16,8,420,43]` | Ширина, текст, латунный верхний кант, контраст |
+| HP / статус / портрет | `[14,47,666,150]` | Расположение портрета, нескольких статусных шкал, XP/монеты/время |
+| Квесты | `[14,157,342,310]` | Многослойная рамка, заголовок, список чекбоксов; контент динамический |
+| Заголовок локации | `[400,7,735,51]` | Центрированный тёмно-золотой статус дня/зоны |
+| Миникарта | `[1433,17,1640,204]` | Плотная карта с игроком, порталы, `N`, `+`/`−` |
+| Быстрые слоты | `[15,782,350,872]` | Четыре рамки 1–4, активная золотая, реальные иконки/количества |
+| Нижняя строка | `[0,873,1672,941]` | Реальные клавиши управления, горячие команды |
+| Застройка R1 | `[612,323,1250,680]` | Рамка строительства, площадь, сетка, контекстное `E` |
+
+**Режим сравнения:** сохранять отдельно оригинал и реальный `Godot`-кадр, нормировать разрешение лишь явно описанным детерминированным преобразованием. Для фиксированного seed/времени/положения героя строить `pixel-wise absolute RGB diff`, MAE/долю пикселей ниже заданного порога, цветовую гистограмму, полупрозрачный `overlay`, `heatmap`, таблицу по регионам. Программы сравнения обязаны сохранять **исходные** битмапы и выходы, а не объявлять любое несовпадение «почти 1:1».
+
+**Порог приёмки:** цель владельца — максимум точности вплоть до попиксельного уровня для фиксированной сцены. До создания первой игровoй эталонной сборки **не существует честного численного PASS**; допустимые динамические различия (день, HP, предметы, seed) должны быть явно маскированы и перечислены. Незамаскированное существенное расхождение = `VISUAL_FAIL`, в спецификации и issue фиксируются screenshot, region, pixel-diff и bug owner. Совпадение только палитры или успешный headless CI не означает 1:1.
+
+## 4. План полной переработки с проверяемыми этапами
+
+| ID | Приоритет | Исполнитель / пакет | Конкретный результат и критерий |
+|---|---|---|---|
+| **VIS-01** | P0 | A5+А0 / референсы | Все 4 оригинала сохранены, hashes locked, layout matrix R1–R4, инструментарий pixel diff; `SHA_MISMATCH` не принимается |
+| **VIS-02** | P0 | A5 / HUD | Новые рамки, иерархия title/portrait/status/quest/map/hotbar/shortcut по R1–R4; без статических фальшивых показателей, клики/Left Ctrl/G/Tab не нарушены |
+| **VIS-03** | P0 | A5+A3 / R1 | Тёплая полноценная среда убежища с видимыми грядками, workshop, домом/палаткой, складами, светом, персонажами; реальные точки интерактива, изменение при строительстве |
+| **VIS-04** | P0 | A5+A2 / R2 | Мокрая улица, фасад больницы, обломки/машины/растительность, реальные бои и лут, ночь/свет; collider + reachability |
+| **VIS-05** | P0 | A5+A2 / R3 | Больница из процедурных функциональных комнат, двери, лестницы, медконтейнер, палаты и свет; 16 вариантов не смешиваются в одну статичную открытку |
+| **VIS-06** | P0 | A5+A2 / R4 | Квартиры с работающими проёмами, читаемой кухней/спальней/санузлом, лутом и коридорным боем |
+| **VIS-07** | P1 | A5+А2 / спрайты | Герой, зомби, выживший: 64×64, четыре стороны, move/idle/attack, hit-window и frame-alignment; не ломать физические коллизии |
+| **VIS-08** | P0 | A5+A0 / UI окна | Инвентарь, лут, квесты, карта, стройка и магазин по рамкам/шрифтам референсов. Состояние и конкретные цифры из runtime |
+| **VIS-09** | P0 | A1+A2+A3+A5 / QA | 640×360 logical и реальные 1280×720, 1920×1080 и reference 1672×941 screenshots; PNG/размеры, UI click targets, не терять маршруты/сохранения; Windows GUI вручную |
+| **VIS-10** | P0 | A0+owner / приёмка | По R1–R4: heatmap/overlay/masked pixel-metrics, список всех отклонений, 15–35-минутный реальный gameplay, feedback owner; `G0/G4` отдельно |
+
+**Порядок внедрения:** VIS-01 → VIS-02 (первый реальный программный редизайн в этой ветке) → VIS-03 → VIS-04 → VIS-05 → VIS-06 → VIS-08 → VIS-07 → VIS-09 → VIS-10. Полная перерисовка допускается; нельзя делать фейковые скриншоты вместо реально работающего мира.
+
+## 5. Требования к результату и границы текущей готовности
+
+**Переделывать, а не оставлять примитивную техническую подложку, если она визуально хуже эталона.** При этом UI скриншот ≠ действующий gameplay: все четыре эталона содержат объекты, не все из которых сейчас реализованы, и новые логические сущности должны создаваться через A1–A4, не рисоваться как «уже работающие».
+
+Приёмка каждого раздела только по цепочке `FR/VIS-ID → source SHA → скриншот Godot → оригинал SHA → pixel overlay/diff → regression CI Linux/Windows → independent A0 review → owner visual signoff`. Старые 63 визуальных проверки проверяют layout/рендер, **не соответствие новым R1–R4**. Этот документ разрешает художественный редизайн, **не подменяет** нормативную структуру [SRS](03-requirements.md) и [технического контракта](05-integration-contracts.md); G0 owner-approved SHA по-прежнему BLOCKED.
+
+## VIS-11 / ART-01 — 64×64 directional animated actor assets (candidate, not owner-approved)
+
+**Implementation on top of R1–R4 visual HUD integration:** game contains four original binary transparent PNG sheets, each **256×256 px**, consisting of sixteen **64×64** cells (four animation keyframes across columns, four camera-top-down facing directions in rows: down, left, up, right):
+- `game/assets/project/characters/survivor_move_4dir_64.png`
+- `game/assets/project/characters/survivor_attack_4dir_64.png`
+- `game/assets/project/characters/zombie_move_4dir_64.png`
+- `game/assets/project/characters/zombie_attack_4dir_64.png`
+
+These are **new original block-pixel sprites made for this prototype**, not direct copies of user reference screenshots, downloadable third-party sprites or copyrighted book illustrations. The atlas PNGs are separate authorable game assets rather than UI-only mockups. **Do not claim they meet the owner's per-pixel R1–R4 visual target without overlay and A5/owner approval.** The source images use RGBA/transparency, top-down head/shoulders/body silhouettes and deliberately coarser pixel clusters than the high-detail initial mockups.
+
+The shared `game/entities/characters/pixel_actor_frames.gd` imports these PNGs and constructs cached `SpriteFrames`, 12 animation names per actor (`idle_*`, `walk_*`, `attack_*`). `AnimatedSprite2D` is a live child of each actor with **nearest-neighbor texture sampling**. Direction is selected from real movement / attack facing: left/right/up/down. Attack frames do not loop, and actors can resume idle/walk. The art is displayed at 0.75 world scale so 64×64 source cells do not imply a 64-unit physical collider, which remains the authoritative combat/door constraint. HUD, enemy HP, attack range/LOS, G shelter escape and damage transactions are unchanged. Player dodge ring and swing arc remain auxiliary effects, not replacements for the character image.
+
+**CT-88 / passing test requirement:** all four imported source PNGs must load as exactly 256×256 with transparency; each `SpriteFrames` collection exposes 12 animations, 1 idle/4 walk/4 attack frames in each of 4 directions; sampled texture regions are exactly 64×64; new `AnimatedSprite2D` nodes exist on the instantiated Player/Enemy and use nearest filtering; real movement/attack selection works for survivor and zombie. These checks live in `game/tests/e2e/run_asset_tests.gd` and run in both Linux and Windows native CI. Existing physics, save recovery and the real 1672×941/1920×1080 screenshots must remain green at the same commit.
+
+**Not yet complete:** differentiated survivor/zombie death frames, external artist-authored final atlas, individual hit impact frames, 1:1 pixel-match review against owner's references, external visual licensing review, manual Windows PC gameplay and 30-minute FPS/RAM test. A0 must keep VIS-11 status `CODE_CANDIDATE / CI_PENDING / OWNER_VISUAL_NOT_ACCEPTED` until all required evidence exists.
+

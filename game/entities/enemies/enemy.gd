@@ -2,6 +2,11 @@ extends CharacterBody2D
 
 var app
 const MAX_HEALTH := 100
+const BODY_RADIUS := 10.0
+const CHASE_SPEED := 43.0
+const CHASE_STOP_DISTANCE := 23.0
+const WalkGrid = preload("res://game/systems/world/walk_grid.gd")
+const PixelActors = preload("res://game/entities/characters/pixel_actor_frames.gd")
 var health: int = MAX_HEALTH
 var hit_cooldown: float = 0.0
 var reported: bool = false
@@ -11,35 +16,114 @@ var alert_remaining := 0.0
 var last_noise := Vector2.ZERO
 const VIEW_RANGE := 88.0
 const SEARCH_DURATION := 3.5
+var _chase_grid: AStarGrid2D
+var _grid_revision := -1
+var _chase_path := PackedVector2Array()
+var _chase_index := 0
+var _chase_goal := Vector2.ZERO
+var _chase_retry := 0.0
+var pixel_sprite: AnimatedSprite2D
+var attack_pose_remaining: float = 0.0
+var visual_facing := Vector2.DOWN
 
 func _ready() -> void:
 	z_index = 8
 	var collider := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
-	shape.radius = 10
+	shape.radius = BODY_RADIUS
 	collider.shape = shape
 	add_child(collider)
+	pixel_sprite = AnimatedSprite2D.new()
+	pixel_sprite.name = "PixelActor64"
+	pixel_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	pixel_sprite.sprite_frames = PixelActors.frames(true)
+	pixel_sprite.scale = Vector2(0.75, 0.75)
+	add_child(pixel_sprite)
+	pixel_sprite.play("idle_down")
+
+func _update_pixel_animation(moving: bool) -> void:
+	if not is_instance_valid(pixel_sprite):
+		return
+	if moving and velocity.length() > 0.1:
+		visual_facing = velocity.normalized()
+	var direction: String = PixelActors.direction_name(visual_facing)
+	var pose := "attack" if attack_pose_remaining > 0.0 else ("walk" if moving else "idle")
+	var animation: String = pose + "_" + direction
+	if pixel_sprite.animation != animation:
+		pixel_sprite.play(animation)
+	elif not pixel_sprite.is_playing() and pose != "attack":
+		pixel_sprite.play(animation)
+	pixel_sprite.modulate = Color("606b68") if health == 0 else Color.WHITE
+	if health == 0:
+		pixel_sprite.pause()
 
 func _physics_process(delta: float) -> void:
 	if app == null or not app.running():
 		return
 	if health <= 0:
+		_update_pixel_animation(false)
 		if not reported:
 			reported = true
 			app.call_deferred("enemy_defeated")
 		return
 	hit_cooldown = maxf(0, hit_cooldown - delta)
+	attack_pose_remaining = maxf(0.0, attack_pose_remaining - delta)
 	var target = app.hero
 	var distance: float = global_position.distance_to(target.global_position)
 	if patrol.is_empty():
-		velocity = global_position.direction_to(target.global_position) * 43 if distance > 23 else Vector2.ZERO
+		update_chase(target, distance, delta)
 	else:
 		update_patrol(target, distance, delta)
 	move_and_slide()
 	if hit_cooldown <= 0 and global_position.distance_to(target.global_position) < 28 and has_clear_line_to(target):
 		target.take_damage(15)
 		hit_cooldown = 1.0
+		attack_pose_remaining = 0.16
+	_update_pixel_animation(velocity.length_squared() > 1.0)
 	queue_redraw()
+
+func update_chase(target: CharacterBody2D, distance: float, delta: float) -> void:
+	var goal := target.global_position
+	if distance <= CHASE_STOP_DISTANCE and has_clear_line_to(target):
+		_chase_path.clear()
+		velocity = Vector2.ZERO
+		return
+	_chase_retry = maxf(0.0, _chase_retry - delta)
+	var world = get_parent()
+	if _chase_grid != null and _grid_revision != world.collision_revision:
+		_chase_grid = null
+		_chase_path.clear()
+		_chase_retry = 0.0
+	if goal.distance_squared_to(_chase_goal) > 24.0 * 24.0:
+		_chase_path.clear()
+	if _chase_index >= _chase_path.size():
+		var direction := global_position.direction_to(goal)
+		var probe := minf(18.0, maxf(1.0, distance - CHASE_STOP_DISTANCE))
+		if not test_move(global_transform, direction * probe):
+			velocity = direction * CHASE_SPEED
+			return
+		if _chase_retry > 0.0 or not world.has_method("collision_rects"):
+			velocity = Vector2.ZERO
+			return
+		_plan_chase(world, goal)
+	while _chase_index < _chase_path.size() and position.distance_squared_to(_chase_path[_chase_index]) <= 2.0:
+		_chase_index += 1
+	velocity = Vector2.ZERO
+	if _chase_index < _chase_path.size():
+		velocity = global_position.direction_to(world.to_global(_chase_path[_chase_index])) * CHASE_SPEED
+
+func _plan_chase(world, goal: Vector2) -> void:
+	_chase_retry = 0.25
+	_chase_goal = goal
+	_chase_index = 0
+	if _chase_grid == null:
+		_grid_revision = world.collision_revision
+		_chase_grid = WalkGrid.build(world.floor_rect().grow(-15), world.collision_rects(), 12.0, BODY_RADIUS + 2.0)
+	var from := WalkGrid.nearest_open(_chase_grid, position, func(point: Vector2):
+		return not test_move(global_transform, world.to_global(point) - global_position))
+	var to := WalkGrid.nearest_open(_chase_grid, world.to_local(goal))
+	if _chase_grid.is_in_boundsv(from) and _chase_grid.is_in_boundsv(to):
+		_chase_path = _chase_grid.get_point_path(from, to)
 
 func hear_noise(origin: Vector2, radius: float) -> void:
 	if not patrol.is_empty() and health > 0 and global_position.distance_to(origin) <= radius:
@@ -69,17 +153,16 @@ func take_damage(amount: int) -> void:
 	queue_redraw()
 
 func _draw() -> void:
+	# Render only gameplay indicators. The visual body is a real animated
+	# 64x64 original PNG; death makes the surviving atlas muted, not a circle.
 	if health <= 0:
-		draw_circle(Vector2.ZERO, 10, Color("505c56"))
 		return
-	draw_circle(Vector2.ZERO, 11, Color("c98b67") if alert_remaining > 0 else Color("bb796d"))
 	if alert_remaining > 0:
-		draw_rect(Rect2(-1, -32, 3, 5), Color("f4c56f"))
-		draw_rect(Rect2(-1, -26, 3, 2), Color("f4c56f"))
-	draw_rect(Rect2(-13, -22, 26, 3), Color("362a30"))
-	draw_rect(Rect2(-13, -22, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
-	draw_circle(Vector2(-4, -2), 2, Color("242830"))
-	draw_circle(Vector2(4, -2), 2, Color("242830"))
+		draw_rect(Rect2(-1, -34, 3, 5), Color("f4c56f"))
+		draw_rect(Rect2(-1, -28, 3, 2), Color("f4c56f"))
+	draw_rect(Rect2(-13, -27, 26, 3), Color("362a30"))
+	draw_rect(Rect2(-13, -27, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
+
 
 # Persistent encounter state is optional in schema v4: old checkpoints still
 # reconstruct the deterministic initial patrol/position when no record exists.

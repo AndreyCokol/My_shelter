@@ -96,6 +96,17 @@ func _initialize() -> void:
 	var whole: Array = Clock.ordered_deadlines(deadlines, 0, 12)
 	var split: Array = Clock.ordered_deadlines(deadlines, 0, 10) + Clock.ordered_deadlines(deadlines, 10, 12)
 	check(whole == split and whole[0].entity_id == "a" and whole[2].minute == 12, "CT-32 ordered scheduler, split interval equivalence")
+	# A0-F05: the UI/combat read must not walk the unbounded durable
+	# receipt ledger or leak a mutable reference to the authoritative state.
+	var full_record: Dictionary = session.get_snapshot()
+	var quick_view: Dictionary = session.get_snapshot(false)
+	check(not quick_view.has("completed_actions") and full_record.has("completed_actions")
+		and full_record.completed_actions.size() > 0,
+		"CT-92 lightweight combat snapshot excludes durable receipts without altering full snapshot")
+	var original_counter: int = int(session.get_snapshot().counter)
+	quick_view.counter = 999999
+	check(session.get_snapshot().counter == original_counter,
+		"CT-92 editing a lightweight combat snapshot does not mutate the authoritative core")
 	for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
 	print("CORE TESTS: %d checks, %d failures" % [checks, failures])

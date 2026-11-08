@@ -57,8 +57,8 @@ func _process(delta: float) -> void:
 		hud_elapsed = 0
 		update_hud()
 
-func snapshot() -> Dictionary:
-	return session.get_snapshot()
+func snapshot(include_receipts: bool = true) -> Dictionary:
+	return session.get_snapshot(include_receipts)
 
 func rules() -> Dictionary:
 	return campaign.get_rules()
