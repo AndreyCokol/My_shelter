@@ -158,6 +158,31 @@ func _initialize() -> void:
 			"seed %d has 8 physically distinct house floors" % seed_value)
 		check(streets.size() == 4,
 			"seed %d has 4 distinct street geometry segments" % seed_value)
+	# Exhaustive template coverage: for every 16 hospital slots, test every
+	# one of the eight supported base-pattern values. This catches rare seed
+	# combinations absent from the preceding 132-seed sampling.
+	var all_architectural_plans_valid := true
+	var every_alcove_clear := true
+	var truly_physical := true
+	for slot in range(Layout.DISTRICTS * Layout.FLOORS):
+		var floor_number: int = slot % Layout.FLOORS + 1
+		for pattern in range(8):
+			var baseline: Dictionary = Plans.get_plan("hospital", floor_number, pattern)
+			var variant: Dictionary = Plans.get_plan("hospital", floor_number, pattern, slot)
+			all_architectural_plans_valid = all_architectural_plans_valid and Plans.valid(variant)
+			truly_physical = truly_physical and variant.walls.size() == baseline.walls.size() + 2
+			truly_physical = truly_physical and floor_fingerprint(variant) != floor_fingerprint(baseline)
+			if variant.walls.size() < 2:
+				every_alcove_clear = false
+				continue
+			for new_wall in variant.walls.slice(-2):
+				for fixture in variant.furniture:
+					if fixture.rect.grow(8).intersects(new_wall):
+						every_alcove_clear = false
+	check(all_architectural_plans_valid, "all 128 slot-pattern hospital plans pass full structural validation")
+	check(every_alcove_clear, "all 128 architectural alcoves avoid furniture and 8-px margins")
+	check(truly_physical, "all 128 v5 choices add two real collision walls beyond v4")
+
 	# Diagnostic only: how many unique *valid* hospital plans exist in the
 	# current catalog if the generator can choose a wider candidate pattern?
 	var all_candidate_geometry := {}
