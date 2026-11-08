@@ -73,7 +73,12 @@ func connected_and_paired(nodes: Dictionary) -> bool:
 	return seen.size() == nodes.size()
 
 func _initialize() -> void:
-	for seed_value in [0, 1, 54, 127, 128, 1023, 65535, Layout.MAX_SEED]:
+	# 128 consecutive seeds plus the boundary/large-value seeds.
+	var legacy_unique_floor_counts := {
+		0: 11, 1: 12, 54: 12, 127: 13, 128: 12,
+		1023: 14, 65535: 12, Layout.MAX_SEED: 12,
+	}
+	for seed_value in range(128) + [128, 1023, 65535, Layout.MAX_SEED]:
 		var nodes: Dictionary = Layout.build(seed_value)
 		check(nodes == Layout.build(seed_value),
 			"seed %d reconstructs identical physical world graph" % seed_value)
@@ -102,6 +107,14 @@ func _initialize() -> void:
 					floor_fingerprint(old_plan) == floor_fingerprint(original_plan))
 		check(legacy_geometry_unchanged,
 			"seed %d v4 uses historical walls, not v5 alcove geometry" % seed_value)
+		if legacy_unique_floor_counts.has(seed_value):
+			var previous_signatures := {}
+			for district in range(Layout.DISTRICTS):
+				for floor_index in range(Layout.FLOORS):
+					var legacy_id: String = Layout.hospital(district, floor_index)
+					previous_signatures[floor_fingerprint(legacy_nodes[legacy_id].floor_plan)] = true
+			check(previous_signatures.size() == legacy_unique_floor_counts[seed_value],
+				"seed %d v4 retains historical geometry fingerprint cardinality" % seed_value)
 
 		var hospital_geometries := {}
 		var hospital_origins := {}
