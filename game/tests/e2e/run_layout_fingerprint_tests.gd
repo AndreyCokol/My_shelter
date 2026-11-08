@@ -82,6 +82,26 @@ func _initialize() -> void:
 			"seed %d matches persisted layout manifest" % seed_value)
 		check(connected_and_paired(nodes),
 			"seed %d provides 30 mutually reachable scenes with paired exits" % seed_value)
+		# generator_version is distinct from the unchanged campaign schema v4.
+		# Existing checkpoints must reconstruct the original historical layout,
+		# not be silently remapped to the new 16-slot architecture.
+		var old_manifest := {"seed": seed_value, "generator_version": 4,
+			"catalog_version": Layout.CATALOG_VERSION}
+		var legacy_nodes: Dictionary = Layout.build(seed_value, 4)
+		check(Layout.valid_manifest(old_manifest)
+			and Layout.from_manifest(old_manifest) == legacy_nodes,
+			"seed %d retains the original generator v4 manifest and graph" % seed_value)
+		var legacy_geometry_unchanged := true
+		for district in range(Layout.DISTRICTS):
+			for floor_index in range(Layout.FLOORS):
+				var id: String = Layout.hospital(district, floor_index)
+				var old_plan: Dictionary = legacy_nodes[id].floor_plan
+				var original_plan: Dictionary = Plans.get_plan(
+					"hospital", floor_index + 1, old_plan.pattern)
+				legacy_geometry_unchanged = legacy_geometry_unchanged and (
+					floor_fingerprint(old_plan) == floor_fingerprint(original_plan))
+		check(legacy_geometry_unchanged,
+			"seed %d v4 uses historical walls, not v5 alcove geometry" % seed_value)
 
 		var hospital_geometries := {}
 		var hospital_origins := {}
