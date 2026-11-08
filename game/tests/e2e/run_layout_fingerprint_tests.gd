@@ -96,7 +96,7 @@ func _initialize() -> void:
 					continue
 				var plan: Dictionary = nodes[id].floor_plan
 				valid_plans = valid_plans and Plans.valid(plan)
-					var fingerprint: String = floor_fingerprint(plan)
+				var fingerprint: String = floor_fingerprint(plan)
 				if hospital_origins.has(fingerprint):
 					print("HOSPITAL DUPLICATE seed=%d first=%s second=%s patterns=%s,%s" %
 						[seed_value, hospital_origins[fingerprint], id,
