@@ -75,13 +75,7 @@ static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 
 static func plan_details(canvas: CanvasItem, plan: Dictionary) -> void:
 	for item in plan.furniture:
-		var rect: Rect2 = item.rect
-		canvas.draw_rect(rect, Color("1f252a"))
-		if item.kind in ["bedroom", "ward", "recovery"]:
-			canvas.draw_rect(rect.grow(-2), Color("696870"))
-			canvas.draw_rect(Rect2(rect.position + Vector2(4, 4), Vector2(rect.size.x - 8, 8)), Color("afb3b1"))
-		else:
-			tile(canvas, "wood" if plan.kind == "house" else "concrete", rect.grow(-2), DIM)
+		furnishing(canvas, item, plan.kind)
 	for door in plan.doors:
 		var point: Vector2 = door.position
 		var size := Vector2(door.width, 10) if door.horizontal else Vector2(10, door.width)
@@ -95,6 +89,66 @@ static func plan_details(canvas: CanvasItem, plan: Dictionary) -> void:
 		var rect: Rect2 = room.rect
 		var label: String = Plans.LABELS[room.kind]
 		canvas.draw_string(ThemeDB.fallback_font, rect.position + Vector2(9, 15), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14, 10, Color("d9d7c5"))
+
+# All props are painted inside existing physics furniture footprints; there
+# is no new invisible collision, no changes to layout manifests or save slots.
+# The visual prototypes are purposefully top-down: no isometric fronts.
+static func furnishing(canvas: CanvasItem, item: Dictionary, building: String) -> void:
+	var r: Rect2 = item.rect
+	var id: String = item.kind
+	canvas.draw_rect(r.grow(1), Color("141a1d"))
+	match id:
+		"bedroom", "ward", "recovery":
+			canvas.draw_rect(r, Color("534b43"))
+			canvas.draw_rect(r.grow(-2), Color("929b95") if building == "hospital" else Color("8b7769"))
+			canvas.draw_rect(Rect2(r.position + Vector2(4, 4), Vector2(r.size.x - 8, 7)), Color("e0d3bd"))
+			canvas.draw_rect(Rect2(r.position + Vector2(4, 13), Vector2(r.size.x - 8, r.size.y - 17)),
+				Color("596c70") if building == "hospital" else Color("9b756b"))
+			canvas.draw_line(r.position + Vector2(4, 20), r.position + Vector2(r.size.x - 5, 20), Color("c4b9a6"), 1)
+			canvas.draw_rect(Rect2(r.end - Vector2(7, 4), Vector2(3, 3)), Color("5e6762"))
+		"bath":
+			canvas.draw_rect(r, Color("59717b"))
+			canvas.draw_rect(r.grow(-2), Color("d0d3cd"))
+			canvas.draw_rect(r.grow(-5), Color("90a8ae"))
+			canvas.draw_rect(Rect2(r.position + Vector2(5, 5), Vector2(8, 2)), Color("ebebdd"))
+			canvas.draw_circle(r.position + Vector2(r.size.x - 7, r.size.y - 7), 2, Color("45515a"))
+		"living", "studio":
+			canvas.draw_rect(r, Color("41332e"))
+			canvas.draw_rect(r.grow(-2), Color("a38366"))
+			canvas.draw_rect(Rect2(r.position + Vector2(4, 3), Vector2(r.size.x - 8, 9)), Color("7d7467"))
+			canvas.draw_rect(Rect2(r.position + Vector2(5, 5), Vector2(r.size.x - 10, 3)), Color("b0aa94"))
+			canvas.draw_rect(Rect2(r.position + Vector2(11, 13), Vector2(10, 5)), Color("554439"))
+			canvas.draw_rect(Rect2(r.position + Vector2(13, 14), Vector2(6, 2)), Color("a48b68"))
+		"reception", "office":
+			canvas.draw_rect(r, Color("3b2f28"))
+			canvas.draw_rect(r.grow(-2), Color("96734e"))
+			canvas.draw_rect(Rect2(r.position + Vector2(4, 4), Vector2(11, 7)), Color("283a42"))
+			canvas.draw_rect(Rect2(r.position + Vector2(5, 5), Vector2(9, 4)), Color("7ba6b2"))
+			canvas.draw_rect(Rect2(r.position + Vector2(18, 5), Vector2(9, 2)), Color("dfd4bb"))
+			canvas.draw_rect(Rect2(r.position + Vector2(17, 11), Vector2(10, 4)), Color("4a3d32"))
+			canvas.draw_line(r.position + Vector2(5, 16), r.position + Vector2(26, 16), Color("c29c68"), 1)
+		"storage":
+			canvas.draw_rect(r, Color("41352d"))
+			canvas.draw_rect(r.grow(-2), Color("75644d"))
+			for offset in [5, 13, 21]:
+				canvas.draw_rect(Rect2(r.position + Vector2(offset, 4), Vector2(5, 10)), Color("ab8a58"))
+				canvas.draw_line(r.position + Vector2(offset, 4), r.position + Vector2(offset + 5, 4), Color("d5b785"))
+		"surgery", "triage", "prep":
+			canvas.draw_rect(r, Color("465458"))
+			canvas.draw_rect(r.grow(-2), Color("9cacaa"))
+			canvas.draw_rect(Rect2(r.position + Vector2(7, 3), Vector2(18, 14)), Color("5f8992"))
+			canvas.draw_rect(Rect2(r.position + Vector2(11, 3), Vector2(11, 5)), Color("e7e3cf"))
+			canvas.draw_rect(Rect2(r.position + Vector2(24, 6), Vector2(5, 7)), Color("3c5459"))
+		"lab":
+			canvas.draw_rect(r, Color("3c4b50"))
+			canvas.draw_rect(r.grow(-2), Color("8fa5a5"))
+			for i in range(4):
+				canvas.draw_rect(Rect2(r.position + Vector2(4 + i * 7, 5), Vector2(3, 8)),
+					Color("a8d0bf") if i % 2 == 0 else Color("d4bba5"))
+			canvas.draw_line(r.position + Vector2(2, 16), r.position + Vector2(29, 16), Color("e0d8bf"), 2)
+		_:
+			canvas.draw_rect(r, Color("5c5b56"))
+			canvas.draw_rect(r.grow(-2), Color("8d8b7b"))
 
 static func room_ground(canvas: CanvasItem, kind: String, rooms: Array, variant: int) -> void:
 	var materials: Array = []
