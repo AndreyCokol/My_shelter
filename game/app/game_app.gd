@@ -163,6 +163,9 @@ func _loaded() -> void:
 	hero.restore(int(snapshot().player.hp))
 	bind_world()
 	update_hud()
+	if hero.defeated:
+		# The load callback runs before the checkpoint transaction releases its lock.
+		call_deferred("player_defeated")
 
 func update_hud() -> void:
 	if ui != null and is_instance_valid(ui):

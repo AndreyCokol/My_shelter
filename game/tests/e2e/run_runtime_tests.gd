@@ -60,6 +60,7 @@ func run() -> void:
 	check(app.hero.try_attack(blocked_enemy.global_position) and blocked_enemy.health == blocked_hp, "A0-F02 melee cannot damage an enemy through a real collision wall")
 	blocking_wall.queue_free()
 	await physics_frame
+	await check_enemy_melee()
 	app.hero.attack_cooldown = 0.0
 	app.hero.position = app.enemy().position + Vector2(-38, 0)
 	check(app.hero.try_attack(app.enemy().global_position) and not app.hero.try_attack(app.enemy().global_position), "step5 attack cooldown prevents repeated frame hit")
@@ -169,6 +170,7 @@ func run() -> void:
 		await process_frame
 		check(app.ui.body.get_child_count() > 0, "step12 panel renders " + name)
 		app.ui.close_panel()
+	await check_lethal_checkpoint()
 	var path: String = app.save_location
 	app.free()
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
@@ -176,6 +178,49 @@ func run() -> void:
 	await process_frame
 	print("RUNTIME TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func check_enemy_melee() -> void:
+	var foe = app.enemy()
+	var original_position: Vector2 = foe.position
+	var barrier = app.scene_router.current_world().add_wall(Rect2(458, 241, 4, 38))
+	app.hero.position = Vector2(448, 260)
+	foe.position = Vector2(472, 260)
+	foe.hit_cooldown = 0
+	app.hero.hurt_remaining = 0
+	var hp: int = app.hero.health
+	for frame in range(4):
+		await physics_frame
+	check(app.hero.health == hp and foe.hit_cooldown == 0, "an enemy in melee range cannot hit through a real collision wall")
+	barrier.queue_free()
+	# Reset the fixture so the open-line control is independent of the wall assertion.
+	app.hero.restore(hp)
+	foe.hit_cooldown = 0
+	for frame in range(4):
+		await physics_frame
+	check(app.hero.health == hp - 15 and foe.hit_cooldown > 0, "removing the collision wall permits exactly one melee hit")
+	app.hero.restore(hp)
+	foe.position = original_position
+	app.hero.position = foe.position + Vector2(-38, 0)
+
+func check_lethal_checkpoint() -> void:
+	check(app.transition("outside").ok, "lethal checkpoint fixture leaves the shelter")
+	var defeats: int = app.snapshot().world_states.defeats
+	app.hero.restore(100)
+	app.save_store.fault = "before_replace"
+	check(app.hero.take_damage(100), "real damage marks the player defeated")
+	await process_frame
+	check(app.hero.defeated and app.ui.panel_id == "save", "failed defeat write presents the recovery panel")
+	app.save_store.fault = ""
+	check(app.save_game().ok and app.snapshot().player.hp == 0, "checkpoint can record a defeat awaiting recovery")
+	app.save_store.fault = "before_replace"
+	check(app.load_game().ok and app.hero.health == 0 and app.hero.defeated, "loading a zero-HP checkpoint keeps the hero defeated")
+	check(app.transition("shelter").code == "UNAVAILABLE" and app.snapshot().scene.current_scene_id == "outside", "the defeated player cannot bypass recovery through ordinary travel")
+	await process_frame
+	check(app.hero.defeated and app.ui.panel_id == "save", "load retries the pending defeat and restores recovery UI on write failure")
+	app.save_store.fault = ""
+	app.ui._retry_defeat()
+	check(app.hero.health == 100 and not app.hero.defeated and app.snapshot().scene.current_scene_id == "shelter" and app.snapshot().world_states.defeats == defeats + 1, "recovery returns the hero to safety and records exactly one defeat")
+	check(app.load_game().ok and app.snapshot().world_states.defeats == defeats + 1 and not app.hero.defeated, "loading the recovered checkpoint does not count the defeat again")
 
 
 func send_key(code: Key, location: KeyLocation = KEY_LOCATION_UNSPECIFIED, echo := false) -> void:

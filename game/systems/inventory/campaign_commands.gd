@@ -91,6 +91,8 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			return fail("INVALID_ARGUMENT")
 		state.player.hp = int(request.context.health)
 	if rules.get("gameplay", false):
+		if kind == "scene.transition" and state.player.hp == 0:
+			return fail("UNAVAILABLE")
 		if not state.world_states.first_enemy_defeated:
 			# The shelter is an unconditional player escape, including onboarding.
 			# Only ordinary world travel and locked System resources need the first victory.
