@@ -117,6 +117,10 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		ids.append(flag)
 	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
+	if state.scene.return_scene_id == "shelter":
+		return false
+	if state.scene.current_scene_id == "shelter" and not state.world_states.first_enemy_defeated and state.scene.return_scene_id != "hospital":
+		return false
 	var has_enemy_health: int = int(state.world_states.has("enemy_health"))
 	if state.schema_version == 4:
 		var known_fields := 5 + has_enemy_health

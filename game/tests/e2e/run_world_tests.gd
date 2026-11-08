@@ -182,6 +182,19 @@ func test_unconditional_shelter(app) -> void:
 	check(entered.scene.current_scene_id == "shelter" and entered.scene.return_scene_id == "hospital" and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "modal shelter action escapes before first kill without leaking pause")
 	check(not entered.world_states.first_enemy_defeated and entered.claimed_reward_ids.is_empty() and entered.wallet.system_coins == 0 and entered.player.hp == 73, "early shelter escape preserves damaged health without granting System or XP/coins")
 	check(app.save_game().ok and app.load_game().ok and app.snapshot().scene.return_scene_id == "hospital" and app.hero.health == 73, "pre-unlock shelter, combat HP and return scene persist across save and load")
+	var bad_return: Dictionary = app.snapshot()
+	bad_return.scene.return_scene_id = "shelter"
+	check(not Model.validate(bad_return, app.rules()), "a shelter checkpoint cannot point its return at itself")
+	bad_return.scene.return_scene_id = "outside"
+	check(not Model.validate(bad_return, app.rules()), "a pre-victory shelter checkpoint cannot make the locked street its return")
+	var shelter = app.scene_router.current_world()
+	var door: Dictionary = shelter.portals[0]
+	check(door.to == "hospital" and door.label == "Вернуться в больницу", "early shelter door labels the actual hospital destination")
+	app.hero.position = door.position
+	shelter.interact()
+	check(app.last_result.ok and app.snapshot().scene.current_scene_id == "hospital" and app.hero.position == original, "using the physical shelter door before the first victory returns to the exact hospital position")
+	if app.snapshot().scene.current_scene_id == "hospital":
+		check(app.toggle_shelter().ok, "shelter remains available after returning through the door")
 	app.ui.open_panel("menu")
 	var shortcut := InputEventKey.new()
 	shortcut.physical_keycode = KEY_G
@@ -320,6 +333,7 @@ func run() -> void:
 	check(app.load_game().ok and app.snapshot() == saved and app.enemy() == null and app.scene_router.current_world().layout == Layout.build(54).hospital_0_2, "fresh game instance restores saved seed, loot, floor and defeated enemy")
 	check(app.command("game.expand_farm").code == "NOT_IN_SAFE_AREA", "farm can only be expanded in the shelter")
 	check(app.transition("shelter").ok and app.command("game.expand_farm").code == "INSUFFICIENT_RESOURCES", "expansion requires the full cost")
+	check(app.scene_router.current_world().portals[0].to == "outside" and follow(app, "outside") and follow(app, "shelter"), "after the first victory the physical shelter door leads to the city in both directions")
 	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "starter coins can contribute to building")
 	var before_expansion: Dictionary = app.snapshot()
 	app.save_store.fault = "before_replace"
@@ -368,6 +382,7 @@ func run() -> void:
 	var legacy = Campaign.new(Rules.build())
 	check(app.save_store.write_checkpoint(legacy.coordinator.get_snapshot(), Model.validate.bind(app.rules())).get("committed", false), "legacy fixture writes version 3 checkpoint")
 	check(app.load_game().ok and app.snapshot().schema_version == 3 and app.scene_router.current_world().layout.is_empty(), "old version 3 saves load with original geometry")
+	check(app.toggle_shelter().ok and app.save_game().ok and app.load_game().ok and follow(app, "hospital") and app.snapshot().schema_version == 3 and not app.snapshot().world_states.first_enemy_defeated, "legacy shelter door also returns to the hospital after save and load")
 	var legacy_state: Dictionary = app.snapshot()
 	app.save_store.fault = "before_replace"
 	check(app.command("session.upgrade_world").code == "SAVE_FAILED" and app.snapshot() == legacy_state and app.scene_router.current_world().layout.is_empty(), "failed upgrade leaves the previous world and save intact")

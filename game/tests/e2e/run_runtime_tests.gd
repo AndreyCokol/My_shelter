@@ -170,6 +170,10 @@ func run() -> void:
 		await process_frame
 		check(app.ui.body.get_child_count() > 0, "step12 panel renders " + name)
 		app.ui.close_panel()
+	check(app.save_game().ok and app.hero.try_dodge(), "reloaded combat timer fixture starts a fresh dodge")
+	app.hero.swing_remaining = 0.15
+	app.hero.velocity = Vector2(320, 0)
+	check(app.load_game().ok and app.hero.velocity == Vector2.ZERO and app.hero.swing_remaining == 0 and app.hero.dodge_remaining == 0 and app.hero.try_dodge(), "loading a checkpoint clears the old swing, movement and dodge cooldown")
 	await check_lethal_checkpoint()
 	var path: String = app.save_location
 	app.free()
