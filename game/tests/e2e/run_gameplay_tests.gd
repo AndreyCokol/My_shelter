@@ -53,7 +53,11 @@ func _run_domains(rules: Dictionary) -> void:
 	var campaign = Campaign.new(rules)
 	var session = campaign.coordinator
 	var store = Store.new("user://gameplay-tests/" + str(Time.get_ticks_usec()) + ".json")
-	check(session.execute(request(session, "locked-exit", "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}), store).code == "UNAVAILABLE", "step5 onboarding cannot skip first unlock")
+	check(session.execute(request(session, "locked-city", "scene.transition", {"destination_scene_id": "outside", "entry_point_id": "default"}), store).code == "UNAVAILABLE", "step5 regular city travel stays locked until the first System reward")
+	check(session.execute(request(session, "locked-parcel", "inventory.claim_parcel", {"parcel_id": "starter"}), store).code == "UNAVAILABLE", "step5 System parcel remains locked before the first enemy")
+	check(session.execute(request(session, "early-shelter", "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}), store).ok and session.get_snapshot().scene.return_scene_id == "hospital", "step5 unrestricted shelter escape is available before first unlock")
+	check(session.get_snapshot().claimed_reward_ids.is_empty() and session.get_snapshot().wallet.system_coins == 0 and not session.get_snapshot().world_states.first_enemy_defeated, "step5 entering shelter never grants a first-kill reward")
+	check(session.execute(request(session, "early-return", "scene.transition", {"destination_scene_id": "hospital", "entry_point_id": "default"}), store).ok, "step5 shelter return preserves hospital onboarding path")
 	var kill := request(session, "first-kill", "game.enemy_defeated")
 	check(session.execute(kill, store).ok and session.get_snapshot().player.xp == 10, "step5 first defeat gives one System reward")
 	check(session.execute(kill, store).code == "ALREADY_APPLIED" and session.execute(request(session, "second-kill", "game.enemy_defeated"), store).code == "INVALID_STATE", "step5 duplicate death never grants reward twice")

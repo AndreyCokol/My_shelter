@@ -27,8 +27,16 @@ for args in commands:
     try:
         run = subprocess.run([godot, *args], cwd=root, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, timeout=45)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f'FAIL {args}: {exc}')
+    except subprocess.TimeoutExpired as exc:
+        # Preserve the partial Godot test trace to locate the exact hanging step.
+        captured = exc.stdout or b''
+        if isinstance(captured, bytes):
+            captured = captured.decode('utf-8', 'replace')
+        print(captured[-14000:], end='', flush=True)
+        print(f'FAIL {args}: {exc}', flush=True)
+        sys.exit(1)
+    except OSError as exc:
+        print(f'FAIL {args}: {exc}', flush=True)
         sys.exit(1)
     print(run.stdout, end='')
     if args == ['--version'] and not run.stdout.strip().startswith('4.7.2.stable.'):

@@ -34,15 +34,14 @@ func run() -> void:
 	check(app.ui.theme.get_stylebox("normal", "Button") is StyleBoxTexture, "real image-backed button style replaces flat placeholder")
 	check(app.ui.theme.get_stylebox("hover", "Button") is StyleBoxTexture and app.ui.theme.get_stylebox("pressed", "Button") is StyleBoxTexture and app.ui.theme.get_stylebox("focus", "Button") is StyleBoxTexture, "hover pressed and keyboard focus states have texture styles")
 	check(app.ui.heading_icon.texture == Art.texture("shelter"), "welcome header displays pack artwork")
-	var health_icon: TextureRect = app.ui.find_child("HealthIcon", true, false)
-	check(health_icon != null and health_icon.size == Vector2(14, 14) and health_icon.get_global_rect().end.x + 4 <= app.ui.hud.get_global_rect().position.x, "health icon respects target size and does not overlap HUD text")
+	app.ui.close_panel()
+	await process_frame
 	var viewport: Vector2 = app.ui.get_viewport_rect().size
-	for child in app.ui.get_children():
-		if child is Panel:
-			var nav = child.get_child(child.get_child_count() - 1)
-			if nav is HBoxContainer:
-				for button in nav.get_children():
-					check(button is Button and button.icon != null and button.get_global_rect().end.x <= viewport.x and button.get_global_rect().end.y <= 85, "navigation icon fits viewport without covering world")
+	for section in [app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation]:
+		check(Rect2(Vector2.ZERO, viewport).encloses(section.get_global_rect()), "HUD section fits design viewport: " + section.name)
+	var quick: Button = app.ui.shelter_nav_button
+	check(quick != null and Rect2(Vector2.ZERO, viewport).encloses(quick.get_global_rect()) and quick.get_global_rect().end.y <= 35, "Shelter HUD button fits 640x360")
+	check(app.ui.shelter_modal_button != null, "Shelter modal action exists with radial HUD")
 	var panel: PanelContainer = app.ui.modal.get_child(0)
 	check(panel.get_theme_stylebox("panel") is StyleBoxTexture, "modal frame uses selected Kibyra panel artwork")
 	check(panel.get_global_rect().end.x <= viewport.x and panel.get_global_rect().end.y <= viewport.y, "skinned modal fits design viewport")

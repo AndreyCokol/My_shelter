@@ -1,5 +1,7 @@
 extends CharacterBody2D
 
+const DODGE_COOLDOWN := 0.85
+
 var app
 var health: int = 100
 var facing := Vector2.RIGHT
@@ -32,8 +34,6 @@ func _physics_process(delta: float) -> void:
 		facing = direction.normalized()
 	if Input.is_action_just_pressed("dodge"):
 		try_dodge()
-	if Input.is_action_just_pressed("attack") and get_viewport().gui_get_hovered_control() == null:
-		try_attack(get_global_mouse_position())
 	velocity = facing * 320 if dodge_remaining > 0 else direction * 115
 	move_and_slide()
 	var world = app.scene_router.current_world()
@@ -42,11 +42,14 @@ func _physics_process(delta: float) -> void:
 		position = position.clamp(walkable.position, walkable.end)
 	queue_redraw()
 
+func dodge_readiness() -> float:
+	return 1.0 - clampf(dodge_cooldown / DODGE_COOLDOWN, 0.0, 1.0)
+
 func try_dodge() -> bool:
 	if defeated or dodge_cooldown > 0 or app == null or not app.running():
 		return false
 	dodge_remaining = 0.22
-	dodge_cooldown = 0.85
+	dodge_cooldown = DODGE_COOLDOWN
 	return true
 
 func try_attack(target: Vector2) -> bool:

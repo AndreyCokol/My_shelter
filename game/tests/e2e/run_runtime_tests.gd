@@ -20,8 +20,12 @@ func run() -> void:
 	root.add_child(app)
 	await process_frame
 	check(app.ui.panel_id == "welcome" and app.session.pauses.is_paused(), "step12 welcome pauses world and combat")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(not app.ui.radial.visible and app.ui.panel_id == "welcome", "left Ctrl leaves the welcome panel active")
 	check(app.scene_router.current_world().scene_id == "hospital" and is_instance_valid(app.enemy()), "step5 real hospital and enemy mounted")
 	app.ui.close_panel()
+	await check_hud_input()
+	await check_integrated_shelter_input()
 	var before: Vector2 = app.hero.position
 	Input.action_press("move_right")
 	for i in range(12):
@@ -133,6 +137,15 @@ func run() -> void:
 	Input.parse_input_event(escape)
 	await process_frame
 	check(app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "E2E08 Escape closes focused modal and releases its pause")
+	var first: String = app.ui.hud.items[0].instance_id
+	send_key(KEY_1)
+	check(app.ui.panel_id == "inventory" and app.ui.inventory_selection == first, "quick slot selects the real backpack stack")
+	app.ui.close_panel()
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	await process_frame
+	click_at(app.ui.radial.wheel_center() + Vector2(0, -40))
+	check(app.ui.panel_id == "inventory" and app.ui.inventory_selection == first and not app.ui.radial.visible, "wheel sector selects the same backpack stack")
+	app.ui.close_panel()
 	check(root.gui_get_focus_owner() == null, "E2E08 closed modal leaves no focused action that Space can trigger")
 	var subscriptions: int = app.session.events.subscription_count()
 	for i in range(10):
@@ -151,3 +164,92 @@ func run() -> void:
 	await process_frame
 	print("RUNTIME TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+
+func send_key(code: Key, location: KeyLocation = KEY_LOCATION_UNSPECIFIED, echo := false) -> void:
+	var key := InputEventKey.new()
+	key.physical_keycode = code
+	key.keycode = code
+	key.location = location
+	key.pressed = true
+	key.echo = echo
+	root.push_input(key, true)
+	var released := key.duplicate() as InputEventKey
+	released.pressed = false
+	released.echo = false
+	root.push_input(released, true)
+
+
+func click_at(point: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = point
+	root.push_input(motion, true)
+	for down in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.position = point
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = down
+		root.push_input(click, true)
+
+
+func check_hud_input() -> void:
+	var radial = app.ui.radial
+	check(app.ui.hud.visible and not radial.visible, "HUD starts with the item wheel hidden")
+	send_key(KEY_CTRL, KEY_LOCATION_RIGHT)
+	check(not radial.visible, "right Ctrl does not toggle the wheel")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(radial.visible and not app.running(), "left Ctrl opens the wheel and pauses gameplay")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT, true)
+	check(radial.visible, "Ctrl echo cannot close the wheel")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(not radial.visible and app.running(), "a second left Ctrl closes the wheel and resumes gameplay")
+	var external: int = app.session.pauses.acquire_pause("test:recovery")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(not radial.visible and not app.running(), "the wheel respects another pause owner")
+	app.session.pauses.release_pause(external)
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	send_key(KEY_ESCAPE)
+	check(not radial.visible and app.ui.panel_id.is_empty() and app.running(), "Escape dismisses the wheel without opening pause")
+	for shortcut in [[KEY_M, "map"], [KEY_J, "journal"], [KEY_K, "workshop"], [KEY_I, "inventory"]]:
+		send_key(shortcut[0])
+		check(app.ui.panel_id == shortcut[1] and app.session.pauses.is_paused(), "HUD shortcut opens " + shortcut[1])
+		app.ui.close_panel()
+	send_key(KEY_1)
+	check(app.ui.panel_id.is_empty(), "an empty quick slot opens no panel")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	await process_frame
+	var center: Vector2 = radial.wheel_center()
+	click_at(center)
+	check(not radial.visible and app.ui.panel_id == "inventory" and app.session.pauses.is_paused(), "wheel hub opens the backpack")
+	app.ui.close_panel()
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	await process_frame
+	click_at(Vector2(300, 120))
+	check(not radial.visible and app.running() and app.hero.attack_cooldown == 0.0, "a click outside the wheel dismisses it without attacking")
+	click_at(Vector2(300, 120))
+	check(app.hero.attack_cooldown > 0.0, "an unhandled world click still attacks")
+	app.hero.attack_cooldown = 0.0
+
+# End-to-end regression for both PR #38 and PR #39 on a single SceneTree.
+func check_integrated_shelter_input() -> void:
+	var before: Dictionary = app.snapshot()
+	var pos: Vector2 = app.hero.position
+	check(not before.world_states.first_enemy_defeated, "integrated G test before first victory")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(app.ui.radial.visible and app.session.pauses.is_paused(), "integrated radial opens before first fight")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == "shelter" and not app.ui.radial.visible and not app.session.pauses.is_paused(), "G closes radial and moves to shelter before Q01")
+	check(not app.snapshot().world_states.first_enemy_defeated and not "system_unlocked" in app.snapshot().story_flags and app.snapshot().player.xp == before.player.xp, "retreat grants neither System nor XP")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == before.scene.current_scene_id and app.hero.position == pos, "G returns to saved scene and exact position")
+	app.ui.open_panel("inventory")
+	app.ui.shelter_modal_button.pressed.emit()
+	check(app.snapshot().scene.current_scene_id == "shelter" and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "modal shelter button releases only its own pause")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == before.scene.current_scene_id, "G returns after modal warp")
+	var external: int = app.session.pauses.acquire_pause("integration:external")
+	var scene_before: String = app.snapshot().scene.current_scene_id
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == scene_before and app.session.pauses.is_paused(), "G cannot bypass external pause")
+	app.session.pauses.release_pause(external)
+	check(app.ui.shelter_nav_button.visible, "Shelter HUD action remains visible on world")

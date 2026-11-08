@@ -101,7 +101,7 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return last_result
 
 func transition(destination: String, entry_id: String = "default") -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id)
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health)
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
@@ -110,6 +110,14 @@ func transition(destination: String, entry_id: String = "default") -> Dictionary
 		if direction != Vector2.ZERO:
 			hero.facing = direction
 	return result
+
+# Shelter has no story gate; scene/HP/position are committed by SceneRouter.
+func toggle_shelter() -> Dictionary:
+	if scene_router == null or campaign == null or not is_instance_valid(hero) or hero.defeated:
+		return {"ok": false, "code": "UNAVAILABLE"}
+	var state: Dictionary = snapshot()
+	var destination: String = state.scene.return_scene_id if state.scene.current_scene_id == "shelter" else "shelter"
+	return transition(destination)
 
 func bind_world() -> void:
 	var world = scene_router.current_world()
@@ -247,23 +255,42 @@ func next_harvest_minute() -> int:
 func _unhandled_input(event: InputEvent) -> void:
 	if ui == null:
 		return
+	var key := event as InputEventKey
+	var key_pressed := key != null and key.pressed and not key.echo
+	if key_pressed and key.physical_keycode == KEY_CTRL and key.location == KEY_LOCATION_LEFT:
+		ui.toggle_radial()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("pause"):
-		if ui.panel_id.is_empty():
+		if ui.radial.visible:
+			ui.close_radial()
+		elif ui.panel_id.is_empty():
 			ui.open_panel("menu")
 		else:
 			ui.close_panel()
 		get_viewport().set_input_as_handled()
 		return
+	# G may release a local UI modal/wheel token, never an external/recovery lock.
+	if event.is_action_pressed("shelter_skill") and not event.is_echo():
+		ui.toggle_shelter()
+		get_viewport().set_input_as_handled()
+		return
 	if not running():
 		return
-	if event.is_action_pressed("inventory"):
+	if event.is_action_pressed("attack") and get_viewport().gui_get_hovered_control() == null:
+		hero.try_attack(hero.get_global_mouse_position())
+	elif event.is_action_pressed("inventory"):
 		ui.open_panel("inventory")
 	elif event.is_action_pressed("system_menu"):
 		ui.open_panel("quests")
+	elif event.is_action_pressed("map"):
+		ui.open_panel("map")
+	elif event.is_action_pressed("journal"):
+		ui.open_panel("journal")
+	elif event.is_action_pressed("workshop"):
+		ui.open_panel("workshop")
+	elif key_pressed and key.physical_keycode >= KEY_1 and key.physical_keycode <= KEY_4:
+		ui.open_quick_slot(key.physical_keycode - KEY_1)
 	elif event.is_action_pressed("interact"):
 		scene_router.current_world().interact()
-	elif event.is_action_pressed("shelter_skill") and snapshot().world_states.first_enemy_defeated:
-		if snapshot().scene.current_scene_id == "shelter":
-			transition(snapshot().scene.return_scene_id)
-		else:
-			transition("shelter")
+
