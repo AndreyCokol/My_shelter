@@ -69,7 +69,30 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
-      - name: Keep test logs (no public executable artifact)
+      # Temporary one-day handoff for the project owner. Kept on an isolated
+      # integration branch; do NOT merge this packaging step into main.
+      - name: Prepare private-use preview notes
+        shell: pwsh
+        run: |
+          @'
+          My Shelter - Windows x64 personal test build
+          Source revision: 1ea01bdf5909fc118d7d585f32de8f8f9e6e2887
+          Start: MyShelter.exe
+          Offline prototype. Unfinished. Windows 10/11 x64.
+          This is NOT a production release or permission to redistribute third-party assets.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (!(Test-Path build/windows/MyShelter.exe)) { throw 'Missing Windows EXE' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Implausibly small Windows EXE' }
+      - name: Hand-off Windows executable (ephemeral 1-day artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-personal-preview
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Keep test logs (no default release publication)
         if: always()
         uses: actions/upload-artifact@v4
         with:
