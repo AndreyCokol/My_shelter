@@ -4,9 +4,11 @@ const Core = preload("res://game/systems/core/core_session.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Calendar = preload("res://game/systems/core/calendar_planner.gd")
 const Commands = preload("res://game/systems/inventory/campaign_commands.gd")
+const GameplayCalendar = preload("res://game/systems/gameplay/gameplay_calendar.gd")
 var coordinator
 var _rules: Dictionary
 var _commands
+var _clock_validator: Callable
 var calendar = Calendar.new()
 
 func _init(rules: Dictionary) -> void:
@@ -23,8 +25,8 @@ func _init(rules: Dictionary) -> void:
 	coordinator = Core.new(state, Model.validate.bind(_rules), _commands.normalize, _commands.plan)
 	coordinator._domain_owner = _commands
 	if _rules.get("gameplay", false):
-		var adapter = preload("res://game/systems/gameplay/gameplay_calendar.gd")
-		configure_calendar(adapter.deadlines, adapter.apply)
+		_clock_validator = Model.validate.bind(_rules, false)
+		configure_calendar(GameplayCalendar.deadlines, GameplayCalendar.apply)
 
 func get_rules() -> Dictionary:
 	return _rules.duplicate(true)
@@ -38,17 +40,20 @@ func configure_calendar(source: Callable, consumer: Callable) -> bool:
 func tick(delta: float) -> bool:
 	if coordinator == null or not is_finite(delta) or delta < 0:
 		return false
-	# Safe fast path: never clone/validate the entire campaign for a fractional
-	# frame. If a whole minute is due, fall back to the full calendar planner.
-	if coordinator.try_accumulate_fractional_clock(delta, _rules.minutes_per_real_second):
+	var elapsed: float = delta * _rules.minutes_per_real_second
+	var production_clock: bool = _clock_validator.is_valid() and calendar.provider == GameplayCalendar.deadlines and calendar.handler == GameplayCalendar.apply
+	# A custom adapter can veto time even when no minute boundary is due.
+	if (production_clock or not calendar.has_adapter()) and coordinator.try_accumulate_fractional_clock(elapsed):
 		return true
+	if production_clock:
+		return coordinator.advance_gameplay_clock(elapsed, calendar, _clock_validator)
 	var drafts: Array = []
 	return coordinator.apply_runtime(func(state):
-		var accumulated: float = state.clock_remainder + delta * _rules.minutes_per_real_second
+		var accumulated: float = state.clock_remainder + elapsed
 		# Check before float-to-int conversion, including overflow of finite inputs.
 		if not is_finite(accumulated) or accumulated > Calendar.MAX_MINUTE - state.game_time_minutes:
 			return false
-		var minutes := int(floor(accumulated + 0.000000001))
+		var minutes := floori(accumulated + Calendar.MINUTE_EPSILON)
 		var result: Dictionary = calendar.advance(state, int(state.game_time_minutes) + minutes, "tick")
 		if not result.ok:
 			return false

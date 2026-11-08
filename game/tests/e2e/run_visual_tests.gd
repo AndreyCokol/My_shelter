@@ -110,9 +110,53 @@ func run() -> void:
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 	await process_frame
+	await capture_three_seed_locations()
 	print("VISUAL TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
+
+
+# Issue #44: capture genuinely different generated world seeds, not
+# screen mockups. No force-upgrade of v4 saves. These are 720p Linux
+# software-OpenGL review screenshots, NOT native Windows GUI playtests.
+func capture_three_seed_locations() -> void:
+	var scenes = preload("res://game/scenes/main/playable.tscn")
+	for seed_value in [0, 54, 2147483647]:
+		var sample = scenes.instantiate()
+		var location := "user://visual-seeds/%d-%d.json" % [seed_value, Time.get_ticks_usec()]
+		sample.save_location = location
+		sample.starting_seed = seed_value
+		root.add_child(sample)
+		await process_frame
+		await process_frame
+		sample.ui.close_panel()
+		var manifest: Dictionary = sample.snapshot().world_states.layout
+		check(manifest.seed == seed_value and manifest.generator_version == 5,
+			"real rendered seed %d uses v5 procedural world" % seed_value)
+		sample.hero.position = Vector2(610, 260)
+		await capture("seed_%d_hospital" % seed_value)
+		var enter: Dictionary = sample.toggle_shelter()
+		check(enter.get("ok", false) and sample.snapshot().scene.current_scene_id == "shelter",
+			"seed %d enters shelter from hospital without quest unlock" % seed_value)
+		await capture("seed_%d_shelter" % seed_value)
+		var back: Dictionary = sample.toggle_shelter()
+		check(back.get("ok", false) and sample.snapshot().scene.current_scene_id == "hospital",
+			"seed %d returns to its hospital position" % seed_value)
+		if is_instance_valid(sample.enemy()):
+			sample.enemy().take_damage(100)
+			for index in range(4):
+				await physics_frame
+		var outside: Dictionary = sample.transition("outside")
+		check(outside.get("ok", false) and sample.snapshot().scene.current_scene_id == "outside",
+			"seed %d provides a playable street facade" % seed_value)
+		sample.hero.position = Vector2(750, 270)
+		await capture("seed_%d_street" % seed_value)
+		sample.free()
+		for suffix in ["", ".tmp", ".bak", ".rejected"]:
+			if FileAccess.file_exists(location + suffix):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(location + suffix))
+		await process_frame
+		print("SEED VISUALS: seed=%d captured hospital, shelter and street" % seed_value)
 
 
 # Automated software-rendered coverage of the second target desktop
