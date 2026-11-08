@@ -52,6 +52,22 @@ func run() -> void:
 		check(Rect2(Vector2.ZERO, viewport).encloses(section.get_global_rect()), "HUD section fits design viewport: " + section.name)
 	var quick: Button = app.ui.shelter_nav_button
 	check(quick != null and Rect2(Vector2.ZERO, viewport).encloses(quick.get_global_rect()) and quick.get_global_rect().end.y <= 35, "Shelter HUD button fits 640x360")
+	check(quick.get_global_rect().position.x >= 405
+		and quick.get_global_rect().end.x < app.ui.hud.map_node.get_global_rect().position.x,
+		"approved PC location plaque and G shortcut stay left of minimap")
+	check(app.ui.hud.hotbar.get_global_rect().end.y <= viewport.y - 18
+		and app.ui.hud.navigation.get_global_rect().end.y <= viewport.y - 18,
+		"hotbar and I/M/J/K navigation sit above the actual PC control ribbon")
+	check(app.ui.hud.get_node("QuestTracker").get_global_rect().position.y <= 80,
+		"approved quest tracker starts below the compact survival status")
+	var hero_shape: CollisionShape2D = null
+	for part in app.hero.get_children():
+		if part is CollisionShape2D:
+			hero_shape = part
+			break
+	check(hero_shape != null and hero_shape.shape is CircleShape2D
+		and is_equal_approx(hero_shape.shape.radius, 9.0),
+		"visual hero sprite keeps 9px collision radius")
 	check(app.ui.shelter_modal_button != null, "Shelter modal action exists with radial HUD")
 	var panel: PanelContainer = app.ui.modal.get_child(0)
 	check(panel.get_theme_stylebox("panel") is StyleBoxTexture, "modal frame uses selected Kibyra panel artwork")

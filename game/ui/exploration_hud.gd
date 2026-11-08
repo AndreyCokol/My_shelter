@@ -71,7 +71,7 @@ func _ready() -> void:
 		target.mouse_entered.connect(navigation.queue_redraw)
 		target.mouse_exited.connect(navigation.queue_redraw)
 		left += width + 1.5
-	var quest := _hitbox(self, Rect2(8, 85, 204, 36), "Задания [Tab]", panel_requested.emit.bind("quests"))
+	var quest := _hitbox(self, Rect2(8, 78, 188, 57), "Задания [Tab]", panel_requested.emit.bind("quests"))
 	quest.name = "QuestTracker"
 	_layout()
 
@@ -127,8 +127,8 @@ func _layout() -> void:
 	if map_node == null or navigation == null:
 		return
 	map_node.position = Vector2(size.x - map_node.size.x - 7, 7)
-	hotbar.position = Vector2(8, size.y - hotbar.size.y - 6)
-	navigation.position = Vector2(size.x - navigation.size.x - 8, size.y - navigation.size.y - 8)
+	hotbar.position = Vector2(8, size.y - hotbar.size.y - 19)
+	navigation.position = Vector2(size.x - navigation.size.x - 8, size.y - navigation.size.y - 27)
 
 
 func update_state(state: Dictionary, carried: Array[Dictionary], place: String, quest: String, exit_id: String) -> void:
@@ -159,24 +159,46 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 
 
 func _draw() -> void:
-	draw_texture_rect_region(SHEET, Rect2(6, 4, 202, 22), TITLE)
-	frame(self, Rect2(7, 28, 48, 53))
-	draw_texture_rect_region(SHEET, Rect2(6, 27, 50, 40.5), PORTRAIT)
-	caption(self, Vector2(11, 76), "%d XP" % hero_xp, 9)
-	draw_texture_rect_region(SHEET, Rect2(57, 29, 16, 16), HEART)
-	draw_texture_rect_region(SHEET, Rect2(57, 47, 16, 16), DODGE)
-	draw_texture_rect_region(SHEET, Rect2(58, 66, 14, 14), BACKPACK)
-	_bar(Rect2(74, 30, 110, 14), health / 100.0, Color("a72918"), "%d / 100" % health)
-	_bar(Rect2(74, 48, 105, 14), dodge_charge, Color("c77c16"), "Уклонение")
+	# 640x360 PC-layout anchored to the four approved 1672x941 mockups.
+	# Location label is informational; G remains the actual shelter control.
+	draw_texture_rect_region(SHEET, Rect2(6, 4, 178, 19), TITLE)
+	frame(self, Rect2(7, 23, 46, 48))
+	draw_texture_rect_region(SHEET, Rect2(7, 24, 44, 39), PORTRAIT)
+	caption(self, Vector2(11, 69), "%d XP" % hero_xp, 9)
+	draw_texture_rect_region(SHEET, Rect2(56, 25, 14, 14), HEART)
+	draw_texture_rect_region(SHEET, Rect2(56, 40, 14, 14), DODGE)
+	draw_texture_rect_region(SHEET, Rect2(57, 55, 13, 13), BACKPACK)
+	_bar(Rect2(71, 25, 96, 13), health / 100.0, Color("a72918"), "%d / 100" % health)
+	_bar(Rect2(71, 40, 96, 13), dodge_charge, Color("c77c16"),
+		"Уклон. %d%%" % roundi(dodge_charge * 100))
 	var load_ratio := float(load_units) / maxi(capacity, 1)
-	_bar(Rect2(74, 66, 73, 14), load_ratio, Color("466d3e"), "%d / %d" % [load_units, capacity])
-	caption(self, Vector2(153, 76), "Монеты %d · Уб. %d XP" % [coins, shelter_xp], 9)
-	frame(self, Rect2(7, 85, 115, 17))
-	draw_texture_rect_region(SHEET, Rect2(10, 86, 14, 14), QUEST)
-	caption(self, Vector2(28, 97), "Текущее задание", 10, Color("f5cc4d"))
-	frame(self, Rect2(9, 101, 203, 18))
-	caption(self, Vector2(16, 113), objective, 10)
-	caption(self, Vector2(8, 132), location_text, 9)
+	_bar(Rect2(71, 55, 96, 13), load_ratio, Color("486a59"), "%d / %d" % [load_units, capacity])
+	frame(self, Rect2(173, 25, 131, 45))
+	caption(self, Vector2(180, 38), "Опыт: %d" % hero_xp, 9)
+	caption(self, Vector2(180, 51), "Монеты: %d" % coins, 9)
+	caption(self, Vector2(180, 64), "Убежище: %d XP" % shelter_xp, 9)
+
+	# The upper-center label is deliberately independent from the G shortcut.
+	frame(self, Rect2(192, 4, 212, 19))
+	draw_string(ThemeDB.fallback_font, Vector2(196, 17),
+		location_text, HORIZONTAL_ALIGNMENT_CENTER, 204, 10, INK)
+
+	frame(self, Rect2(7, 78, 128, 17))
+	draw_texture_rect_region(SHEET, Rect2(10, 79, 14, 14), QUEST)
+	caption(self, Vector2(28, 91), "Текущее задание", 10, Color("f5cc4d"))
+	frame(self, Rect2(8, 96, 188, 39))
+	caption(self, Vector2(14, 111), objective, 10)
+	caption(self, Vector2(14, 126), tracked_exit if not tracked_exit.is_empty()
+		else "E — взаимодействие · G — убежище", 8, Color("b8b9a8"))
+
+	# Actual PC bindings, not the Ctrl=run/Tab=radial mistake in concept art.
+	frame(self, Rect2(6, size.y - 19, size.x - 12, 18))
+	caption(self, Vector2(12, size.y - 7), "WASD Движение", 9)
+	caption(self, Vector2(117, size.y - 7), "ЛКМ Атака", 9)
+	caption(self, Vector2(210, size.y - 7), "E Действие", 9)
+	caption(self, Vector2(290, size.y - 7), "Space Уклонение", 9)
+	caption(self, Vector2(416, size.y - 7), "Левый Ctrl Меню", 9)
+	caption(self, Vector2(551, size.y - 7), "G Убежище", 9)
 
 
 func _bar(rect: Rect2, ratio: float, tint: Color, value: String) -> void:

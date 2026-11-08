@@ -76,8 +76,9 @@ func _ready() -> void:
 	# Always-visible control between title and top-right minimap (640x360).
 	shelter_nav_button = button(self, "Убежище [G]", toggle_shelter)
 	shelter_nav_button.name = "ShelterQuickButton"
-	shelter_nav_button.position = Vector2(222, 4)
-	shelter_nav_button.size = Vector2(132, 25)
+	shelter_nav_button.position = Vector2(410, 4)
+	shelter_nav_button.size = Vector2(110, 25)
+	shelter_nav_button.add_theme_font_size_override("font_size", 11)
 	shelter_nav_button.focus_mode = Control.FOCUS_NONE
 	shelter_nav_button.icon = Art.icon("shelter")
 	shelter_nav_button.tooltip_text = "В убежище / вернуться к месту выхода [G]"
@@ -86,8 +87,8 @@ func _ready() -> void:
 	notice.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	notice.offset_left = 8
 	notice.offset_right = -8
-	notice.offset_top = -58
-	notice.offset_bottom = -45
+	notice.offset_top = -80
+	notice.offset_bottom = -65
 	notice.mouse_filter = MOUSE_FILTER_IGNORE
 	notice.clip_text = true
 	notice.add_theme_font_size_override("font_size", 11)
