@@ -1,7 +1,13 @@
 extends RefCounted
 
+# Transient duplicate notification suppression only. Durable action/reward
+# idempotency belongs to CoreSession's persisted completed_actions/reward IDs.
+const HISTORY_LIMIT := 4096
+
 var _subscriptions: Dictionary = {}
 var _seen: Dictionary = {}
+var _recent_ids: Array[String] = []
+var _oldest_index: int = 0
 var _serial: int = 0
 var _dispatching: bool = false
 
@@ -41,7 +47,7 @@ func subscription_count() -> int:
 func publish_after_commit(event: Dictionary) -> bool:
 	if _dispatching or not valid_event(event) or _seen.has(event.event_id):
 		return false
-	_seen[event.event_id] = true
+	_remember_event_id(str(event.event_id))
 	_dispatching = true
 	_prune()
 	# Fixed delivery list: new subscriptions start with the next event.
@@ -59,10 +65,27 @@ func publish_after_commit(event: Dictionary) -> bool:
 	_dispatching = false
 	return true
 
+# Retain only a bounded ring of recent post-commit notification IDs. Older
+# delivery IDs may be sent again, but must never mutate authoritative domain
+# state; the persisted action receipt remains the exactly-once boundary.
+func _remember_event_id(id: String) -> void:
+	if _recent_ids.size() < HISTORY_LIMIT:
+		_recent_ids.append(id)
+	else:
+		_seen.erase(_recent_ids[_oldest_index])
+		_recent_ids[_oldest_index] = id
+		_oldest_index = (_oldest_index + 1) % HISTORY_LIMIT
+	_seen[id] = true
+
+func history_size() -> int:
+	return _seen.size()
+
 # Loading invalidates transient delivery history, but keeps live UI subscriptions.
 # State/receipts, not this in-memory set, guarantee domain idempotency.
 func reset_history() -> void:
 	_seen.clear()
+	_recent_ids.clear()
+	_oldest_index = 0
 
 func _prune() -> void:
 	for token in _subscriptions.keys():
