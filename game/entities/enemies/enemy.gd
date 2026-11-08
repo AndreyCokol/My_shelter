@@ -6,6 +6,7 @@ const BODY_RADIUS := 10.0
 const CHASE_SPEED := 43.0
 const CHASE_STOP_DISTANCE := 23.0
 const WalkGrid = preload("res://game/systems/world/walk_grid.gd")
+const PixelActors = preload("res://game/entities/characters/pixel_actor_frames.gd")
 var health: int = MAX_HEALTH
 var hit_cooldown: float = 0.0
 var reported: bool = false
@@ -21,6 +22,9 @@ var _chase_path := PackedVector2Array()
 var _chase_index := 0
 var _chase_goal := Vector2.ZERO
 var _chase_retry := 0.0
+var pixel_sprite: AnimatedSprite2D
+var attack_pose_remaining: float = 0.0
+var visual_facing := Vector2.DOWN
 
 func _ready() -> void:
 	z_index = 8
@@ -29,16 +33,41 @@ func _ready() -> void:
 	shape.radius = BODY_RADIUS
 	collider.shape = shape
 	add_child(collider)
+	pixel_sprite = AnimatedSprite2D.new()
+	pixel_sprite.name = "PixelActor64"
+	pixel_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	pixel_sprite.sprite_frames = PixelActors.frames(true)
+	pixel_sprite.scale = Vector2(0.75, 0.75)
+	add_child(pixel_sprite)
+	pixel_sprite.play("idle_down")
+
+func _update_pixel_animation(moving: bool) -> void:
+	if not is_instance_valid(pixel_sprite):
+		return
+	if moving and velocity.length() > 0.1:
+		visual_facing = velocity.normalized()
+	var direction: String = PixelActors.direction_name(visual_facing)
+	var pose := "attack" if attack_pose_remaining > 0.0 else ("walk" if moving else "idle")
+	var animation: String = pose + "_" + direction
+	if pixel_sprite.animation != animation:
+		pixel_sprite.play(animation)
+	elif not pixel_sprite.is_playing() and pose != "attack":
+		pixel_sprite.play(animation)
+	pixel_sprite.modulate = Color("606b68") if health == 0 else Color.WHITE
+	if health == 0:
+		pixel_sprite.pause()
 
 func _physics_process(delta: float) -> void:
 	if app == null or not app.running():
 		return
 	if health <= 0:
+		_update_pixel_animation(false)
 		if not reported:
 			reported = true
 			app.call_deferred("enemy_defeated")
 		return
 	hit_cooldown = maxf(0, hit_cooldown - delta)
+	attack_pose_remaining = maxf(0.0, attack_pose_remaining - delta)
 	var target = app.hero
 	var distance: float = global_position.distance_to(target.global_position)
 	if patrol.is_empty():
@@ -49,6 +78,8 @@ func _physics_process(delta: float) -> void:
 	if hit_cooldown <= 0 and global_position.distance_to(target.global_position) < 28 and has_clear_line_to(target):
 		target.take_damage(15)
 		hit_cooldown = 1.0
+		attack_pose_remaining = 0.16
+	_update_pixel_animation(velocity.length_squared() > 1.0)
 	queue_redraw()
 
 func update_chase(target: CharacterBody2D, distance: float, delta: float) -> void:
@@ -122,17 +153,15 @@ func take_damage(amount: int) -> void:
 	queue_redraw()
 
 func _draw() -> void:
+	# Render only gameplay indicators. The visual body is a real animated
+	# 64x64 original PNG; death makes the surviving atlas muted, not a circle.
 	if health <= 0:
-		draw_circle(Vector2.ZERO, 10, Color("505c56"))
 		return
-	draw_circle(Vector2.ZERO, 11, Color("c98b67") if alert_remaining > 0 else Color("bb796d"))
 	if alert_remaining > 0:
-		draw_rect(Rect2(-1, -32, 3, 5), Color("f4c56f"))
-		draw_rect(Rect2(-1, -26, 3, 2), Color("f4c56f"))
-	draw_rect(Rect2(-13, -22, 26, 3), Color("362a30"))
-	draw_rect(Rect2(-13, -22, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
-	draw_circle(Vector2(-4, -2), 2, Color("242830"))
-	draw_circle(Vector2(4, -2), 2, Color("242830"))
+		draw_rect(Rect2(-1, -34, 3, 5), Color("f4c56f"))
+		draw_rect(Rect2(-1, -28, 3, 2), Color("f4c56f"))
+	draw_rect(Rect2(-13, -27, 26, 3), Color("362a30"))
+	draw_rect(Rect2(-13, -27, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
 
 
 # Persistent encounter state is optional in schema v4: old checkpoints still
