@@ -5,6 +5,7 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 const Rules = preload("res://game/data/game_rules.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const VICTORY := "crash:first-victory"
+const PHASES := ["staged", "backup_copy", "replaced", "restored"]
 
 class CrashStore extends "res://game/systems/core/checkpoint_store.gd":
 	var stop_at: String
@@ -18,6 +19,17 @@ class CrashStore extends "res://game/systems/core/checkpoint_store.gd":
 		if staged:
 			hold_at("staged")
 		return staged
+
+	func _stage_backup(source: String, temporary: String) -> bool:
+		if stop_at != "backup_copy":
+			return super(source, temporary)
+		var partial := FileAccess.open(temporary, FileAccess.WRITE)
+		if partial == null:
+			return false
+		partial.store_string("{")
+		partial.close()
+		hold_at("backup_copy")
+		return false
 
 	func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 		var result := super(state, validator)
@@ -49,7 +61,7 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.is_empty():
 		run.call_deferred()
-	elif args.size() == 3 and args[0] == "worker" and args[1] in ["staged", "replaced", "restored"]:
+	elif args.size() == 3 and args[0] == "worker" and args[1] in PHASES:
 		run_worker(args[1], args[2])
 	else:
 		push_error("Invalid checkpoint crash worker arguments")
@@ -106,10 +118,10 @@ func interrupt(phase: String, path: String) -> bool:
 func run() -> void:
 	var directory := ProjectSettings.globalize_path("user://checkpoint-crash-%d-%d" %
 		[OS.get_process_id(), Time.get_ticks_usec()])
-	for phase in ["staged", "replaced", "restored"]:
+	for phase in PHASES:
 		var path := directory.path_join(phase + ".json")
 		await check_phase(phase, path)
-		for suffix in ["", ".bak", ".tmp", ".rejected", ".ready"]:
+		for suffix in ["", ".bak", ".bak.tmp", ".tmp", ".rejected", ".ready"]:
 			if FileAccess.file_exists(path + suffix):
 				DirAccess.remove_absolute(path + suffix)
 	DirAccess.remove_absolute(directory)
@@ -148,6 +160,9 @@ func check_phase(phase: String, path: String) -> void:
 		"staged":
 			check(FileAccess.get_file_as_bytes(path) == primary and FileAccess.get_file_as_bytes(path + ".bak") == backup
 				and FileAccess.file_exists(path + ".tmp"), "staging interruption preserves both durable files")
+		"backup_copy":
+			check(FileAccess.get_file_as_bytes(path) == primary and FileAccess.get_file_as_bytes(path + ".bak") == backup
+				and FileAccess.get_file_as_string(path + ".bak.tmp") == "{", "incomplete backup copy leaves both durable files byte-for-byte intact")
 		"replaced":
 			check(FileAccess.get_file_as_bytes(path + ".bak") == primary and not FileAccess.file_exists(path + ".tmp"),
 				"primary replacement keeps the previous valid primary as backup")
@@ -168,6 +183,9 @@ func check_phase(phase: String, path: String) -> void:
 	var victory := request(reopened, "game.enemy_defeated", VICTORY)
 	var result: Dictionary = reopened.execute(victory, store)
 	check(result.code == ("ALREADY_APPLIED" if phase == "replaced" else "OK"), phase + " resolves a retried victory correctly")
+	if phase == "backup_copy":
+		check(FileAccess.get_file_as_bytes(path + ".bak") == primary and not FileAccess.file_exists(path + ".bak.tmp"),
+			"retry replaces incomplete staging with a verified backup")
 	var rewarded: Dictionary = reopened.get_snapshot()
 	var gear: Array = rewarded.inventory.items.filter(func(item): return item.type_id == "tool.basic")
 	check(rewarded.claimed_reward_ids == ["system"] and rewarded.player.xp == 10 and rewarded.wallet.system_coins == 8
