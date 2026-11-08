@@ -69,6 +69,31 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # Temporary owner download only. This workflow modification MUST NOT
+      # be merged into main or used as a public distribution channel.
+      - name: Write exact personal preview revision
+        shell: pwsh
+        run: |
+          @'
+          My Shelter - Windows x64 personal test build
+          Source SHA: a051d61d7315ba7fedaedcbddd67a845501a5b20
+          Includes CT-82 enemy persistence, FullHD 15-panel capture tests,
+          F05 save-profile and CT-84 1024 construction layout coverage.
+          After extracting the archive open MyShelter.exe.
+          Offline private prototype. Manual Windows GUI and game length are not signed off.
+          Do not redistribute without checking intellectual-property and asset rights.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (!(Test-Path build/windows/MyShelter.exe)) { throw 'Missing release executable' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Invalid small executable' }
+      - name: Upload time-limited personal Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-AI-FullHD-20261108
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
