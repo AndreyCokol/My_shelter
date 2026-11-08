@@ -83,6 +83,10 @@ func _initialize() -> void:
 		var reserved: int = base.inventory.reservations.size()
 		check(Logic.quantity(base, "food.test_ration") == 1 and reserved == (1 if mode == "reserve" else 0), "recruiting keeps only one free ration " + mode)
 		var cmd: Dictionary = request(session, "game.assign_shift", {"resident_id": "resident_1", "job": "seed"})
+		var before_failed: Dictionary = session.get_snapshot()
+		store.fault = "before_replace"
+		check(session.execute(cmd, store).code == "SAVE_FAILED" and session.get_snapshot() == before_failed, "failed work ration commit rolls back inventory, shift and receipt " + mode)
+		store.fault = ""
 		var paid: Dictionary = session.execute(cmd, store)
 		check(paid.ok and paid.data.get("work_ration", {}).get("type_id") == "food.test_ration" and paid.data.work_ration.quantity == 1, "worker spends configured non-potato food " + mode)
 		var after: Dictionary = session.get_snapshot()
@@ -96,6 +100,24 @@ func _initialize() -> void:
 		var empty: Dictionary = recovered.coordinator.get_snapshot()
 		check(recovered.coordinator.execute(request(recovered.coordinator, "game.assign_shift", {"resident_id": "resident_1", "job": "sort"}), store).code == "INSUFFICIENT_RESOURCES" and recovered.coordinator.get_snapshot() == empty, "reserved or depleted food cannot fund another shift " + mode)
 		cleanup(store.path)
+
+	# Multiple valid foods and stacks: catalog priority wins, then stable
+	# instance_id ordering; inventory insertion/reordering cannot affect payment.
+	var mixed_rules := config("consume", ["food.test_ration", "crop.potato"])
+	var mixed := make_session(mixed_rules, "crop.potato", 2)
+	join_and_go_home(mixed.session, mixed.store)
+	var reorder: Dictionary = mixed.session.get_snapshot()
+	check(Logic.give(reorder, mixed_rules, "food.test_ration", 1, "z-ration") and Logic.give(reorder, mixed_rules, "food.test_ration", 1, "a-ration") and Logic.give(reorder, mixed_rules, "crop.potato", 1, "potato-extra"), "multiple certified food stacks prepared")
+	reorder.inventory.items.reverse()
+	check(mixed.store.write_checkpoint(reorder, Model.validate.bind(mixed_rules)).get("committed", false) and mixed.session.load_checkpoint(mixed.store).ok, "reordered multi-food inventory survives save/load")
+	for expected in ["game:a-ration", "game:z-ration", "game:potato-extra"]:
+		var action: Dictionary = mixed.session.execute(request(mixed.session, "game.assign_shift", {"resident_id": "resident_1", "job": "sort"}), mixed.store)
+		var expected_type := "crop.potato" if expected == "game:potato-extra" else "food.test_ration"
+		check(action.ok and action.data.work_ration.instance_id == expected and action.data.work_ration.type_id == expected_type, "deterministic mixed food payment selects " + expected)
+		var due: int = int(mixed.session.get_snapshot().residents.records[0].shift.due)
+		check(mixed.session.execute(request(mixed.session, "clock.rest", {"target_minute": due}), mixed.store).ok and mixed.session.execute(request(mixed.session, "game.collect_shift", {"resident_id": "resident_1"}), mixed.store).ok, "consecutive mixed food shift finishes and collects " + expected)
+	check(mixed.session.execute(request(mixed.session, "game.assign_shift", {"resident_id": "resident_1", "job": "sort"}), mixed.store).code == "INSUFFICIENT_RESOURCES", "mixed ration catalog refuses a shift after all available food is consumed")
+	cleanup(mixed.store.path)
 
 	# Actual historical potato-reserve save after a ruleset food rebalance:
 	# old joined NPC uses historical ration while NEW work uses the new whitelist.
