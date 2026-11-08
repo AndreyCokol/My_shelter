@@ -9,8 +9,9 @@ const SAMPLED_MINUTES := 3
 const RECEIPT_COUNTS := [100, 1000, 10000]
 
 func _initialize() -> void:
-	if "--hud" in OS.get_cmdline_user_args():
-		_profile_hud.call_deferred()
+	var args := OS.get_cmdline_user_args()
+	if "--hud" in args or "--combat" in args:
+		_profile_playable.call_deferred("--combat" in args)
 		return
 	var rules := Rules.build()
 	rules.world_seed = 54
@@ -61,10 +62,10 @@ func _initialize() -> void:
 			int((minute.front() + minute.back()) / 2.0), minute.back(), crop_deadline_us, start_memory, high_memory])
 	quit()
 
-func _profile_hud() -> void:
+func _profile_playable(combat: bool) -> void:
 	var scene := load("res://game/scenes/main/playable.tscn") as PackedScene
 	if scene == null:
-		push_error("Import the game assets before profiling the HUD")
+		push_error("Import the game assets before profiling the playable scene")
 		quit(1)
 		return
 	var app = scene.instantiate()
@@ -77,17 +78,27 @@ func _profile_hud() -> void:
 		return
 	app.ui.close_panel()
 	var locations := Layout.build(54)
-	print("receipts,hud_p50_us,hud_p95_us")
+	var metric := "attack" if combat else "hud"
+	print("receipts,%s_p50_us,%s_p95_us" % [metric, metric])
 	for receipt_count in RECEIPT_COUNTS:
 		if not app.session.apply_runtime(_populate.bind(locations, receipt_count)):
-			push_error("Could not initialize a valid HUD profile fixture")
+			push_error("Could not initialize a valid playable profile fixture")
 			app.free()
 			quit(1)
 			return
 		var samples: Array[int] = []
 		for sample in range(30):
+			if combat:
+				app.hero.attack_cooldown = 0.0
 			var start := Time.get_ticks_usec()
-			app.update_hud()
+			if combat:
+				if not app.hero.try_attack(app.hero.global_position + Vector2.RIGHT):
+					push_error("Attack failed during profiling")
+					app.free()
+					quit(1)
+					return
+			else:
+				app.update_hud()
 			samples.append(Time.get_ticks_usec() - start)
 		samples.sort()
 		print("%d,%d,%d" % [receipt_count, int((samples[14] + samples[15]) / 2.0), samples[28]])

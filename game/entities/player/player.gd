@@ -58,7 +58,7 @@ func try_attack(target: Vector2) -> bool:
 		return false
 	if target.distance_to(global_position) > 1:
 		facing = global_position.direction_to(target)
-	var attack_profile: Dictionary = Combat.profile(app.snapshot(), app.rules())
+	var attack_profile: Dictionary = Combat.profile(app.snapshot(false), app.rules())
 	attack_cooldown = float(attack_profile.cooldown)
 	swing_remaining = 0.15
 	var enemy = app.enemy()
