@@ -84,6 +84,9 @@ func _request(kind: String, payload: Dictionary) -> Dictionary:
 	for key in state.resource_revisions:
 		revisions.append({"key": key, "revision": state.resource_revisions[key]})
 	var context := {"actor_id": "player", "scene_id": state.scene.current_scene_id, "expected_resource_revisions": revisions}
+	if kind != "game.player_defeated":
+		context.departure_position = {"x": hero.position.x, "y": hero.position.y}
+		context.health = hero.health
 	var health := _enemy_health()
 	if health >= 0:
 		context.enemy_health = health
@@ -98,9 +101,6 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	var request := _request(kind, payload)
 	if kind == "game.build":
 		request.context.live_position = {"x": hero.position.x, "y": hero.position.y}
-	if kind == "session.upgrade_world":
-		request.context.departure_position = {"x": hero.position.x, "y": hero.position.y}
-		request.context.health = hero.health
 	last_result = session.execute(request, save_store)
 	if last_result.ok and kind == "session.upgrade_world":
 		bind_world()
@@ -198,8 +198,6 @@ func player_defeated() -> void:
 
 func save_game() -> Dictionary:
 	var request := _request("session.save", {})
-	request.context.departure_position = {"x": hero.position.x, "y": hero.position.y}
-	request.context.health = hero.health
 	last_result = session.execute(request, save_store)
 	ui.show_result(last_result)
 	return last_result

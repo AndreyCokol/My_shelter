@@ -170,7 +170,13 @@ func run() -> void:
 		await process_frame
 		check(app.ui.body.get_child_count() > 0, "step12 panel renders " + name)
 		app.ui.close_panel()
+	check(app.save_game().ok and app.hero.try_dodge(), "reloaded combat timer fixture starts a fresh dodge")
+	app.hero.swing_remaining = 0.15
+	app.hero.velocity = Vector2(320, 0)
+	check(app.load_game().ok and app.hero.velocity == Vector2.ZERO and app.hero.swing_remaining == 0 and app.hero.dodge_remaining == 0 and app.hero.try_dodge(), "loading a checkpoint clears the old swing, movement and dodge cooldown")
 	await check_lethal_checkpoint()
+	await check_postcommit_recovery()
+	check_backup_only_startup()
 	var path: String = app.save_location
 	app.free()
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
@@ -221,6 +227,44 @@ func check_lethal_checkpoint() -> void:
 	app.ui._retry_defeat()
 	check(app.hero.health == 100 and not app.hero.defeated and app.snapshot().scene.current_scene_id == "shelter" and app.snapshot().world_states.defeats == defeats + 1, "recovery returns the hero to safety and records exactly one defeat")
 	check(app.load_game().ok and app.snapshot().world_states.defeats == defeats + 1 and not app.hero.defeated, "loading the recovered checkpoint does not count the defeat again")
+
+func check_postcommit_recovery() -> void:
+	app.scene_router._store.fault = "after_replace"
+	check(app.transition("outside").code == "UNAVAILABLE" and app.snapshot().scene.current_scene_id == "shelter" and app.session.pauses.is_paused(), "a recorded transition awaiting recovery leaves the old scene paused")
+	app.scene_router._store.fault = ""
+	await process_frame
+	var primary := panel_button(app, "Загрузить основной файл")
+	check(app.ui.panel_id == "save" and primary != null and panel_button(app, "Сохранить сейчас") == null, "postcommit failure opens recovery choices instead of normal save actions")
+	var external: int = app.session.pauses.acquire_pause("test:independent")
+	if primary != null:
+		primary.pressed.emit()
+	else:
+		app.load_game()
+	check(app.snapshot().scene.current_scene_id == "outside" and app.ui.panel_id.is_empty() and app.session.pauses.is_paused(), "primary recovery mounts the committed location and preserves another pause")
+	app.session.pauses.release_pause(external)
+	check(app.running(), "releasing the remaining pause resumes the recovered game")
+
+func check_backup_only_startup() -> void:
+	var path: String = app.save_location + ".backup-only"
+	var target: String = ProjectSettings.globalize_path(path)
+	check(DirAccess.copy_absolute(ProjectSettings.globalize_path(app.save_location), target + ".bak") == OK, "backup-only startup fixture has no primary")
+	var restarted = preload("res://game/scenes/main/playable.tscn").instantiate()
+	restarted.save_location = path
+	root.add_child(restarted)
+	var backup := panel_button(restarted, "Восстановить резервную копию")
+	check(restarted.ui.panel_id == "welcome" and backup != null and panel_button(restarted, "Продолжить сохранённую игру") == null, "welcome offers backup recovery when the primary is missing")
+	if backup != null:
+		backup.pressed.emit()
+	check(FileAccess.file_exists(path) and restarted.snapshot().scene.current_scene_id == "outside" and restarted.ui.panel_id.is_empty(), "the welcome backup action restores the primary and continues the saved game")
+	restarted.free()
+	for suffix in ["", ".tmp", ".bak", ".rejected"]:
+		DirAccess.remove_absolute(target + suffix)
+
+func panel_button(runtime, caption: String) -> Button:
+	for child in runtime.ui.body.get_children():
+		if child is Button and child.text == caption:
+			return child
+	return null
 
 
 func send_key(code: Key, location: KeyLocation = KEY_LOCATION_UNSPECIFIED, echo := false) -> void:

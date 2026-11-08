@@ -85,9 +85,12 @@ func take_damage(amount: int) -> bool:
 func restore(hp: int) -> void:
 	health = hp
 	defeated = hp == 0
+	velocity = Vector2.ZERO
 	dodge_remaining = 0
+	dodge_cooldown = 0
 	attack_cooldown = 0
 	hurt_remaining = 0
+	swing_remaining = 0
 	queue_redraw()
 
 func _draw() -> void:
