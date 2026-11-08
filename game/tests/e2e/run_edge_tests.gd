@@ -168,7 +168,12 @@ func test_food_rebalance(saved: Dictionary, store, previous_mode: String, previo
 		return
 	var corrupt := saved.duplicate(true)
 	var receipt_id: String = saved.residents.records[0].food_receipt_id
-	corrupt.completed_actions[receipt_id].result.data.units += 1
+	# Mutate the persisted linked receipt itself (compact or historical), not a copy.
+	var corrupted_entry = corrupt.completed_actions[receipt_id]
+	if corrupted_entry is Array:
+		corrupted_entry[3].units += 1
+	else:
+		corrupted_entry.result.data.units += 1
 	check(not Model.validate(corrupt, config), "historical receipt with incorrect total is rejected " + previous_mode + str(previous_units))
 	if previous_mode == "reserve":
 		var missing := saved.duplicate(true)
