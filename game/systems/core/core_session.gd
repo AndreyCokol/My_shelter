@@ -47,6 +47,35 @@ static func initial_state() -> Dictionary:
 func get_snapshot() -> Dictionary:
 	return _state.duplicate(true)
 
+# Trusted scalar-only clock probe. The UI must continue to use get_snapshot().
+# Used by CampaignSession to avoid deep-copying large receipt ledgers every
+# frame when the built-in calendar has no integer-minute boundary to process.
+func clock_probe() -> Dictionary:
+	if _state.get("scope") != "campaign-core":
+		return {}
+	return {"minute": _state.get("game_time_minutes", -1), "remainder": _state.get("clock_remainder", -1.0)}
+
+# Fast path for ONLY the fractional part of a normal built-in-calendar tick.
+# The caller has proved that no whole minute (and therefore no deadline)
+# elapses. Changing exactly these two validated scalars preserves the same
+# revision semantics as apply_runtime, without copying/validating all domains.
+# Custom calendars/pending gates MUST still use apply_runtime.
+func apply_fractional_remainder(value: float) -> bool:
+	if _busy or _recovery_token != 0 or pauses.is_paused() or _state.get("scope") != "campaign-core":
+		return false
+	var previous = _state.get("clock_remainder")
+	if not (previous is float or previous is int) or not is_finite(float(previous)):
+		return false
+	if not is_finite(value) or value < float(previous) or value < 0.0 or value >= 1.0:
+		return false
+	if not valid_integer(_state.get("state_revision")) or int(_state.state_revision) >= 9007199254740991:
+		return false
+	_busy = true
+	_state.clock_remainder = value
+	_state.state_revision += 1
+	_busy = false
+	return true
+
 static func valid_integer(value) -> bool:
 	return (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)) and value >= 0 and value <= 9007199254740991
 
