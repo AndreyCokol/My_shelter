@@ -3,6 +3,7 @@ extends SceneTree
 # Read-only synthetic benchmark of the existing durable receipt format.
 # No production receipt deletion: replay of arbitrary action_id stays exact.
 const Model = preload("res://game/state/campaign_model.gd")
+const Campaign = preload("res://game/systems/core/campaign_session.gd")
 const Fixtures = preload("res://game/tests/core/campaign_fixtures.gd")
 
 var checks: int = 0
@@ -17,7 +18,7 @@ func check(ok: bool, message: String) -> void:
 
 func _initialize() -> void:
 	var rules: Dictionary = Fixtures.rules()
-	var state: Dictionary = Model.new_state(rules)
+	var state: Dictionary = Campaign.new(rules).coordinator.get_snapshot()
 	var last_size: int = 0
 	var last_bytes: int = 0
 	for count in [100, 1000, 10000]:
