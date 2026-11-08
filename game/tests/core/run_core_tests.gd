@@ -49,6 +49,14 @@ func _initialize() -> void:
 	check(session.execute(command("after"), store).code == "ALREADY_APPLIED" and emitted == 2, "CT-30 no duplicate recovery effect")
 	var corrupt: Dictionary = session.get_snapshot()
 	corrupt.completed_actions.one.result.state_revision = 9999
+	var primary_before := FileAccess.get_file_as_string(store.path)
+	var backup_before := FileAccess.get_file_as_string(store.path + ".bak")
+	check(not store.write_checkpoint(corrupt, Session.validate).committed, "checkpoint store rejects a new state with an invalid receipt")
+	check(FileAccess.get_file_as_string(store.path) == primary_before and FileAccess.get_file_as_string(store.path + ".bak") == backup_before, "rejected new checkpoint preserves primary and backup bytes")
+	# Restore the fixture even when a regression overwrites either file.
+	var fixture := FileAccess.open(store.path + ".bak", FileAccess.WRITE)
+	fixture.store_string(backup_before)
+	fixture.close()
 	var file := FileAccess.open(store.path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(corrupt))
 	file.close()

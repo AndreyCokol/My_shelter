@@ -587,8 +587,19 @@ func test_expedition(app) -> void:
 	var hospital = app.scene_router.current_world()
 	var cache := Layout.hospital_cache(expected, app.snapshot().world_states.layout)
 	app.hero.position = hospital.resource_point
+	var cache_position: Vector2 = app.hero.position
+	app.hero.health = 57
+	foe.take_damage(31)
+	var before_cache: Dictionary = app.snapshot()
+	app.save_store.fault = "before_replace"
+	hospital.interact()
+	check(app.last_result.code == "SAVE_FAILED" and app.snapshot() == before_cache and app.hero.health == 57 and app.hero.position == cache_position, "failed loot autosave preserves committed state and live hero status")
+	app.save_store.fault = ""
 	hospital.interact()
 	check(app.last_result.ok and app.last_result.data.type_id == cache.item, "hospital floor grants its configured supply")
+	check(app.load_game().ok and app.hero.health == 57 and app.hero.position == cache_position and app.enemy().health == 69, "loot autosave restores hero position and HP together with enemy HP")
+	hospital = app.scene_router.current_world()
+	foe = app.enemy()
 	hospital.interact()
 	check(app.last_result.code == "UNAVAILABLE", "hospital supplies are finite")
 	foe.health = 0

@@ -1,5 +1,7 @@
 extends RefCounted
 
+const JsonNumbers = preload("res://game/state/json_numbers.gd")
+
 # JSON checkpoint storage; schema validation is supplied by the active session.
 var path: String
 var fault: String = "" # Test seam; never exposed to player commands.
@@ -14,48 +16,55 @@ func read_checkpoint(source: String = "") -> Dictionary:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(target))
 	if not parsed is Dictionary:
 		return {"ok": false, "code": "INVALID_STATE"}
-	return {"ok": true, "state": preload("res://game/state/json_numbers.gd").normalize_numbers(parsed)}
+	return {"ok": true, "state": JsonNumbers.normalize_numbers(parsed)}
 
 func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
-	if fault == "before_replace":
+	if fault == "before_replace" or not validator.call(state):
 		return {"ok": false, "committed": false}
 	var absolute := ProjectSettings.globalize_path(path)
 	if DirAccess.make_dir_recursive_absolute(absolute.get_base_dir()) != OK:
 		return {"ok": false, "committed": false}
-	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
-	if file == null:
-		return {"ok": false, "committed": false}
-	file.store_string(JSON.stringify(state, "", true, true))
-	file.flush()
-	var write_error := file.get_error()
-	file.close()
-	if write_error != OK or not read_checkpoint(path + ".tmp").ok:
+	if not _stage_checkpoint(state):
 		return {"ok": false, "committed": false}
 	# Keep the last validated primary; never overwrite it with corrupt input.
 	if FileAccess.file_exists(path):
 		var previous := read_checkpoint()
 		if not previous.ok or not validator.call(previous.state):
+			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
 		if DirAccess.copy_absolute(absolute, absolute + ".bak") != OK:
+			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
 	var error := DirAccess.rename_absolute(absolute + ".tmp", absolute)
 	if error != OK:
+		DirAccess.remove_absolute(absolute + ".tmp")
 		return {"ok": false, "committed": false}
 	return {"ok": true, "committed": true, "recover": fault == "after_replace"}
 
 # Invoked only after user-selected backup has passed complete session validation.
 func restore_checkpoint(state: Dictionary) -> bool:
 	var absolute := ProjectSettings.globalize_path(path)
-	var file := FileAccess.open(path + ".tmp", FileAccess.WRITE)
+	if not _stage_checkpoint(state):
+		return false
+	if FileAccess.file_exists(path) and DirAccess.copy_absolute(absolute, absolute + ".rejected") != OK:
+		DirAccess.remove_absolute(absolute + ".tmp")
+		return false
+	if DirAccess.rename_absolute(absolute + ".tmp", absolute) != OK:
+		DirAccess.remove_absolute(absolute + ".tmp")
+		return false
+	return true
+
+func _stage_checkpoint(state: Dictionary) -> bool:
+	var temporary := path + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
 	if file == null:
 		return false
-	file.store_string(JSON.stringify(state, "", true, true))
+	var serialized := JSON.stringify(state, "", true, true).to_utf8_buffer()
+	file.store_buffer(serialized)
 	file.flush()
 	var error := file.get_error()
 	file.close()
-	if error != OK or not read_checkpoint(path + ".tmp").ok:
+	if error != OK or FileAccess.get_file_as_bytes(temporary) != serialized:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary))
 		return false
-	if FileAccess.file_exists(path):
-		if DirAccess.copy_absolute(absolute, absolute + ".rejected") != OK:
-			return false
-	return DirAccess.rename_absolute(absolute + ".tmp", absolute) == OK
+	return true
