@@ -34,28 +34,42 @@ static func get_plan(kind: String, floor: int, pattern: int, architectural_slot:
 		_catalog[key] = plan
 	return _catalog[key]
 
-# A short solid partition creates a distinct traversable alcove in the
-# upper hospital room. Its length is unique for each of the 16 hospital
-# district/floor slots. It is deliberately below the first room's center and
-# clear of doors, corridor, stairs, spawn, loot and enemy anchors.
-# This is gameplay collision geometry, not a decorative label/seed.
+# V5: 2 different upper rooms x 2 alcove depths x 4 partition lengths.
+# These are L-shaped physical wall segments visible in the floor artwork and
+# traversable around by the actor. All variants are in the northern part of
+# an upper room, far from its south corridor door and its north-west furniture.
+# Historical v4 saves never request an architectural_slot.
 static func _with_hospital_alcove(source: Dictionary, architectural_slot: int) -> Dictionary:
 	var plan: Dictionary = source.duplicate(true)
 	if architectural_slot < 0 or architectural_slot >= 16:
 		push_error("Invalid hospital architectural slot")
 		return plan
-	var room: Dictionary = plan.rooms.get("room_01", {})
+	var room_id := "room_%02d" % (1 + architectural_slot % 2)
+	var room: Dictionary = plan.rooms.get(room_id, {})
 	if room.is_empty():
-		push_error("Hospital floor is missing first room")
+		push_error("Hospital floor is missing an upper room")
 		return plan
-	var size := Vector2(32 + architectural_slot * 7, 10)
-	var alcove := Rect2(room.rect.position + Vector2(16, 17), size)
-	# Require a 15 px clearance from the room boundary; the navigation
-	# test additionally verifies access to all targets with a 10 px radius.
-	if not room.rect.grow(-15).encloses(alcove):
+	var length := 64.0 + float(architectural_slot / 4) * 22.0
+	var height_offset := 16.0 + float((architectural_slot / 2) % 2) * 12.0
+	var alcove := Rect2(
+		Vector2(room.rect.end.x - length - 20, room.rect.position.y + height_offset),
+		Vector2(length, 10))
+	var return_wall := Rect2(
+		Vector2(room.rect.end.x - 29, alcove.end.y),
+		Vector2(9, 16))
+	var inset: Rect2 = room.rect.grow(-14)
+	if not inset.encloses(alcove) or not inset.encloses(return_wall):
 		push_error("Hospital alcove does not fit room geometry")
 		return plan
+	# The existing floor generator puts furnishings on the north-west side
+	# of upper rooms. Keep these architectural walls clear of every fixture.
+	for fixture in plan.furniture:
+		if fixture.room == room_id and (fixture.rect.grow(8).intersects(alcove)
+				or fixture.rect.grow(8).intersects(return_wall)):
+			push_error("Hospital alcove would intersect room furniture")
+			return plan
 	plan.walls.append(alcove)
+	plan.walls.append(return_wall)
 	assert(valid(plan), "The specialized hospital plan must pass wall, room and door validation")
 	return plan
 
