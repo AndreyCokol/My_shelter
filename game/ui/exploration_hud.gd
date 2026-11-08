@@ -144,12 +144,12 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 	health = app.hero.health
 	dodge_charge = app.hero.dodge_readiness()
 	hero_xp = state.player.xp
-		shelter_xp = state.shelter.xp
+	shelter_xp = state.shelter.xp
 	coins = state.wallet.system_coins
 	current_scene_id = str(state.scene.current_scene_id)
 	var elapsed_minutes := maxi(0, int(state.get("game_time_minutes", 0)))
-	current_day = 1 + elapsed_minutes / 1440
-	current_hour = (elapsed_minutes / 60) % 24
+	current_day = 1 + floori(float(elapsed_minutes) / 1440.0)
+	current_hour = floori(float(elapsed_minutes) / 60.0) % 24
 	current_minute = elapsed_minutes % 60
 	load_units = 0
 	capacity = 0
