@@ -25,6 +25,7 @@ func run() -> void:
 	check(app.scene_router.current_world().scene_id == "hospital" and is_instance_valid(app.enemy()), "step5 real hospital and enemy mounted")
 	app.ui.close_panel()
 	await check_hud_input()
+	await check_integrated_shelter_input()
 	var before: Vector2 = app.hero.position
 	Input.action_press("move_right")
 	for i in range(12):
@@ -228,3 +229,27 @@ func check_hud_input() -> void:
 	click_at(Vector2(300, 120))
 	check(app.hero.attack_cooldown > 0.0, "an unhandled world click still attacks")
 	app.hero.attack_cooldown = 0.0
+
+# End-to-end regression for both PR #38 and PR #39 on a single SceneTree.
+func check_integrated_shelter_input() -> void:
+	var before: Dictionary = app.snapshot()
+	var pos: Vector2 = app.hero.position
+	check(not before.world_states.first_enemy_defeated, "integrated G test before first victory")
+	send_key(KEY_CTRL, KEY_LOCATION_LEFT)
+	check(app.ui.radial.visible and app.session.pauses.is_paused(), "integrated radial opens before first fight")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == "shelter" and not app.ui.radial.visible and not app.session.pauses.is_paused(), "G closes radial and moves to shelter before Q01")
+	check(not app.snapshot().world_states.first_enemy_defeated and not "system_unlocked" in app.snapshot().story_flags and app.snapshot().player.xp == before.player.xp, "retreat grants neither System nor XP")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == before.scene.current_scene_id and app.hero.position == pos, "G returns to saved scene and exact position")
+	app.ui.open_panel("inventory")
+	app.ui.shelter_modal_button.pressed.emit()
+	check(app.snapshot().scene.current_scene_id == "shelter" and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "modal shelter button releases only its own pause")
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == before.scene.current_scene_id, "G returns after modal warp")
+	var external: int = app.session.pauses.acquire_pause("integration:external")
+	var scene_before: String = app.snapshot().scene.current_scene_id
+	send_key(KEY_G)
+	check(app.snapshot().scene.current_scene_id == scene_before and app.session.pauses.is_paused(), "G cannot bypass external pause")
+	app.session.pauses.release_pause(external)
+	check(app.ui.shelter_nav_button.visible, "Shelter HUD action remains visible on world")
