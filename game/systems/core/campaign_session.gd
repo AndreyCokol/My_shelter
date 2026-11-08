@@ -38,6 +38,10 @@ func configure_calendar(source: Callable, consumer: Callable) -> bool:
 func tick(delta: float) -> bool:
 	if coordinator == null or not is_finite(delta) or delta < 0:
 		return false
+	# Safe fast path: never clone/validate the entire campaign for a fractional
+	# frame. If a whole minute is due, fall back to the full calendar planner.
+	if coordinator.try_accumulate_fractional_clock(delta, _rules.minutes_per_real_second):
+		return true
 	var drafts: Array = []
 	return coordinator.apply_runtime(func(state):
 		var accumulated: float = state.clock_remainder + delta * _rules.minutes_per_real_second
