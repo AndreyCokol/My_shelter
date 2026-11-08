@@ -62,6 +62,21 @@ func _initialize() -> void:
 		check(loaded.get("ok", false), "F05 checkpoint with %d receipts can load from disk" % count)
 		var equivalent: bool = loaded.get("ok", false) and restored.get_snapshot() == source
 		check(equivalent, "F05 %d receipt IDs and data survive load without pruning" % count)
+		var hot_view: Dictionary = restored.get_snapshot(false)
+		check(not hot_view.has("completed_actions") and hot_view.player == source.player
+			and hot_view.inventory == source.inventory,
+			"CT-92 receipt-free combat view preserves player and inventory on %d receipts" % count)
+		if count == 10000:
+			var all_begin := Time.get_ticks_usec()
+			for sample in range(20):
+				restored.get_snapshot()
+			var all_us := Time.get_ticks_usec() - all_begin
+			var light_begin := Time.get_ticks_usec()
+			for sample in range(20):
+				restored.get_snapshot(false)
+			var light_us := Time.get_ticks_usec() - light_begin
+			print("CT-92 SNAPSHOT PROFILE receipts=10000 full_20_us=%d light_20_us=%d" %
+				[all_us, light_us])
 		print("F05 SAVE PROFILE receipts=%d bytes=%d write_ms=%.3f load_ms=%.3f" %
 			[count, bytes, write_ms, load_ms])
 		previous_bytes = bytes

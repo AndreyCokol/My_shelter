@@ -47,8 +47,14 @@ static func _plan_core(tentative: Dictionary, request: Dictionary) -> Dictionary
 static func initial_state() -> Dictionary:
 	return {"schema_version": 1, "scope": "core-bootstrap", "state_revision": 0, "counter": 0, "completed_actions": {}}
 
-func get_snapshot() -> Dictionary:
-	return _state.duplicate(true)
+func get_snapshot(include_receipts: bool = true) -> Dictionary:
+	if include_receipts:
+		return _state.duplicate(true)
+	# A hot-path read for combat/HUD: copy the live state only AFTER excluding
+	# the unbounded durable receipt ledger. Never expose mutable live references.
+	var view: Dictionary = _state.duplicate()
+	view.erase("completed_actions")
+	return view.duplicate(true)
 
 static func valid_integer(value) -> bool:
 	return (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)) and value >= 0 and value <= 9007199254740991
