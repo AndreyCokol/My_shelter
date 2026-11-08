@@ -145,6 +145,11 @@ func bind(runtime) -> void:
 			foe.patrol = layout.patrol
 			foe.patrol_index = floori(float(state.game_time_minutes) / 30) % foe.patrol.size()
 			foe.position = foe.patrol[foe.patrol_index]
+		# Optional persisted runtime state keeps live pursuit and position through
+		# G retreat, ordinary doors and checkpoint reload; old saves still load.
+		var previous: Dictionary = state.world_states.get("enemy_runtime", {}).get(current_id, {})
+		if not previous.is_empty():
+			foe.restore_runtime(previous)
 		add_child(foe)
 	refresh_buildings()
 	queue_redraw()

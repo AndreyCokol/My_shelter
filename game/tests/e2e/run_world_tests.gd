@@ -174,6 +174,14 @@ func test_unconditional_shelter(app) -> void:
 	app.hero.health = 73 # A retreat from combat must also checkpoint current HP.
 	check(not app.snapshot().world_states.first_enemy_defeated and is_instance_valid(app.enemy()), "shelter shortcut scenario starts before System unlock with a living enemy")
 	app.enemy().take_damage(33)
+	# CT-82: G retreat must preserve *where* a living enemy was and what
+	# it was pursuing, not only its persisted HP. Capture a non-default AI.
+	var opening_foe = app.enemy()
+	opening_foe.position += Vector2(13, 7)
+	opening_foe.last_noise = app.hero.position
+	opening_foe.alert_remaining = 2.25
+	opening_foe.hit_cooldown = 0.45
+	var saved_ai: Dictionary = opening_foe.runtime_snapshot()
 	check(app.transition("outside").code == "UNAVAILABLE" and app.command("inventory.claim_parcel", {"parcel_id": "starter"}).code == "UNAVAILABLE", "ordinary travel and System parcel remain locked before first victory")
 	check(app.ui.shelter_nav_button != null and app.ui.shelter_modal_button != null, "shelter shortcut is present in HUD and modal UI")
 	app.ui.open_panel("inventory")
@@ -203,6 +211,16 @@ func test_unconditional_shelter(app) -> void:
 	app._unhandled_input(shortcut)
 	check(app.snapshot().scene.current_scene_id == "hospital" and app.hero.position == original and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "G shortcut from paused menu returns to exact hospital exit position")
 	check(is_instance_valid(app.enemy()) and app.enemy().health == 67 and not app.snapshot().world_states.first_enemy_defeated, "retreat, save and reload preserve the opening enemy's damage and keep System locked")
+	check(is_instance_valid(app.enemy()) and app.enemy().runtime_snapshot() == saved_ai, "CT-82 G, physical shelter door and load preserve zombie position and pursuit timers")
+	var old_checkpoint: Dictionary = app.snapshot()
+	old_checkpoint.world_states.erase("enemy_runtime")
+	check(Model.validate(old_checkpoint, app.rules()), "CT-82 old schema v4 checkpoint without enemy AI fields remains valid")
+	var tampered_ai: Dictionary = app.snapshot()
+	if tampered_ai.world_states.get("enemy_runtime", {}).has("hospital"):
+		tampered_ai.world_states.enemy_runtime.hospital.alert_remaining = -0.3
+		check(not Model.validate(tampered_ai, app.rules()), "CT-82 corrupted pursuit timer is rejected without loading")
+	else:
+		check(false, "CT-82 encounter persistence was not written to the checkpoint")
 	var external: int = app.session.pauses.acquire_pause("test-external-pause")
 	app.ui.open_panel("menu")
 	var paused_scene: String = app.snapshot().scene.current_scene_id
@@ -319,6 +337,7 @@ func run() -> void:
 	app.enemy_defeated()
 	check(app.snapshot().world_states.locations.hospital_0_2.defeated and app.snapshot().claimed_reward_ids == ["system"], "floor enemy persists without duplicating onboarding reward")
 	check(not app.snapshot().world_states.has("enemy_health"), "committed enemy defeats remove the stored injury")
+	check(not app.snapshot().world_states.get("enemy_runtime", {}).has("hospital_0_2"), "CT-82 defeat also removes stale enemy AI state")
 	app.hero.position = Vector2(310, 270)
 	var hospital_floor_hp: int = app.hero.health
 	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "hospital_0_2" and app.toggle_shelter().ok and app.hero.position == Vector2(310, 270) and app.hero.health == hospital_floor_hp, "G returns to exact hospital upper-floor coordinates and HP")

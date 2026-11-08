@@ -47,12 +47,21 @@ func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			var scene: String = before.scene.current_scene_id
 			if request.command_type == "game.enemy_defeated":
 				record_enemy_health(state, scene, Enemy.MAX_HEALTH)
+				record_enemy_runtime(state, scene, {})
 			elif request.context.has("enemy_health"):
 				var health = request.context.enemy_health
 				if not GameplayState.has_live_enemy(before, scene) or not Core.valid_integer(health) or health > Enemy.MAX_HEALTH:
 					return fail("INVALID_ARGUMENT")
 				record_enemy_health(state, scene, int(health))
-			if state.world_states.get("enemy_health", {}) != before.world_states.get("enemy_health", {}) and state.resource_revisions.world == before.resource_revisions.world:
+				if request.context.has("enemy_runtime"):
+					if not Enemy.valid_runtime(request.context.enemy_runtime):
+						return fail("INVALID_ARGUMENT")
+					record_enemy_runtime(state, scene, request.context.enemy_runtime)
+			elif request.context.has("enemy_runtime"):
+				# Never accept an orphan position/alert without a live enemy and HP.
+				return fail("INVALID_ARGUMENT")
+			if (state.world_states.get("enemy_health", {}) != before.world_states.get("enemy_health", {})
+					or state.world_states.get("enemy_runtime", {}) != before.world_states.get("enemy_runtime", {})) and state.resource_revisions.world == before.resource_revisions.world:
 				bump(state, ["world"])
 			Gameplay.refresh_quests(state)
 		if request.command_type != "clock.rest":
@@ -71,6 +80,17 @@ static func record_enemy_health(state: Dictionary, scene: String, health: int) -
 		state.world_states.erase("enemy_health")
 	else:
 		state.world_states.enemy_health = injuries
+
+static func record_enemy_runtime(state: Dictionary, scene: String, snapshot: Dictionary) -> void:
+	var encounters: Dictionary = state.world_states.get("enemy_runtime", {})
+	if snapshot.is_empty():
+		encounters.erase(scene)
+	else:
+		encounters[scene] = snapshot.duplicate(true)
+	if encounters.is_empty():
+		state.world_states.erase("enemy_runtime")
+	else:
+		state.world_states.enemy_runtime = encounters
 
 func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var p: Dictionary = request.payload

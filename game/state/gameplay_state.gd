@@ -127,8 +127,9 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if state.scene.current_scene_id == "shelter" and not state.world_states.first_enemy_defeated and state.scene.return_scene_id != "hospital":
 		return false
 	var has_enemy_health: int = int(state.world_states.has("enemy_health"))
+	var has_enemy_runtime: int = int(state.world_states.has("enemy_runtime"))
 	if state.schema_version == 4:
-		var known_fields := 5 + has_enemy_health
+		var known_fields := 5 + has_enemy_health + has_enemy_runtime
 		for key in ["salvage_ready_at", "camp_network", "cleared_patrols", "district_events"]:
 			known_fields += int(state.world_states.has(key))
 		if state.world_states.size() != known_fields or not state.world_states.get("locations") is Dictionary:
@@ -172,13 +173,21 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 					return false
 		if state.quests.has("expedition") and not Expedition.validate(state.quests.expedition, state, rules.scenes):
 			return false
-	elif state.world_states.size() != 3 + has_enemy_health:
+	elif state.world_states.size() != 3 + has_enemy_health + has_enemy_runtime:
 		return false
 	var enemy_health = state.world_states.get("enemy_health", {})
 	if not enemy_health is Dictionary:
 		return false
 	for id in enemy_health:
 		if not id is String or not rules.scenes.has(id) or not has_live_enemy(state, id) or not integer(enemy_health[id]) or enemy_health[id] >= Enemy.MAX_HEALTH:
+			return false
+	# Optional snapshot field is backward-compatible with every historical
+	# schema v3/v4 checkpoint. Reject corrupted or defeated encounters.
+	var enemy_runtime = state.world_states.get("enemy_runtime", {})
+	if not enemy_runtime is Dictionary or (has_enemy_runtime > 0 and enemy_runtime.is_empty()):
+		return false
+	for id in enemy_runtime:
+		if not id is String or not rules.scenes.has(id) or not has_live_enemy(state, id) or not Enemy.valid_runtime(enemy_runtime[id]):
 			return false
 	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags) or state.world_states.first_enemy_defeated != ("system" in state.claimed_reward_ids):
 		return false
