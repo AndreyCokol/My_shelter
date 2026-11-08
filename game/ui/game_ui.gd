@@ -753,11 +753,24 @@ func render_camp(state: Dictionary) -> void:
 		line("Поручение разведчиков закрыто.")
 	button(body, "К путникам", open_panel.bind("residents"))
 
+# A5 UI: reflect the actual trusted catalog and Work's shared ration rule.
+# The same copy applies for newly certified edible foods after a balance change.
+static func work_ration_hint(rules: Dictionary) -> String:
+	var food_names := PackedStringArray()
+	var items: Dictionary = rules.get("items", {})
+	var food: Dictionary = rules.get("food", {})
+	for type_id in food.get("accepted_food_type_ids", []):
+		var definition: Dictionary = items.get(type_id, {})
+		if definition.get("edible") == true and definition.get("name") is String:
+			food_names.append(definition.name)
+	return "Смена требует %d ед. свободной еды (%s). Кровать сокращает смену со %d до %d мин." % [
+		Work.FOOD_UNITS_PER_SHIFT, ", ".join(food_names), Work.DURATION, Work.RESTED_DURATION]
+
 func render_jobs(state: Dictionary) -> void:
 	if state.schema_version != 4 or state.scene.current_scene_id != "shelter":
 		line("Назначить работу можно в убежище.")
 		return
-	line("Смена требует 1 свободный картофель. Кровать сокращает смену со %d до %d мин." % [Work.DURATION, Work.RESTED_DURATION])
+	line(work_ration_hint(app.rules()))
 	for resident in state.residents.records:
 		if resident.status != "joined":
 			continue
