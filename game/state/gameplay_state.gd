@@ -46,7 +46,22 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		for key in ["planted_at", "ripe_at", "spoil_at"]:
 			if not integer(plot.get(key)):
 				return false
-		if plot.status in ["growing", "ripe", "spoiled"] and (plot.ripe_at != plot.planted_at + rules.crop.grow_minutes or plot.spoil_at != plot.ripe_at + rules.crop.spoil_minutes):
+		# A planted crop carries its own authoritative deadlines. Live balance can
+		# change for new plantings without invalidating old checkpoint deadlines.
+		var has_grow: bool = plot.has("grow_minutes_at_planting")
+		var has_spoil: bool = plot.has("spoil_minutes_at_planting")
+		if has_grow != has_spoil:
+			return false
+		if plot.status in ["growing", "ripe", "spoiled"]:
+			var grow_duration: int = int(plot.ripe_at) - int(plot.planted_at)
+			var spoil_duration: int = int(plot.spoil_at) - int(plot.ripe_at)
+			if grow_duration <= 0 or spoil_duration <= 0:
+				return false
+			# Old saves lack these fields; their persisted deadlines are sufficient
+			# to derive the original positive durations without changing the file.
+			if has_grow and (not integer(plot.grow_minutes_at_planting) or not integer(plot.spoil_minutes_at_planting) or int(plot.grow_minutes_at_planting) != grow_duration or int(plot.spoil_minutes_at_planting) != spoil_duration):
+				return false
+		elif has_grow:
 			return false
 		if plot.status == "growing" and not (plot.planted_at <= state.game_time_minutes and state.game_time_minutes < plot.ripe_at):
 			return false
