@@ -4,7 +4,7 @@ signal panel_requested(id: String)
 signal slot_requested(index: int)
 
 const SHEET = preload("res://game/assets/project/hud/night_hud.png")
-const Skin = preload("res://game/ui/reference_skin.gd")
+const VisualSkin = preload("res://game/ui/reference_skin.gd")
 const TITLE = Rect2(0, 0, 526, 57)
 const PORTRAIT = Rect2(0, 59, 131, 106)
 const HEART = Rect2(134, 59, 43, 42)
@@ -171,11 +171,11 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 func _draw() -> void:
 	# Reference R1–R4: persistent title, portrait, gauges, compact session
 	# metadata and quest tracker. All metrics derive from actual runtime state.
-	var safe: bool = Skin.is_shelter(current_scene_id)
-	Skin.panel(self, Rect2(6, 4, 206, 23), safe)
+	var safe: bool = VisualSkin.is_shelter(current_scene_id)
+	VisualSkin.panel(self, Rect2(6, 4, 206, 23), safe)
 	draw_texture_rect_region(SHEET, Rect2(8, 5, 200, 21), TITLE)
-	draw_rect(Rect2(6, 4, 206, 23), Skin.trim(safe), false, 1)
-	Skin.panel(self, Rect2(7, 29, 208, 54), safe)
+	draw_rect(Rect2(6, 4, 206, 23), VisualSkin.trim(safe), false, 1)
+	VisualSkin.panel(self, Rect2(7, 29, 208, 54), safe)
 	frame(self, Rect2(9, 31, 47, 49))
 	draw_texture_rect_region(SHEET, Rect2(10, 32, 45, 39), PORTRAIT)
 	caption(self, Vector2(16, 78), "XP %d" % hero_xp, 9)
@@ -187,20 +187,20 @@ func _draw() -> void:
 	_bar(Rect2(75, 67, 135, 13), float(load_units) / maxi(capacity, 1), Color("397f7d"), "%d / %d предм." % [load_units, capacity])
 	# The reference's temperature/water bars are intentionally NOT faked:
 	# game-state currently has no temperature or hydration simulation.
-	Skin.panel(self, Rect2(219, 29, 136, 54), safe)
+	VisualSkin.panel(self, Rect2(219, 29, 136, 54), safe)
 	caption(self, Vector2(225, 43), "Опыт: %d" % hero_xp, 11)
 	caption(self, Vector2(225, 56), "Монеты: %d" % coins, 10, Color("e9c15c"))
 	caption(self, Vector2(225, 69), "День %d · %02d:%02d" % [current_day, current_hour, current_minute], 10)
 	caption(self, Vector2(225, 79), "Убежище XP: %d" % shelter_xp, 8, Color("aeaa91"))
-	Skin.panel(self, Rect2(7, 87, 209, 54), safe)
+	VisualSkin.panel(self, Rect2(7, 87, 209, 54), safe)
 	draw_texture_rect_region(SHEET, Rect2(12, 90, 15, 15), QUEST)
 	caption(self, Vector2(31, 101), "Текущее задание", 11, Color("f5cc4d"))
-	draw_line(Vector2(12, 106), Vector2(211, 106), Skin.trim(safe), 1.0)
+	draw_line(Vector2(12, 106), Vector2(211, 106), VisualSkin.trim(safe), 1.0)
 	caption(self, Vector2(14, 121), _fit(objective, 195.0, 10), 10)
 	caption(self, Vector2(14, 135), _fit(location_text, 195.0, 9), 9, Color("cdbd9c"))
 	var footer := Rect2(0, size.y - 19, size.x, 19)
 	draw_rect(footer, Color("111511", 0.79) if safe else Color("0e141a", 0.86))
-	draw_line(Vector2(0, footer.position.y), Vector2(size.x, footer.position.y), Skin.trim(safe), 1.0)
+	draw_line(Vector2(0, footer.position.y), Vector2(size.x, footer.position.y), VisualSkin.trim(safe), 1.0)
 	caption(self, Vector2(9, size.y - 5), "ЛКМ Атака   ·   E Подобрать/взаимодействовать   ·   Space Уклонение   ·   Ctrl Круг   ·   Tab Меню   ·   G Убежище", 8)
 
 
@@ -214,15 +214,15 @@ func _fit(value: String, max_width: float, font_size: int) -> String:
 	return candidate + "…"
 
 func _bar(rect: Rect2, ratio: float, tint: Color, value: String) -> void:
-	Skin.gauge(self, rect, ratio, tint, Skin.is_shelter(current_scene_id))
+	VisualSkin.gauge(self, rect, ratio, tint, VisualSkin.is_shelter(current_scene_id))
 	var font := ThemeDB.fallback_font
 	var width := font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
 	caption(self, Vector2(rect.end.x - width - 5, rect.position.y + 10), value, 9)
 
 
 func _draw_map() -> void:
-	Skin.panel(map_node, Rect2(0, 3, 96, 89), Skin.is_shelter(current_scene_id))
-	map_node.draw_rect(MAP_AREA, Color("182119") if Skin.is_shelter(current_scene_id) else Color("131b22"))
+	VisualSkin.panel(map_node, Rect2(0, 3, 96, 89), VisualSkin.is_shelter(current_scene_id))
+	map_node.draw_rect(MAP_AREA, Color("182119") if VisualSkin.is_shelter(current_scene_id) else Color("131b22"))
 	var world = app.scene_router.current_world()
 	if not is_instance_valid(world):
 		return
