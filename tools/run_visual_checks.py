@@ -50,4 +50,19 @@ for name in ['shelter', 'radial', 'inventory', 'farm', 'rest', 'residents',
     if (width, height) != (1920, 1080):
         sys.exit(f'VISUAL CHECKS: FAIL {name} has {width}x{height}, expected 1920x1080')
 print('VISUAL CHECKS: 15 Full HD captures verified 1920x1080')
+# VIS-01: real Godot candidates at the owner's original physical dimensions.
+# Image size alone is NOT pixel-level acceptance; reference diff stays report-only.
+for rid, scene in [('R1', 'shelter'), ('R2', 'street'),
+                   ('R3', 'hospital'), ('R4', 'apartment')]:
+    name = f'reference_{rid}_{scene}_1672x941'
+    image = Path('/tmp/shelter-visual') / (name + '.png')
+    if not image.is_file() or image.stat().st_size < 1000:
+        sys.exit('VISUAL CHECKS: FAIL missing visual reference candidate ' + name)
+    with image.open('rb') as stream:
+        header = stream.read(24)
+    if header[:8] != bytes.fromhex('89504e470d0a1a0a'):
+        sys.exit('VISUAL CHECKS: FAIL invalid reference candidate PNG ' + name)
+    if struct.unpack('>II', header[16:24]) != (1672, 941):
+        sys.exit('VISUAL CHECKS: FAIL wrong owner-reference pixel dimensions ' + name)
+print('VISUAL CHECKS: 4 Godot reference candidates at 1672x941 (PIXEL MATCH NOT ASSERTED)')
 print('VISUAL CHECKS: PASS (actual software OpenGL frames, not mockups)')
