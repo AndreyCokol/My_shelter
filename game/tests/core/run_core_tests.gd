@@ -107,7 +107,7 @@ func _initialize() -> void:
 	quick_view.counter = 999999
 	check(session.get_snapshot().counter == original_counter,
 		"CT-92 editing a lightweight combat snapshot does not mutate the authoritative core")
-		for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
+	for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
 	print("CORE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
