@@ -37,6 +37,8 @@ func run() -> void:
 	var health_icon: TextureRect = app.ui.find_child("HealthIcon", true, false)
 	check(health_icon != null and health_icon.size == Vector2(14, 14) and health_icon.get_global_rect().end.x + 4 <= app.ui.hud.get_global_rect().position.x, "health icon respects target size and does not overlap HUD text")
 	var viewport: Vector2 = app.ui.get_viewport_rect().size
+	var shelter_button: Button = app.ui.shelter_nav_button
+	check(shelter_button != null and shelter_button.get_global_rect().end.x <= viewport.x and shelter_button.get_global_rect().end.y <= 35, "permanent shelter quick button fits top HUD without overlapping world")
 	for child in app.ui.get_children():
 		if child is Panel:
 			var nav = child.get_child(child.get_child_count() - 1)
