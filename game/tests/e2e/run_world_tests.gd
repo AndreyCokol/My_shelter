@@ -189,10 +189,12 @@ func test_unconditional_shelter(app) -> void:
 	app.ui.close_panel()
 	app.session.pauses.release_pause(external)
 	var before_failure: Dictionary = app.snapshot()
-	app.save_store.fault = "before_replace"
+	# SceneRouter holds a separate checkpoint store from GameApp's UI command store.
+	# Fault the store used by the *transition*, not the UI command fixture.
+	app.scene_router._store.fault = "before_replace"
 	check(app.toggle_shelter().code == "SAVE_FAILED" and app.snapshot() == before_failure and app.hero.position == original, "failed shelter commit keeps live scene, position and rewards unchanged")
-	app.save_store.fault = ""
-	check(app.toggle_shelter().ok and app.toggle_shelter().ok and app.hero.position == original, "player can enter shelter and return repeatedly with no cooldown before onboarding")
+	app.scene_router._store.fault = ""
+	check(app.toggle_shelter().ok and app.toggle_shelter().ok and app.hero.position == original and is_instance_valid(app.enemy()), "player can enter shelter and return to live enemy repeatedly without cooldown before onboarding")
 
 func run() -> void:
 	var geometry := {}
