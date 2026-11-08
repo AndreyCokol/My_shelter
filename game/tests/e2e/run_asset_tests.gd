@@ -39,6 +39,9 @@ func run() -> void:
 	var viewport: Vector2 = app.ui.get_viewport_rect().size
 	for section in [app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation]:
 		check(Rect2(Vector2.ZERO, viewport).encloses(section.get_global_rect()), "HUD section fits design viewport: " + section.name)
+	var quick: Button = app.ui.shelter_nav_button
+	check(quick != null and Rect2(Vector2.ZERO, viewport).encloses(quick.get_global_rect()) and quick.get_global_rect().end.y <= 35, "Shelter HUD button fits 640x360")
+	check(app.ui.shelter_modal_button != null, "Shelter modal action exists with radial HUD")
 	var panel: PanelContainer = app.ui.modal.get_child(0)
 	check(panel.get_theme_stylebox("panel") is StyleBoxTexture, "modal frame uses selected Kibyra panel artwork")
 	check(panel.get_global_rect().end.x <= viewport.x and panel.get_global_rect().end.y <= viewport.y, "skinned modal fits design viewport")
