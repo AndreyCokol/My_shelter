@@ -128,6 +128,10 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 					return fail("CAPACITY_EXCEEDED")
 				if item.quantity == p.quantity:
 					item.container_id = p.to_id
+					# The weapon cannot remain equipped after moving its only
+					# owned instance into shelter storage.
+					if p.from_id == "player" and rules.get("gameplay", false) and state.player.get("equipped_weapon_instance_id", "") == item.instance_id:
+						state.player.equipped_weapon_instance_id = ""
 				else:
 					item.quantity -= p.quantity
 					state.inventory.items.append({"instance_id": "split:" + request.action_id, "type_id": item.type_id, "quantity": p.quantity, "container_id": p.to_id})
