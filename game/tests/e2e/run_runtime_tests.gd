@@ -1,5 +1,14 @@
 extends SceneTree
 
+class ChaseFixture:
+	var hero: CharacterBody2D
+
+	func running() -> bool:
+		return true
+
+	func update_hud() -> void:
+		pass
+
 var checks: int = 0
 var failures: int = 0
 var app
@@ -181,9 +190,42 @@ func run() -> void:
 	app.free()
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+	await check_enemy_route()
 	await process_frame
 	print("RUNTIME TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func check_enemy_route() -> void:
+	var world = preload("res://game/scenes/worlds/hospital.tscn").instantiate()
+	world.position = Vector2(40, -15)
+	root.add_child(world)
+	var barrier = world.add_wall(Rect2(318, 188, 10, 64))
+	var target = preload("res://game/entities/player/player.gd").new()
+	var foe = preload("res://game/entities/enemies/enemy.gd").new()
+	var fixture := ChaseFixture.new()
+	fixture.hero = target
+	target.app = fixture
+	foe.app = fixture
+	target.position = Vector2(370, 220)
+	foe.position = Vector2(280, 220)
+	world.add_child(target)
+	target.set_physics_process(false)
+	world.add_child(foe)
+	for frame in range(360):
+		await physics_frame
+		if target.health < 100:
+			break
+	check(foe.position.x > 338 and target.health == 85, "interior zombie takes the open route around a collider and lands a real melee hit")
+	barrier.queue_free()
+	world.add_wall(Rect2(318, 85, 10, 260))
+	target.restore(100)
+	target.position = Vector2(348, 220)
+	foe.position = Vector2(300, 220)
+	foe.hit_cooldown = 0.0
+	for frame in range(60):
+		await physics_frame
+	check(foe.position.x < 318 and target.health == 100, "replacing a wall invalidates the route and a sealed barrier still blocks melee")
+	world.free()
 
 func check_enemy_melee() -> void:
 	var foe = app.enemy()
