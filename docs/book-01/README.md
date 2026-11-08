@@ -18,6 +18,7 @@
 | [09-sandbox-gameplay-design.md](09-sandbox-gameplay-design.md) | Свободный игровой цикл и способы продолжать игру без сюжетного задания |
 | [10-qa-acceptance-matrix.md](10-qa-acceptance-matrix.md) | Contract tests, E2E, негативные сценарии и независимый A0 audit |
 | [11-technical-decisions-and-handoff.md](11-technical-decisions-and-handoff.md) | Делегированные инженерные кандидаты: InputMap, Godot, время, ресурсы, G1a и ownership/claims |
+| [12-next-development-backlog.md](12-next-development-backlog.md) | Следующие задачи M0–M3 для A0–A5, технические зависимости и приёмка полноценного закрытого прототипа |
 
 **Второй контракт `07-contract-spec-proposal.md` из старого PR #5 не является действующим документом и не должен одновременно нормативно применяться с 05.** Исторический кандидат 07 консолидирован в 05; нумерация 07 намеренно не используется для сохранения истории.
 
