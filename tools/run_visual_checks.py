@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import struct
 import sys
 
 root = Path(__file__).resolve().parents[1]
@@ -13,7 +14,7 @@ xvfb = shutil.which('xvfb-run')
 if not xvfb:
     sys.exit('VISUAL CHECKS: NOT_RUN; xvfb-run is unavailable')
 environment = dict(os.environ, LIBGL_ALWAYS_SOFTWARE='1')
-command = [xvfb, '-a', engine, '--rendering-method', 'gl_compatibility',
+command = [xvfb, '-a', '-s', '-screen 0 2560x1440x24', engine, '--rendering-method', 'gl_compatibility',
            '--audio-driver', 'Dummy', '--path', '.', '--max-fps', '60',
            '--script', 'game/tests/e2e/run_visual_tests.gd']
 try:
@@ -33,4 +34,20 @@ for name in ['welcome', 'shelter', 'radial', 'inventory', 'farm', 'rest', 'resid
     image = Path('/tmp/shelter-visual') / (name + '.png')
     if not image.is_file() or image.stat().st_size < 1000:
         sys.exit('VISUAL CHECKS: FAIL missing rendered scene ' + name)
+# The base suite saves 23 actual 1280x720 PNGs; additional review
+# checks all 13 modal panels, shelter and radial at real Full HD pixels.
+for name in ['shelter', 'radial', 'inventory', 'farm', 'rest', 'residents',
+             'quests', 'shop', 'save', 'credits', 'workshop', 'jobs',
+             'map', 'journal', 'new_confirm']:
+    image = Path('/tmp/shelter-visual') / (name + '_1080p.png')
+    if not image.is_file() or image.stat().st_size < 1000:
+        sys.exit('VISUAL CHECKS: FAIL missing Full HD image ' + name)
+    with image.open('rb') as stream:
+        header = stream.read(24)
+    if header[:8] != b'\\x89PNG\\r\\n\\x1a\\n':
+        sys.exit('VISUAL CHECKS: FAIL invalid PNG header ' + name)
+    width, height = struct.unpack('>II', header[16:24])
+    if (width, height) != (1920, 1080):
+        sys.exit(f'VISUAL CHECKS: FAIL {name} has {width}x{height}, expected 1920x1080')
+print('VISUAL CHECKS: 15 Full HD captures verified 1920x1080')
 print('VISUAL CHECKS: PASS (actual software OpenGL frames, not mockups)')
