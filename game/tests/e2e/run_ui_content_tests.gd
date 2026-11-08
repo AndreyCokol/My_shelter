@@ -76,6 +76,27 @@ func run() -> void:
 	app.ui.open_panel("quests")
 	await process_frame
 	check(label_found(app.ui.body, "Q02 · Вернуться в убежище после первого боя — выполнено"), "completed Q02 is visibly clear in real UI")
+	app.ui.close_panel()
+	var weapon_stacks: Array = app.snapshot().inventory.items.filter(func(item): return item.type_id == "tool.basic" and item.container_id == "player")
+	check(weapon_stacks.size() == 1, "victory puts one usable knife into the real inventory")
+	if not weapon_stacks.is_empty():
+		var knife_id: String = weapon_stacks[0].instance_id
+		app.ui.open_panel("inventory")
+		app.ui.select_inventory("player", knife_id)
+		await process_frame
+		var equip_buttons: Array = app.ui.body.find_children("*", "Button", true, false).filter(func(button): return button.text == "Взять в руки")
+		check(equip_buttons.size() == 1, "actual inventory UI offers an equip action on the knife")
+		if not equip_buttons.is_empty():
+			equip_buttons[0].pressed.emit()
+		await process_frame
+		check(app.last_result.ok and app.snapshot().player.equipped_weapon_instance_id == knife_id and button_found(app.ui.body, "Снять оружие"), "inventory equip button commits weapon and changes the UI")
+		check(app.ui.hud.items.any(func(item): return item.instance_id == knife_id and "[в руках]" in item.label), "HUD marks the equipped bagged knife")
+		var remove_buttons: Array = app.ui.body.find_children("*", "Button", true, false).filter(func(button): return button.text == "Снять оружие")
+		if not remove_buttons.is_empty():
+			remove_buttons[0].pressed.emit()
+		await process_frame
+		check(app.last_result.ok and app.snapshot().player.equipped_weapon_instance_id.is_empty(), "inventory can unequip without altering first-victory reward")
+		app.ui.close_panel()
 	app.free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
