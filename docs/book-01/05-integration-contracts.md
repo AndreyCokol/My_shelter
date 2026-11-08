@@ -1,6 +1,6 @@
 # 05 — Единый контракт модулей, состояния и сохранений
 
-**Контракт:** `v1.5-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
+**Контракт:** `v1.5-PROPOSED` (проектная спецификация; исполняемый runtime v4 уже существует) · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не утверждённый контракт**, хотя методы реализованы в кодовой PR-ветке. [Сверка API/schema4](13-p0-01-live-contract-reconciliation.md). **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
 ## 1. Основное правило и границы
 
@@ -57,7 +57,7 @@ DomainEvent := {
 |---|---|---|
 | `GameSession` | A1 | `new_campaign(seed?)`, `get_snapshot()->CampaignSnapshot`, `acquire_pause(reason)->token`, `release_pause(token)` |
 | `GameCoordinator` | A1 | `execute(request:CommandRequest)->CommandResult`; сериализация, validation, commit, notifications |
-| `SceneRouter` | A1 | `try_transition(action_id,destination_scene_id,entry_point_id)` |
+| `SceneRouter` | A1 | Реальный `try_transition(action_id,destination_scene_id,entry_point_id,actor_health=-1)` в `game/systems/scene_router/scene_router.gd`; позиция/HP/точка возврата сохраняются через CoreSession |
 | `GameClock` | A1 | `get_game_minute()->int`, `try_rest_until(action_id,target_minute,context)`, `advance_for_test(minutes)` **QA-only** |
 | `InventoryService` | A1 | `try_transfer(action_id,instance_id,from,to,quantity)`, `try_spend_and_grant(action_id,offer_id)`, `try_claim_parcel(action_id,parcel_id)` |
 | `ProgressionService` | A1 | `apply_combat_reward_once(action_id,combat_receipt)`, `register_first_item_type(action_id,type_id)` |
@@ -67,6 +67,8 @@ DomainEvent := {
 | `ResidentService` | A4 | `try_accept_contract(action_id,resident_id,version)`, `plan_recruitment(action_id,resident_ids,food_rule_id,food_selection?)`, `try_assign_job(action_id,resident_id,job_id)` |
 | `QuestService` | A4 | `get_active_quests()`, `plan_quest_progress(tentative_state)` |
 | `UILayer/ViewModels` | **A5** | `render_snapshot()`; UI triggers commands and displays `message_key`; **does not mutate game data** |
+
+**Важно:** перечисленные фасады — **логические домены**, а не утверждение о наличии одноимённых GDScript Service-классов. Реальная точка записи — `CoreSession.execute` с `CampaignCommands.normalize/plan`, `Gameplay.plan` и `SceneRouter.try_transition`. Интерфейс связывать с реальными методами и коммитом по [карте P0-01](13-p0-01-live-contract-reconciliation.md).
 
 Кандидат версий контрактов должен быть подтверждён ревью **A1–A5**, A0 выполняет независимую трассировку и ревью UI. Реальные GDScript имена/типы проверяются при bootstrap G1a без произвольного изменения внешних гарантий.
 
@@ -154,24 +156,27 @@ UI A5 переполучает snapshot после `state_loaded`. EventBus list
 
 ## 8. Сохранение и отказоустойчивость
 
-```json
-{
-  "schema_version": 1, "ruleset_version": "g0-candidate",
-  "save_id": "slot-01", "state_revision": 0, "game_time_minutes": 0,
-  "resource_revisions": {"inventory:player": 0},
-  "scene": {"current_scene_id": "hospital", "return_scene_id": null, "last_outside_position": null},
-  "player": {"state": {}}, "wallet": {"system_coins": 0},
-  "shelter": {"state": {}, "discovered_item_type_ids": [], "claimed_parcel_ids": []},
-  "inventory": {"items": [], "containers": [], "reservations": []},
-  "crops": {"plots": []}, "residents": {"records": []},
-  "quests": {"records": []}, "story_flags": [], "world_states": {},
-  "completed_actions": {}, "claimed_reward_ids": []
-}
+```text
+CampaignSnapshot (schema_version = 4, when rules.world_seed is configured):
+  scope: campaign-core
+  ruleset_version: rules.version
+  save_id, state_revision, game_time_minutes, clock_remainder
+  resource_revisions: Dictionary
+  scene: {current_scene_id, return_scene_id, entry_point_id,
+          positions: Dictionary, last_outside_position}
+  player: {xp, hp, position}
+  wallet, shelter, inventory, crops, residents, quests
+  story_flags, completed_actions, claimed_reward_ids
+  world_states: {first_enemy_defeated, resource_ready_at, defeats,
+                 layout: WorldLayout.manifest(seed), locations: Dictionary, ...}
+
+NOT A SERIALIZABLE FIXTURE: placeholders/ellipses are deliberate.
+Use CampaignModel.new_state(rules) + actual tests for a valid save.
 ```
 
-Это **пример формы**, не стартовые значения баланса. Запрещены `NodePath`, живые Node/Texture/Signal, абсолютные пути. Данные сохраняются в `user://saves/` локально на Windows. Для критичных операций — coherent snapshot + receipt. Писать temp и проверять результат, хранить прошлый валидный backup, использовать безопасную замену файла с проверенной на Windows семантикой. `FileAccess.flush` сам по себе не гарантирует переживание внезапного отключения питания; не обещать не проверенную durability.
+Это **схема полей действующей кампании v4**, не полностью валидный JSON и не стартовые значения баланса. Рабочий тестовый checkpoint создаётся `CampaignModel.new_state(rules)` с допустимым `world_seed`, затем `CheckpointStore` сериализует всё состояние. `CoreSession.initial_state()` имеет `schema_version=1` только для отдельного тестового `core-bootstrap`, **не** игрового сейва. Gameplay без `world_seed` использует legacy schema3, базовый `campaign-core` — schema2. Подробнее — [P0-01](13-p0-01-live-contract-reconciliation.md). Запрещены `NodePath`, живые Node/Texture/Signal, абсолютные пути. Данные сохраняются в `user://saves/` локально на Windows. Для критичных операций — coherent snapshot + receipt. Писать temp и проверять результат, хранить прошлый валидный backup, использовать безопасную замену файла с проверенной на Windows семантикой. `FileAccess.flush` сам по себе не гарантирует переживание внезапного отключения питания; не обещать не проверенную durability.
 
-При повреждённом основном save → предложить проверенный backup/ошибку, **не** запускать тихо новую кампанию поверх данных. Неизвестную будущую схему отклонять без уничтожения файла; chain миграций `v1→v2` тестировать на фикстуре при появлении версии 2. A2–A4: `export_state()`, `validate_import_state(data)`, `import_state(data)` без выдачи наград. Сохранение и восстановление проверяются после restart.
+При повреждённом основном save → предложить проверенный backup/ошибку, **не** запускать тихо новую кампанию поверх данных. Неизвестную будущую схему отклонять без уничтожения файла. Тестировать фактически поддерживаемые schema2/3/4 по `CampaignModel.validate()`, без обещаний полной миграции любого старого сейва. При изменении баланса существующие посевы сохраняют исходные deadlines (PR #51); имя файла `prototype-v3.json` историческое, а не заявка схемы v3. A2–A4: `export_state()`, `validate_import_state(data)`, `import_state(data)` без выдачи наград. Сохранение и восстановление проверяются после restart.
 
 ## 9. Конкретные негативные случаи и приемка контракта
 
