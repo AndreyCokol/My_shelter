@@ -74,6 +74,10 @@ func _enemy_health() -> int:
 	var target = enemy()
 	return target.health if is_instance_valid(target) else -1
 
+func _enemy_runtime() -> Dictionary:
+	var target = enemy()
+	return target.runtime_snapshot() if is_instance_valid(target) else {}
+
 func next_action() -> String:
 	action_serial += 1
 	return "%s:%s:%d" % [Time.get_unix_time_from_system(), Time.get_ticks_usec(), action_serial]
@@ -90,6 +94,7 @@ func _request(kind: String, payload: Dictionary) -> Dictionary:
 	var health := _enemy_health()
 	if health >= 0:
 		context.enemy_health = health
+		context.enemy_runtime = _enemy_runtime()
 	return {"action_id": next_action(), "command_type": kind, "payload": payload, "context": context}
 
 func command(kind: String, payload: Dictionary = {}) -> Dictionary:
@@ -109,7 +114,7 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return last_result
 
 func transition(destination: String, entry_id: String = "default") -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health, _enemy_health())
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health, _enemy_health(), _enemy_runtime())
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
