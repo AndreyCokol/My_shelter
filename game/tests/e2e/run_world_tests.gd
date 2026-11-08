@@ -338,6 +338,18 @@ func run() -> void:
 	var version_three := Layout.from_manifest(original.world_states.layout)
 	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok and app.scene_router.current_world().layout == version_three.shelter, "version-three procedural saves retain their map")
 	check(not version_three.has("house_0_2") and follow(app, "outside") and follow(app, "house_0") and not app.scene_router.current_world().layout.has("floor_plan"), "version-three house retains its original ground floor")
+	# A saved generator v4 world is not automatically upgraded to v5. Existing
+	# hospital walls and navigation stay the same after loading under new code.
+	original.world_states.layout.generator_version = 4
+	var version_four := Layout.from_manifest(original.world_states.layout)
+	check(Model.validate(original, app.rules())
+		and app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false)
+		and app.load_game().ok
+		and app.snapshot().world_states.layout.generator_version == 4
+		and app.scene_router.current_world().layout == version_four.shelter,
+		"generator-v4 save reloads without replacing its historical layout")
+	check(version_four.hospital.floor_plan.walls != Layout.build(54).hospital.floor_plan.walls,
+		"new generator-v5 architectural walls do not appear in old hospital floors")
 	original.world_states.layout = current_layout
 	check(app.save_store.write_checkpoint(original, Model.validate.bind(app.rules())).get("committed", false) and app.load_game().ok, "restore current layout for remaining gameplay checks")
 	original.world_states.layout.generator_version = 2
