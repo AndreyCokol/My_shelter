@@ -125,5 +125,18 @@ func _initialize() -> void:
 			"seed %d has 8 physically distinct house floors" % seed_value)
 		check(streets.size() == 4,
 			"seed %d has 4 distinct street geometry segments" % seed_value)
+	# Diagnostic only: how many unique *valid* hospital plans exist in the
+	# current catalog if the generator can choose a wider candidate pattern?
+	var all_candidate_geometry := {}
+	for floor_number in range(1, 5):
+		var floor_candidate_geometry := {}
+		for candidate_pattern in range(64):
+			var candidate: Dictionary = Plans.get_plan("hospital", floor_number, candidate_pattern)
+			if Plans.valid(candidate):
+				var signature: String = floor_fingerprint(candidate)
+				floor_candidate_geometry[signature] = true
+				all_candidate_geometry[signature] = true
+		print("CATALOG HOSPITAL CANDIDATES floor=%d unique=%d" % [floor_number, floor_candidate_geometry.size()])
+	print("CATALOG HOSPITAL CANDIDATES union=%d" % all_candidate_geometry.size())
 	print("LAYOUT TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
