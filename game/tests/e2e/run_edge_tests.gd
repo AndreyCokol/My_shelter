@@ -139,6 +139,7 @@ func _initialize() -> void:
 			var food_before := Logic.quantity(target.get_snapshot(), "crop.potato")
 			check(target.execute(req(target, "game.recruit", {"resident_id": "resident_1"}), targetstore).ok and Logic.quantity(target.get_snapshot(), "crop.potato") == food_before - units, "configured food rule applied " + mode + str(units))
 			check(Model.validate(target.get_snapshot(), config), "food accounting remains valid " + mode + str(units))
+			test_food_rebalance(target.get_snapshot(), targetstore, mode, units)
 			cleanup(targetstore.path)
 	# Corruption cannot partially replace any live domain.
 	before = session.get_snapshot()
@@ -153,6 +154,34 @@ func _initialize() -> void:
 	cleanup(fullstore.path)
 	print("EDGE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func test_food_rebalance(saved: Dictionary, store, previous_mode: String, previous_units: int) -> void:
+	var config := Rules.build()
+	config.items["food.test_ration"] = {"name": "Тестовый паёк"}
+	config.food.accepted_food_type_ids = ["food.test_ration"]
+	config.food.reserve_mode = "consume" if previous_mode == "reserve" else "reserve"
+	config.food.units_per_resident = previous_units + 1
+	var run = Campaign.new(config)
+	var session = run.coordinator
+	check(session.load_checkpoint(store).ok and session.get_snapshot() == saved, "resident checkpoint survives a change of food type, quantity and mode " + previous_mode + str(previous_units))
+	if session.get_snapshot() != saved:
+		return
+	var corrupt := saved.duplicate(true)
+	var receipt_id: String = saved.residents.records[0].food_receipt_id
+	corrupt.completed_actions[receipt_id].result.data.units += 1
+	check(not Model.validate(corrupt, config), "historical receipt with incorrect total is rejected " + previous_mode + str(previous_units))
+	if previous_mode == "reserve":
+		var missing := saved.duplicate(true)
+		missing.inventory.reservations.pop_back()
+		check(not Model.validate(missing, config), "historical reserve must still match the recorded allocation")
+	var recruit := {"resident_id": "resident_2"}
+	session.execute(req(session, "game.contact", recruit), store)
+	session.execute(req(session, "game.consent", {"resident_id": "resident_2", "accept": true}), store)
+	check(session.execute(req(session, "game.recruit", recruit), store).code == "INSUFFICIENT_RESOURCES", "new resident uses current accepted foods, even with potatoes in stock")
+	var supplied: Dictionary = session.get_snapshot()
+	var needed: int = config.food.units_per_resident
+	check(Logic.give(supplied, config, "food.test_ration", needed, "rebalance-fixture") and store.write_checkpoint(supplied, Model.validate.bind(config)).get("committed", false) and session.load_checkpoint(store).ok, "new balance fixture supplies the correct food")
+	check(session.execute(req(session, "game.recruit", recruit), store).ok and session.get_snapshot().residents.records.all(func(r): return r.status == "joined") and Logic.quantity(session.get_snapshot(), "food.test_ration") == 0, "historical and current food modes coexist in one checkpoint")
 
 func cleanup(path: String) -> void:
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:

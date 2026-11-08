@@ -173,6 +173,7 @@ func test_unconditional_shelter(app) -> void:
 	var original: Vector2 = app.hero.position
 	app.hero.health = 73 # A retreat from combat must also checkpoint current HP.
 	check(not app.snapshot().world_states.first_enemy_defeated and is_instance_valid(app.enemy()), "shelter shortcut scenario starts before System unlock with a living enemy")
+	app.enemy().take_damage(33)
 	check(app.transition("outside").code == "UNAVAILABLE" and app.command("inventory.claim_parcel", {"parcel_id": "starter"}).code == "UNAVAILABLE", "ordinary travel and System parcel remain locked before first victory")
 	check(app.ui.shelter_nav_button != null and app.ui.shelter_modal_button != null, "shelter shortcut is present in HUD and modal UI")
 	app.ui.open_panel("inventory")
@@ -188,7 +189,7 @@ func test_unconditional_shelter(app) -> void:
 	shortcut.pressed = true
 	app._unhandled_input(shortcut)
 	check(app.snapshot().scene.current_scene_id == "hospital" and app.hero.position == original and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "G shortcut from paused menu returns to exact hospital exit position")
-	check(is_instance_valid(app.enemy()) and not app.snapshot().world_states.first_enemy_defeated, "return after combat retreat keeps enemy alive and System locked")
+	check(is_instance_valid(app.enemy()) and app.enemy().health == 67 and not app.snapshot().world_states.first_enemy_defeated, "retreat, save and reload preserve the opening enemy's damage and keep System locked")
 	var external: int = app.session.pauses.acquire_pause("test-external-pause")
 	app.ui.open_panel("menu")
 	var paused_scene: String = app.snapshot().scene.current_scene_id
@@ -197,12 +198,13 @@ func test_unconditional_shelter(app) -> void:
 	app.ui.close_panel()
 	app.session.pauses.release_pause(external)
 	var before_failure: Dictionary = app.snapshot()
+	app.enemy().take_damage(17)
 	# SceneRouter holds a separate checkpoint store from GameApp's UI command store.
 	# Fault the store used by the *transition*, not the UI command fixture.
 	app.scene_router._store.fault = "before_replace"
-	check(app.toggle_shelter().code == "SAVE_FAILED" and app.snapshot() == before_failure and app.hero.position == original, "failed shelter commit keeps live scene, position and rewards unchanged")
+	check(app.toggle_shelter().code == "SAVE_FAILED" and app.snapshot() == before_failure and app.hero.position == original and app.enemy().health == 50, "failed shelter commit keeps the live enemy damaged without changing the checkpoint")
 	app.scene_router._store.fault = ""
-	check(app.toggle_shelter().ok and app.toggle_shelter().ok and app.hero.position == original and is_instance_valid(app.enemy()), "player can enter shelter and return to live enemy repeatedly without cooldown before onboarding")
+	check(app.toggle_shelter().ok and app.toggle_shelter().ok and app.hero.position == original and is_instance_valid(app.enemy()) and app.enemy().health == 50, "retry checkpoints the latest damage and keeps the shelter shortcut available")
 
 func run() -> void:
 	var geometry := {}
@@ -292,11 +294,18 @@ func run() -> void:
 	check(follow(app, "outside") and follow(app, "hospital") and follow(app, "hospital_0_2"), "hospital entry and stairs reach the selected floor")
 	var stairs = app.scene_router.current_world()
 	check(app.hero.position == stairs.layout.exits.hospital.arrival and stairs.layout.exits.hospital.form == "stairs_down", "upper floor arrives at the paired staircase landing")
-	check(follow(app, "hospital") and app.hero.position == app.scene_router.current_world().layout.exits.hospital_0_2.arrival and follow(app, "hospital_0_2"), "staircase returns to its paired lower landing")
+	app.enemy().take_damage(29)
+	check(follow(app, "hospital") and app.hero.position == app.scene_router.current_world().layout.exits.hospital_0_2.arrival and follow(app, "hospital_0_2") and app.enemy().health == 71, "paired staircase preserves the enemy damage on its own floor")
+	check(app.save_game().ok and app.load_game().ok and app.enemy().health == 71, "save and load on a hospital floor restore enemy HP")
+	var invalid_hp: Dictionary = app.snapshot()
+	invalid_hp.world_states.enemy_health = {"hospital_0_2": 101}
+	check(not Model.validate(invalid_hp, app.rules()), "invalid persisted enemy HP is rejected")
 	var floor_enemy = app.enemy()
 	floor_enemy.health = 0
+	check(app.save_game().ok and app.load_game().ok and app.enemy().health == 0 and not app.snapshot().world_states.locations.get("hospital_0_2", {}).get("defeated", false), "a lethal hit pending the reward transaction survives a checkpoint")
 	app.enemy_defeated()
 	check(app.snapshot().world_states.locations.hospital_0_2.defeated and app.snapshot().claimed_reward_ids == ["system"], "floor enemy persists without duplicating onboarding reward")
+	check(not app.snapshot().world_states.has("enemy_health"), "committed enemy defeats remove the stored injury")
 	app.hero.position = Vector2(310, 270)
 	var hospital_floor_hp: int = app.hero.health
 	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "hospital_0_2" and app.toggle_shelter().ok and app.hero.position == Vector2(310, 270) and app.hero.health == hospital_floor_hp, "G returns to exact hospital upper-floor coordinates and HP")
@@ -503,7 +512,8 @@ func test_patrol(app) -> void:
 	app.hero.position = foe.position - Vector2(105, 0)
 	app.hero.attack_cooldown = 0
 	check(app.hero.try_attack(foe.position) and foe.alert_remaining > 0 and foe.last_noise == app.hero.position, "attack noise attracts the enemy outside sight range")
-	check(follow(app, "outside") and follow(app, road), "player can abandon a fight and return by the same road")
+	foe.take_damage(23)
+	check(follow(app, "outside") and follow(app, road) and app.enemy().health == 77, "street patrol retains damage across ordinary road transitions")
 	foe = app.enemy()
 	foe.health = 0
 	app.enemy_defeated()
