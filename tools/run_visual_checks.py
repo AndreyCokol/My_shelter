@@ -27,7 +27,7 @@ if result.returncode or not re.search(r'VISUAL TESTS: [1-9][0-9]* checks, 0 fail
     sys.exit(1)
 if any(item in result.stdout for item in ['SCRIPT ERROR:', 'ERROR:', 'instances leaked']):
     sys.exit(1)
-for name in ['welcome', 'shelter', 'inventory', 'farm', 'rest', 'residents', 'quests', 'shop', 'save', 'credits', 'workshop',
+for name in ['welcome', 'shelter', 'radial', 'inventory', 'farm', 'rest', 'residents', 'quests', 'shop', 'save', 'credits', 'workshop',
              'jobs', 'map', 'journal', 'new_confirm', 'hospital', 'city', 'hospital_door', 'stairs', 'house_door',
              'apartment', 'camp']:
     image = Path('/tmp/shelter-visual') / (name + '.png')

@@ -47,6 +47,15 @@ func run() -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
+	var ctrl := InputEventKey.new()
+	ctrl.physical_keycode = KEY_CTRL
+	ctrl.keycode = KEY_CTRL
+	ctrl.location = KEY_LOCATION_LEFT
+	ctrl.pressed = true
+	root.push_input(ctrl, true)
+	check(app.ui.radial.visible and app.ui.radial.items.size() >= 2, "render the radial HUD with real backpack items")
+	await capture("radial")
+	app.ui.close_radial()
 	for panel in ["inventory", "farm", "rest", "residents", "quests", "shop", "save", "credits", "workshop", "jobs", "map", "journal", "new_confirm"]:
 		app.ui.open_panel(panel)
 		await process_frame
