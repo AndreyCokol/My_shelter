@@ -154,6 +154,8 @@ UI A5 переполучает snapshot после `state_loaded`. EventBus list
 
 ## 8. Сохранение и отказоустойчивость
 
+> **Внимание: нижеследующий JSON — исторический концептуальный пример v1, не текущая схема runtime.** По состоянию на 08.11.2026 игровая ветка [PR #31](https://github.com/AndreyCokol/My_shelter/pull/31) создаёт gameplay `schema_version=4` через `CampaignModel.new_state()` + `Gameplay.seed()`, включая процедурный `world_states.layout`, реестр сцен/точек, поля, NPC, магазины и persistent receipts. Копирование этого v1 JSON как v4 fixture или автоматическая подмена `schema_version` с 1 на 4 **недопустимы**. Фактический контракт v4 и миграции требуют согласования A1/A3/A5 и документированы в [12 — сверка с runtime](12-contract-runtime-reconciliation.md).
+
 ```json
 {
   "schema_version": 1, "ruleset_version": "g0-candidate",
@@ -280,3 +282,14 @@ Clock tick публикует time_advanced только при изменени
 - JSON checkpoints используют full_precision=true для сохранения дробного Clock/координат без потери точности. Engine notices входят в архив сборки; lore/docs/tests исключены из экспортируемых ресурсов.
 
 Статус: реализовано и проверяется в integration branch; независимый review NOT_PERFORMED. Windows headless CI не является human GUI/UX acceptance. Полная готовность G4 требует оставшихся доказательств.
+
+## 16. Сверка реализаций v4 / новых решений владельца (08.11.2026, NOT FROZEN)
+
+До изменения этого контракта на `APPROVED` принять [12 — runtime reconciliation](12-contract-runtime-reconciliation.md) и формальные доменные ревью. `v1.5-PROPOSED` не равен `schema_version=4` — это разные версии (интерфейсных договорённостей и сериализованной кампании).
+
+- **OD-12 / Issue #37:** переход `scene.transition` из любой активной сцены в shelter по `G`/HUD, затем точный return, **без** `system_unlocked` до первого боя. Только gate shelter/return ослабляется; System rewards, shop и parcel остаются gated. Важны pause tokens, recovery locks и durable save/HP. Реализация — кандидат PR #39, не часть проверяемого PR #31.
+- **PR #38:** радиальное меню по левому Ctrl, UI/modal + отдельный pause token; объединение с PR #39 требует проверки одного финального файла `game/ui/game_ui.gd` и `game/app/game_app.gd`.
+- **Фактические v4 данные:** `world_states.layout` (seed, generator_version, plans), `scene.positions` и `scene.return_scene_id`, `player.position`, `schema_version=4`, `ruleset_version=prototype-v1`, `completed_actions`, `resource_revisions`, `crops`, `residents`, `quests`. Данные должны валидироваться совместно, не частично по отдельным модулям.
+- **Риск save-совместимости:** `GameplayState.validate()` сравнивает `ripe_at/spoil_at` с **текущими** `rules.crop.grow_minutes/spoil_minutes`; изменение баланса культуры может сломать старое растущее поле. Согласовать per-plot persisted duration либо явную миграцию. См. Issue #34.
+- **Риск производительности:** `CoreSession.apply_runtime` при вызове на каждый frame может делать глубокую копию и валидацию целого state; `EventBus._seen` и `completed_actions` требуют политики масштабирования. См. Issue #35, результаты profiler `NOT_RUN`.
+- **G0 freeze:** только после зелёного **объединённого** Linux/Windows CI, совместимости save/migrations, ревью A1–A5 (и независимого A0, если выполнено), фиксации SHA и явного утверждения владельца. До этого любые заявления об утверждённом API или G4 не подтверждены.
