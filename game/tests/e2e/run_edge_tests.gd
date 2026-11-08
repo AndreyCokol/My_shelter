@@ -40,6 +40,44 @@ func _initialize() -> void:
 		session.execute(req(session, "game.plant", {"plot_id": id}), store)
 		session.execute(req(session, "game.water", {"plot_id": id}), store)
 	var before: Dictionary = session.get_snapshot()
+	# A0-F01: changing current balance must not invalidate already planted
+	# crops. Keep old deadlines from a real checkpoint, including legacy saves.
+	var rebalance := Rules.build()
+	rebalance.crop.grow_minutes = 240
+	rebalance.crop.spoil_minutes = 150
+	var legacy: Dictionary = before.duplicate(true)
+	for old_plot in legacy.crops.plots:
+		old_plot.erase("grow_minutes_at_planting")
+		old_plot.erase("spoil_minutes_at_planting")
+	check(Model.validate(before, rebalance) and Model.validate(legacy, rebalance), "A0-F01 new and legacy stored deadlines survive 180-to-240 rebalance")
+	var rebalanced = Campaign.new(rebalance)
+	var result: Dictionary = rebalanced.coordinator.load_checkpoint(store)
+	check(result.ok and rebalanced.coordinator.get_snapshot().crops.plots[0].ripe_at == 180, "A0-F01 real checkpoint loads with new crop rules and old ripening time")
+	var legacy_path := path + ".legacy"
+	var old_file := FileAccess.open(legacy_path, FileAccess.WRITE)
+	if old_file != null:
+		old_file.store_string(JSON.stringify(legacy, "", true, true))
+		old_file.close()
+	var legacy_store = Store.new(legacy_path)
+	var legacy_run = Campaign.new(rebalance)
+	var legacy_result: Dictionary = legacy_run.coordinator.load_checkpoint(legacy_store)
+	check(legacy_result.ok and legacy_run.coordinator.get_snapshot().crops.plots[0].ripe_at == 180 and FileAccess.get_file_as_string(legacy_path) == JSON.stringify(legacy, "", true, true), "A0-F01 legacy disk fixture loads without rewriting source")
+	legacy_run.tick(180.0)
+	check(legacy_run.coordinator.get_snapshot().crops.plots[0].status == "ripe", "A0-F01 legacy crop ripens at stored time, not new 240m balance")
+	legacy_run.tick(120.0)
+	check(legacy_run.coordinator.get_snapshot().crops.plots[0].status == "spoiled", "A0-F01 legacy crop spoils at stored time, not new 150m balance")
+	var new_run = Campaign.new(rebalance)
+	var new_store = Store.new(path + ".new-rule")
+	home(new_run.coordinator, new_store)
+	new_run.coordinator.execute(req(new_run.coordinator, "game.plant", {"plot_id": "plot_1"}), new_store)
+	new_run.coordinator.execute(req(new_run.coordinator, "game.water", {"plot_id": "plot_1"}), new_store)
+	var new_plot: Dictionary = new_run.coordinator.get_snapshot().crops.plots[0]
+	check(new_plot.ripe_at - new_plot.planted_at == 240 and new_plot.spoil_at - new_plot.ripe_at == 150 and new_plot.grow_minutes_at_planting == 240, "A0-F01 new crop uses new balance and persists planted durations")
+	var corrupt_stamp: Dictionary = new_run.coordinator.get_snapshot()
+	corrupt_stamp.crops.plots[0].grow_minutes_at_planting = 1
+	check(not Model.validate(corrupt_stamp, rebalance), "A0-F01 stamped duration mismatch cannot pass global validation")
+	cleanup(legacy_path)
+	cleanup(new_store.path)
 	store.fault = "before_replace"
 	check(session.execute(req(session, "clock.rest", {"target_minute": 180}), store).code == "SAVE_FAILED" and session.get_snapshot() == before, "real crop rest write failure leaves both plots and clock unchanged")
 	store.fault = ""
