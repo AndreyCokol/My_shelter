@@ -253,6 +253,10 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 				plot.planted_at = state.game_time_minutes
 				plot.ripe_at = state.game_time_minutes + rules.crop.grow_minutes
 				plot.spoil_at = plot.ripe_at + rules.crop.spoil_minutes
+				# Immutable parameters belong to this specific planting, not future
+				# global balance revisions. Legacy crops infer from saved deadlines.
+				plot.grow_minutes_at_planting = rules.crop.grow_minutes
+				plot.spoil_minutes_at_planting = rules.crop.spoil_minutes
 			"game.harvest":
 				if plot.status != "ripe":
 					return fail("INVALID_STATE")
@@ -262,6 +266,8 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 				plot.planted_at = 0
 				plot.ripe_at = 0
 				plot.spoil_at = 0
+				plot.erase("grow_minutes_at_planting")
+				plot.erase("spoil_minutes_at_planting")
 				flag(state, "harvested")
 			"game.clear":
 				if plot.status != "spoiled":
@@ -270,6 +276,8 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 				plot.planted_at = 0
 				plot.ripe_at = 0
 				plot.spoil_at = 0
+				plot.erase("grow_minutes_at_planting")
+				plot.erase("spoil_minutes_at_planting")
 		bump(state, ["farm"])
 		return success()
 	if kind == "game.quest_track":
