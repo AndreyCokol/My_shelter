@@ -757,7 +757,12 @@ func render_jobs(state: Dictionary) -> void:
 	if state.schema_version != 4 or state.scene.current_scene_id != "shelter":
 		line("Назначить работу можно в убежище.")
 		return
-	line("Смена требует 1 свободный картофель. Кровать сокращает смену со %d до %d мин." % [Work.DURATION, Work.RESTED_DURATION])
+	var rules: Dictionary = app.rules()
+	var food_names := PackedStringArray()
+	for food_type in rules.food.accepted_food_type_ids:
+		food_names.append(rules.items[food_type].name)
+	line("На смену расходуется 1 ед. еды из свободных запасов (%s)." % ", ".join(food_names))
+	line("Кровать сокращает смену со %d до %d мин." % [Work.DURATION, Work.RESTED_DURATION])
 	for resident in state.residents.records:
 		if resident.status != "joined":
 			continue
@@ -766,7 +771,7 @@ func render_jobs(state: Dictionary) -> void:
 		if shift.is_empty():
 			for id in Work.JOBS:
 				var job: Dictionary = Work.JOBS[id]
-				button(body, "%s · %s ×%d" % [job.label, app.rules().items[job.output].name, job.quantity], run_command.bind("game.assign_shift", {"resident_id": resident.id, "job": id}))
+				button(body, "%s · %s ×%d" % [job.label, rules.items[job.output].name, job.quantity], run_command.bind("game.assign_shift", {"resident_id": resident.id, "job": id}))
 		elif shift.ready:
 			button(body, "Забрать результат", run_command.bind("game.collect_shift", {"resident_id": resident.id}))
 		else:

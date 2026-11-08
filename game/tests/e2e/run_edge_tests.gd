@@ -5,6 +5,7 @@ const Campaign = preload("res://game/systems/core/campaign_session.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Logic = preload("res://game/systems/gameplay/gameplay_commands.gd")
+const Layout = preload("res://game/systems/world/world_layout.gd")
 var checks: int = 0
 var failures: int = 0
 var serial: int = 0
@@ -141,6 +142,7 @@ func _initialize() -> void:
 			check(Model.validate(target.get_snapshot(), config), "food accounting remains valid " + mode + str(units))
 			test_food_rebalance(target.get_snapshot(), targetstore, mode, units)
 			cleanup(targetstore.path)
+		test_shift_food(path + ".shift-" + mode, mode)
 	# Corruption cannot partially replace any live domain.
 	before = session.get_snapshot()
 	var corrupt := before.duplicate(true)
@@ -188,6 +190,64 @@ func test_food_rebalance(saved: Dictionary, store, previous_mode: String, previo
 	var needed: int = config.food.units_per_resident
 	check(Logic.give(supplied, config, "food.test_ration", needed, "rebalance-fixture") and store.write_checkpoint(supplied, Model.validate.bind(config)).get("committed", false) and session.load_checkpoint(store).ok, "new balance fixture supplies the correct food")
 	check(session.execute(req(session, "game.recruit", recruit), store).ok and session.get_snapshot().residents.records.all(func(r): return r.status == "joined") and Logic.quantity(session.get_snapshot(), "food.test_ration") == 0, "historical and current food modes coexist in one checkpoint")
+
+func test_shift_food(path: String, mode: String) -> void:
+	var rules := Rules.build()
+	rules.world_seed = 54
+	rules.scenes = Layout.entries()
+	rules.items["food.ration"] = {"name": "Тестовый паёк", "edible": true}
+	rules.items["food.preserve"] = {"name": "Тестовые консервы", "edible": true}
+	rules.food.accepted_food_type_ids = ["food.ration", "food.preserve"] if mode == "reserve" else ["food.ration"]
+	rules.food.reserve_mode = mode
+	var store = Store.new(path)
+	var session = Campaign.new(rules).coordinator
+	var resident := {"resident_id": "resident_1"}
+	var shift := {"resident_id": "resident_1", "job": "seed"}
+	home(session, store)
+	var travelled: bool = session.execute(req(session, "scene.transition", {"destination_scene_id": "outside", "entry_point_id": "from_shelter"}), store).ok
+	travelled = travelled and session.execute(req(session, "scene.transition", {"destination_scene_id": "louvre", "entry_point_id": "from_outside"}), store).ok
+	var supplied: bool = session.apply_runtime(func(state):
+		return Logic.give(state, rules, "food.ration", rules.food.units_per_resident, "resident-ration") and Logic.give(state, rules, "crop.potato", 2, "excluded-potatoes"))
+	var joined: bool = travelled and supplied and session.execute(req(session, "game.contact", resident), store).ok
+	joined = joined and session.execute(req(session, "game.consent", {"resident_id": "resident_1", "accept": true}), store).ok
+	joined = joined and session.execute(req(session, "game.recruit", resident), store).ok
+	joined = joined and session.execute(req(session, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}), store).ok
+	check(joined, "F09 fixture recruits with configured ration " + mode)
+	if not joined:
+		cleanup(path)
+		return
+	var empty_ration: Dictionary = session.get_snapshot()
+	var rejected: bool = session.execute(req(session, "game.assign_shift", shift), store).code == "INSUFFICIENT_RESOURCES" and session.get_snapshot() == empty_ration
+	check(rejected, "F09 potatoes outside the whitelist and reserved rations cannot fund a shift " + mode)
+	if not rejected:
+		cleanup(path)
+		return
+	supplied = session.apply_runtime(func(state):
+		if mode == "reserve" and not Logic.give(state, rules, "food.preserve", 1, "fallback"):
+			return false
+		return Logic.give(state, rules, "food.ration", 1, "free-ration"))
+	check(supplied, "F09 fixture supplies free food after recruitment " + mode)
+	var before: Dictionary = session.get_snapshot()
+	var assign := req(session, "game.assign_shift", shift)
+	store.fault = "before_replace"
+	check(session.execute(assign, store).code == "SAVE_FAILED" and session.get_snapshot() == before, "F09 failed shift checkpoint rolls back ration and assignment " + mode)
+	store.fault = ""
+	var assigned: bool = session.execute(assign, store).ok
+	var started: Dictionary = session.get_snapshot()
+	check(assigned and Logic.quantity(started, "food.ration") == 0 and Logic.quantity(started, "food.preserve") == Logic.quantity(before, "food.preserve") and Logic.quantity(started, "crop.potato") == 2 and started.inventory.reservations == before.inventory.reservations, "F09 shift consumes one free unit of first accepted food and preserves other items " + mode)
+	if not assigned:
+		cleanup(path)
+		return
+	session = Campaign.new(rules).coordinator
+	check(session.load_checkpoint(store).ok and session.get_snapshot() == started, "F09 shift and spent ration survive reload " + mode)
+	check(session.execute(assign, store).code == "ALREADY_APPLIED" and session.get_snapshot() == started, "F09 shift replay cannot spend a second ration " + mode)
+	var due: int = started.residents.records[0].shift.due
+	check(session.execute(req(session, "clock.rest", {"target_minute": due}), store).ok and session.execute(req(session, "game.collect_shift", resident), store).ok, "F09 configured food funds a real shift through completion " + mode)
+	if mode == "reserve":
+		var fallback: bool = session.execute(req(session, "game.assign_shift", shift), store).ok
+		var restarted: Dictionary = session.get_snapshot()
+		check(fallback and Logic.quantity(restarted, "food.preserve") == 0 and Logic.quantity(restarted, "crop.potato") == 2 and restarted.inventory.reservations == before.inventory.reservations, "F09 next shift falls back to second accepted food without touching reserves")
+	cleanup(path)
 
 func cleanup(path: String) -> void:
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:

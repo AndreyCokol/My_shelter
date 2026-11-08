@@ -3,7 +3,6 @@ extends RefCounted
 const DURATION := 120
 const RESTED_DURATION := 90
 const Construction = preload("res://game/systems/shelter/construction.gd")
-const FOOD := "crop.potato"
 const JOBS := {
 	"sort": {"label": "Разобрать утиль", "output": "material.salvage", "quantity": 3},
 	"seed": {"label": "Подготовить семена", "output": "seed.basic", "quantity": 2},
