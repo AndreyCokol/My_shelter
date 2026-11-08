@@ -1,6 +1,6 @@
 # 10 — Матрица приёмки и вертикальной сверки
 
-**Статус:** G0 CANDIDATE · **Фактические runtime-проверки на базе PR #31 (07.11.2026):** 410 автоматических Godot-проверок Linux/Windows и ещё 19 визуальных проверок на Linux software renderer — PASS; ручные Windows GUI/UX 15–35 минут NOT_MEASURED. CT-48..52 — **новые тесты в PR убежища, не считать пройденными до их отдельного CI**. Таблица ниже задаёт критерии, а не автоматически утверждённую G0. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
+**Статус:** G0 CANDIDATE · **Актуальные автоматические проверки (08.11.2026):** объединённый HUD и G в [PR #50](https://github.com/AndreyCokol/My_shelter/pull/50) прошёл Linux/Windows CI и 28 visual checks, в [PR #51](https://github.com/AndreyCokol/My_shelter/pull/51) прошли 7 дополнительных crop/save checks, [PR #52](https://github.com/AndreyCokol/My_shelter/pull/52) — реальная физическая стена и melee LOS, [PR #53](https://github.com/AndreyCokol/My_shelter/pull/53) — дробные тики и 100k events. **Ручные Windows GUI/UX 15–35 минут, независимые A1–A5/A0 review, G0 SHA — NOT_PERFORMED.** Таблица ниже задаёт критерии, а не автоматически утверждённую G0. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
 
 ## Фикстуры G1a
 
@@ -133,3 +133,20 @@
 
 
 Исполнение на технических handlers: [Calendar report](reports/A1-calendar-2026-11-06.md). Полные crop/quest state machines и сохранение их pending gates пока NOT_IMPLEMENTED.
+
+## Регрессионный пакет M1 / runtime v4 (08.11.2026)
+
+Идентификаторы относятся к сценариям реальных GDScript тестов в PR-стеке, а не к подписанной G0. На последнем подтверждённом PR #53 все нижестоящие проверки (кроме нового benchmark PR) прошли Linux/Windows; модульные отчёты по точным SHA — [13](13-implementation-verification-20261108.md).
+
+| ID | Предмет | Ожидаемый результат | Evidence | Итог в существующих CI |
+|---|---|---|---|---|
+| CT-53 | Объединённый radial Left Ctrl + shelter G из Q01 и открытого меню | Нет gating, pause leakage, ранних rewards, возврат точный | PR #50, runtime и world suites | PASS_CI |
+| CT-54 | Старое growing/ripe поле с дедлайном 180/120 и новый конфиг 240/150 | Старый checkpoint читается без перезаписи/сдвига сроков; новые посадки используют 240/150 | PR #51, 7 дополнительных edge checks | PASS_CI |
+| CT-55 | Реальная физическая коллизия между актёрами | Melee атака не наносит урон сквозь стену; после удаления обычный бой работает | PR #52 runtime suite | PASS_CI |
+| CT-56 | 50 кадров без целой календарной минуты | Нет полного commit/revision++ на каждый кадр, дробная часть корректна | PR #53 calendar suite | PASS_CI |
+| CT-57 | 100 000 разных post-commit уведомлений | EventBus держит максимум 4 096 последних IDs; persistent receipts не изменяются | PR #53 event suite | PASS_CI |
+| CT-58 | 100, 1 000, 10 000 подтверждённых квитанций | Измерены JSON bytes, serialize, duplicate, validate и валидное состояние; не изменять history без review | Отдельный benchmark в контрактном PR | PENDING_CI |
+| CT-59 | Смена ruleset_version и синхронизация всей схемы v4 | Несовместимый save отклоняется без перезаписи или подтверждённо мигрируется по зафиксированному правилу | A1+A3+A4/A0 cross-version review | NOT_RUN |
+| CT-60 | Полный GUI маршрут на реальном Windows ПК | Убежище/возврат, farm, бой, NPC, radial, карта и хранение работают 15–35 минут без незапланированных блокеров | A5 human Windows UX session + independent A0 | NOT_RUN |
+
+**Важно:** PASS_CI означает прохождение конкретного автоматического сценария на исходном SHA и не означает независимую подпись агентом, ручной FPS benchmark или G0_APPROVED. CT-58 должен быть дополнен фактическим логом только после завершения CI; до него PENDING_CI.
