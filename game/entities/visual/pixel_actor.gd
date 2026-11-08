@@ -26,10 +26,6 @@ static func _outlined(canvas: CanvasItem, rect: Rect2, color: Color) -> void:
 	canvas.draw_rect(rect.grow(1.0), EDGE)
 	canvas.draw_rect(rect, color)
 
-static func _shadow(canvas: CanvasItem) -> void:
-	# Render before rotating the figure; no fake circular exit marker.
-	canvas.draw_ellipse(Vector2(0, 6), Vector2(11, 5), Color(0.04, 0.07, 0.06, 0.35))
-
 static func hero(canvas: CanvasItem, facing: Vector2, stride: float,
 		hurt: bool, dodging: bool, swinging: bool) -> void:
 	canvas.draw_circle(Vector2(0, 7), 11, Color(0.04, 0.07, 0.06, 0.25))
