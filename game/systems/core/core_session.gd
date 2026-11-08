@@ -6,6 +6,7 @@ signal state_loaded
 const JsonNumbers = preload("res://game/state/json_numbers.gd")
 const EventBus = preload("res://game/systems/core/event_bus.gd")
 const PauseRegistry = preload("res://game/systems/core/pause_registry.gd")
+const Calendar = preload("res://game/systems/core/calendar_planner.gd")
 var pauses = PauseRegistry.new()
 var events = EventBus.new()
 var _load_serial: int = 0
@@ -44,8 +45,12 @@ static func _plan_core(tentative: Dictionary, request: Dictionary) -> Dictionary
 static func initial_state() -> Dictionary:
 	return {"schema_version": 1, "scope": "core-bootstrap", "state_revision": 0, "counter": 0, "completed_actions": {}}
 
-func get_snapshot() -> Dictionary:
-	return _state.duplicate(true)
+func get_snapshot(include_receipts: bool = true) -> Dictionary:
+	if include_receipts:
+		return _state.duplicate(true)
+	var view := _state.duplicate()
+	view.erase("completed_actions")
+	return view.duplicate(true)
 
 static func valid_integer(value) -> bool:
 	return (value is int or value is float) and is_finite(float(value)) and float(value) == floor(float(value)) and value >= 0 and value <= 9007199254740991
@@ -190,6 +195,47 @@ func _result(ok: bool, code: String, action_id: String) -> Dictionary:
 
 # Trusted runtime hook for the calendar; never exposed as a player payload.
 # It uses the same serialization/validation barrier but does not write each frame.
+# CampaignSession uses this only with the production adapter, which owns the
+# clock, crop and shift updates and never vetoes a subminute tick.
+func _tick_gameplay_clock(elapsed: float, calendar: RefCounted, validate_clock: Callable) -> bool:
+	if _busy or _recovery_token != 0 or pauses.is_paused() or elapsed < 0:
+		return false
+	var start: int = _state.game_time_minutes
+	var accumulated: float = _state.clock_remainder + elapsed
+	var revision: int = _state.state_revision + 1
+	if not is_finite(accumulated) or accumulated > Calendar.MAX_MINUTE - start or not valid_integer(revision):
+		return false
+	var minutes := floori(accumulated + Calendar.MINUTE_EPSILON)
+	if minutes == 0:
+		_state.clock_remainder = JsonNumbers.normalize_numbers(accumulated)
+		_state.state_revision = revision
+		return true
+
+	_busy = true
+	# The adapter receives detached clock-owned data. It cannot alter the
+	# receipts or any of the other state shared with the tentative root.
+	var clock_state := {
+		"game_time_minutes": start,
+		"crops": _state.crops.duplicate(true),
+		"residents": _state.residents.duplicate(true),
+		"resource_revisions": _state.resource_revisions.duplicate(),
+	}
+	var result: Dictionary = calendar.advance(clock_state, start + minutes, "tick")
+	if not result.ok:
+		_busy = false
+		return false
+	var tentative := _state.duplicate()
+	tentative.merge(clock_state, true)
+	tentative.clock_remainder = JsonNumbers.normalize_numbers(0.0 if result.data.interrupted else maxf(0.0, accumulated - minutes))
+	tentative.state_revision = revision
+	if not _valid_drafts(result.events, tentative.game_time_minutes) or not validate_clock.call(tentative):
+		_busy = false
+		return false
+	_state = tentative
+	_publish_events(result.events, "runtime:%d" % revision)
+	_busy = false
+	return true
+
 func apply_runtime(plan: Callable, event_factory: Callable = Callable()) -> bool:
 	if _busy or _recovery_token != 0 or pauses.is_paused():
 		return false

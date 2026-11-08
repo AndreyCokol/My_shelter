@@ -464,7 +464,11 @@ func test_resident_work(app) -> void:
 	check(app.command("game.contact", resident).ok and app.command("game.consent", {"resident_id": "resident_1", "accept": true}).ok and app.command("game.recruit", resident).ok, "resident joins voluntarily with a food reserve")
 	check(app.transition("shelter").ok and app.command("game.assign_shift", shift).ok, "assign a shift with unreserved food")
 	check(app.command("game.collect_shift", resident).code == "UNAVAILABLE" and app.command("game.assign_shift", shift).code == "INVALID_STATE", "cannot collect early or replace an active shift")
-	var due: int = int(app.snapshot().residents.records[0].shift.due)
+	var before_shift: Dictionary = app.snapshot()
+	var due: int = int(before_shift.residents.records[0].shift.due)
+	var delta: float = (due - before_shift.game_time_minutes - before_shift.clock_remainder) / app.rules().minutes_per_real_second
+	check(app.campaign.tick(delta) and app.snapshot().residents.records[0].shift.ready and app.snapshot().completed_actions == before_shift.completed_actions, "natural clock completes a resident shift and retains recruitment receipts")
+	check(app.load_game().ok and not app.snapshot().residents.records[0].shift.ready, "natural clock does not autosave the finished shift")
 	check(app.command("clock.rest", {"target_minute": due}).ok and app.snapshot().residents.records[0].shift.ready, "resident shift finishes on the shared calendar")
 	check(app.load_game().ok and app.snapshot().residents.records[0].shift.ready, "completed work persists through reload")
 	check(app.command("game.collect_shift", resident).ok and app.command("game.collect_shift", resident).code == "UNAVAILABLE", "resident production can only be collected once")

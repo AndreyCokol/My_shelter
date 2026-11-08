@@ -2,6 +2,7 @@ extends RefCounted
 
 const Numbers = preload("res://game/state/json_numbers.gd")
 const MAX_MINUTE: int = 9007199254740991
+const MINUTE_EPSILON := 0.000000001
 
 # Trusted domain adapters only. Provider returns all boundaries in (from, target],
 # including derived ones (e.g. both maturity and spoilage), without side effects.
