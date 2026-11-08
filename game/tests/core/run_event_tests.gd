@@ -114,6 +114,19 @@ func _initialize() -> void:
 	check(not bounded.publish_after_commit(fact("bounded-" + str(Bus.MAX_RECENT_EVENT_IDS + 1))), "A0-F04 recent duplicate cannot be re-delivered")
 	# IDs older than the window may be seen again, but must not affect domain
 	# receipts: domain writes are guarded by persisted CoreSession action IDs.
+	# A0-F04 stress: prove the live ID cache remains bounded after 100k unique
+	# notifications without retaining payloads or building a persistent ledger.
+	var stress_bus = Bus.new()
+	var stress_started: int = Time.get_ticks_usec()
+	var stress_ok := true
+	for stress_index in range(100000):
+		if not stress_bus.publish_after_commit(fact("stress-event-" + str(stress_index))):
+			stress_ok = false
+			break
+	var stress_ms: float = (Time.get_ticks_usec() - stress_started) / 1000.0
+	print("EVENT PROFILE: published=100000 elapsed_ms=%.3f retained_ids=%d order_entries=%d" % [stress_ms, stress_bus._seen.size(), stress_bus._seen_order.size()])
+	check(stress_ok and stress_bus._seen.size() == Bus.MAX_RECENT_EVENT_IDS and stress_bus._seen_order.size() <= Bus.MAX_RECENT_EVENT_IDS * 2, "A0-F04 100k unique event notifications retain only bounded recent IDs")
+	check(not stress_bus._seen.has("stress-event-0") and stress_bus._seen.has("stress-event-99999"), "A0-F04 old events evicted after 100k notifications")
 	bounded.reset_history()
 	check(bounded._seen.is_empty() and bounded._seen_order.is_empty() and bounded._seen_offset == 0, "A0-F04 loading clears both dedup lookup and ring window")
 	var campaign = Campaign.new(Fixtures.rules())
