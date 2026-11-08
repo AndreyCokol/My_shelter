@@ -81,7 +81,7 @@ func run() -> void:
 			var region: Texture2D = library.get_frame_texture("walk_" + direction, 1)
 			check(region is AtlasTexture and region.get_size() == Vector2(64, 64),
 				"CT-88 source frame is exactly 64x64 transparent pixels")
-	check(PixelActors.frames(zombie) == library, "CT-88 texture atlas cache reuses its spritesheet resources")
+		check(PixelActors.frames(zombie) == library, "CT-88 texture atlas cache reuses its spritesheet resources")
 	var player_actor = app.hero
 	var enemy_actor = app.enemy()
 	check(is_instance_valid(player_actor.pixel_sprite) and is_instance_valid(enemy_actor.pixel_sprite),
