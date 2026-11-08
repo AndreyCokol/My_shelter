@@ -105,6 +105,22 @@ func _initialize() -> void:
 	removed.free()
 	added.free()
 	check(bus.subscription_count() == 0, "owner lifecycle leaves no live subscriptions")
+	# A0-F04: bounded notification delivery history under long-lived sessions.
+	# Durable action/reward receipts are deliberately not pruned by this ring.
+	var stress = Bus.new()
+	var stress_started: int = Time.get_ticks_usec()
+	var stress_ok: bool = true
+	for i in range(100000):
+		if not stress.publish_after_commit(fact("stress:" + str(i))):
+			stress_ok = false
+			break
+	var stress_ms: float = (Time.get_ticks_usec() - stress_started) / 1000.0
+	print("EVENT DEDUP STRESS: 100000 facts in %.2f ms, retained=%d limit=%d" % [stress_ms, stress.history_size(), Bus.HISTORY_LIMIT])
+	check(stress_ok and stress.history_size() == Bus.HISTORY_LIMIT, "A0-F04 100k unique facts retain only bounded recent IDs")
+	check(not stress.publish_after_commit(fact("stress:99999")), "A0-F04 most recent duplicate suppressed")
+	check(stress.publish_after_commit(fact("stress:0")), "A0-F04 expired notification may repeat without changing domain state")
+	stress.reset_history()
+	check(stress.history_size() == 0, "A0-F04 load clears temporary ring")
 	var campaign = Campaign.new(Fixtures.rules())
 	var session = campaign.coordinator
 	var store = Store.new("user://event-tests/" + str(Time.get_ticks_usec()) + ".json")
