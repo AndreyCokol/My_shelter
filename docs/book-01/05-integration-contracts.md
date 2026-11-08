@@ -1,6 +1,6 @@
 # 05 — Единый контракт модулей, состояния и сохранений
 
-**Контракт:** `v1.5-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
+**Контракт:** `v1.6-PROPOSED` · **Технический редактор:** A1 · **Архитектурная координация:** A5 · **Независимая сверка:** A0 · **Статус:** G0 review required, **не рабочий API**. **ЭТО ЕДИНСТВЕННЫЙ НОРМАТИВНЫЙ КАНДИДАТ КОНТРАКТА**: прежняя редакция 05 и черновик 07 из PR #5 заменяются этой версией. [G0](08-g0-decision-record.md), [архитектура](06-application-architecture-proposal.md).
 
 ## 1. Основное правило и границы
 
@@ -154,6 +154,8 @@ UI A5 переполучает snapshot после `state_loaded`. EventBus list
 
 ## 8. Сохранение и отказоустойчивость
 
+**Схема ниже — историческая иллюстрация `schema_version=1`, НЕ валидная фикстура игрового `schema_version=4`.** Реальная форма кампании v4 и ограничения миграции перечислены в §17 и проверяются через `CampaignModel.new_state()/validate()`. Нельзя создавать v4 save простым изменением одного числа в этом примере.
+
 ```json
 {
   "schema_version": 1, "ruleset_version": "g0-candidate",
@@ -290,3 +292,32 @@ Clock tick публикует time_advanced только при изменени
 **Паузы:** если открыт собственный модальный UI A5, он освобождает **только свой** pause token перед синхронной командой и закрывается при успехе; при неудаче восстанавливает прежний экран и уведомление. Чужая пауза, recovery после неудачного durable commit и активная загрузка не снимаются: переход отвергается с сохранением исходного состояния. После поражения герой восстанавливается через checkpoint, не телепортируется в обход механики смерти.
 
 **Rollback:** при `SAVE_FAILED` новая сцена и позиция не публикуются и остаются доступными предыдущие сцена/ресурсы/receipt. Игровое время не ускоряется и не прерывается сверх естественной паузы UI; смена scene не создаёт права на повторение уникальной награды. Ревью A1/A2/A5 и независимый A0 остаются необходимы перед merge.
+
+## 17. Runtime-v4 contract reconciliation 08.11.2026 — единый кандидат v1.6
+
+**Статус:** `CODE_AUDITED / CI_VERIFIED / DOMAIN_REVIEWS_PENDING`; этот раздел актуализирует исторический §15 (v3), не является новым вторым контрактом. Исходная интеграция: [PR #50](https://github.com/AndreyCokol/My_shelter/pull/50), crop/save fix [PR #51](https://github.com/AndreyCokol/My_shelter/pull/51), melee LOS [PR #52](https://github.com/AndreyCokol/My_shelter/pull/52), perf/event history [PR #53](https://github.com/AndreyCokol/My_shelter/pull/53). Каждая ветка имеет собственный проверяемый SHA; старые PR #38 и #39 являются **источниками PR #50, не отдельными требованиями к слиянию**.
+
+### 17.1 Точная схема и API реализации
+
+- **Gameplay campaign save:** `schema_version=4`, `scope="campaign-core"`, `ruleset_version="prototype-v1"` (текущее значение, не обещание неизменности). `CampaignModel.new_state()` создаёт base v2, `GameplayState.seed()` добавляет домены v3, при `rules.world_seed` создаётся v4 с `world_states.layout` и `world_states.locations`. Реальные данные: `save_id`, `state_revision`, `game_time_minutes`, `clock_remainder`, `resource_revisions`, `scene{current_scene_id,return_scene_id,entry_point_id,positions,last_outside_position}`, `player{xp,position,hp}`, `wallet`, `shelter`, `inventory{items,containers,reservations}`, `crops.plots`, `residents.records`, `quests.records`, `story_flags`, `world_states`, `completed_actions`, `claimed_reward_ids`. Внешняя минимальная JSON-форма НЕ заменяет вызов `new_state()` и всё глобальное validation.
+- Принимаются конкретные совместимые формы v3 как `legacy` только при проверках `CampaignModel.validate()`; это **не** общая миграция v1/v2/v3/v4. Неизвестный `ruleset_version` и произвольная несовместимая схема отклоняются, источник/backup не затираются.
+- `GameApp.command(kind,payload)` формирует типизированный контекст с актуальными `resource_revisions` и уникальным `action_id`; trusted combat-команды недоступны этому UI фасаду. `CoreSession.execute()` валидирует, планирует, коммитит snapshot+receipt, затем публикует уведомления. `SceneRouter.try_transition(action_id,destination_scene_id,entry_point_id,actor_health)` записывает сцену, позицию и HP в общую durable transaction.
+- Реализация `GameApp.next_action()` на данный момент использует сочетание `Time.get_unix_time_from_system()`, `Time.get_ticks_usec()` и локального счётчика; это **не гарантированный долговременный монотонный протокол**. Нельзя безопасно выкидывать старые `completed_actions` без новой схемы ActionId/водяного знака и миграции. Рекомендация владельцу A1: версионировать `campaign_id/issuer_id/sequence`, persisted `last_seen_seq`, вводить `REPLAY_EXPIRED` для удалённого full receipt **только после контрактного review и миграционных тестов**.
+- `SceneRouter` сохраняет обратный адрес из любого активного мира через `scene.positions`, `return_scene_id`, `player.hp`; **G и HUD** работают до первого боя и при живом враге, но не снимают внешний pause/recovery lock. `Left Ctrl` открывает радиальное меню, `Right Ctrl` игнорируется; обе функции объединены в один UI в PR #50. Вся UI логика A5, A1 владеет commit.
+- `Player.try_attack()` наносит melee урон только при положительной проверке `World2D.direct_space_state.intersect_ray` без перекрывающей физической стены; обычные cooldown/range/facing остаются. Источник — PR #52.
+- **Farm/save compatibility:** при поливе новые plot сохраняют `grow_minutes_at_planting` и `spoil_minutes_at_planting` плюс `planted_at/ripe_at/spoil_at`. Старые поля без duration stamps загружаются при последовательных положительных сроках; баланс `rules.crop` используется только для **новых** посадок. Увеличение `rules.version` остаётся явным миграционным gate, а не тихой заменой save. Это проверено CT A0-F01 в PR #51 на Linux/Windows.
+- **Sub-minute clock:** `CoreSession.try_accumulate_fractional_clock` изменяет лишь `clock_remainder` пока до следующей календарной минуты менее 1. В это время `state_revision` **не** растёт, events не публикуются и глобальная валидация не гоняется каждый кадр. На границе минуты `CampaignSession.tick` вызывает прежний `apply_runtime` с полной транзакционной проверкой. При следующем durable checkpoint остаток сохраняется в snapshot. Pause/recovery и числовые ограничения остаются обязательными.
+- **EventBus:** история доставки уведомлений ограничена `HISTORY_LIMIT=4096` recent IDs. Старые уже выпавшие IDs могут быть заново *уведомлены*, но не должны начислять ресурсы/награды. **Единственный** источник exactly-once для мутаций — `completed_actions` и доменные уникальные `claimed_reward_ids`. `reset_history()` сбрасывает transient ring при загрузке, не persistent receipts.
+- **Persistent receipts:** журнал сейчас **неограничен**. Это сознательно оставленный открытый риск A0-F05, потому что произвольные action_id и exact replay без другого долговременного proof исключают безопасное безусловное удаление старых записей. Профиль 100/1k/10k receipt sizes нужен до выбора migration/compaction policy; ни один PR не должен удалять записи наград наугад.
+
+### 17.2 Статус валидации и незакрытые решения
+
+| Область | Подтверждённое свидетельство | Что НЕ доказано |
+|---|---|---|
+| PR #50 HUD + shelter | Linux/Windows CI, real visual и совместные E2E на одном SHA `44c337baa...` | ручная проверка GUI на ПК, независимые A1/A2/A5/A0 |
+| PR #51 crop/save | Linux+Windows с семью дополнительными legacy/rebalance тестами, SHA `b60b9972...` | версионированная миграция всего ruleset и старой экономики |
+| PR #52 wall LOS | Linux+Windows, реальная physics wall regression, SHA `6399081e...` | полная сценарная проверка всех видов препятствий/оружия |
+| PR #53 tick/dedup | Linux+Windows CI, 50 subminute frames, 100k event IDs; SHA `3e0f567d...` | длительный Windows GPU profiler, безопасная компакция receipts |
+| G0/G4 | Требования и code candidates присутствуют | обязательные независимые ревью, owner-approved exact SHA, ручной UX 15–35 минут |
+
+**Нормативный статус остаётся `v1.6-PROPOSED` / G0_BLOCKED.** Перед заморозкой A1 подтверждает DTO/API/migration, A2 — боевой ray/ввод, A3 — crop/calendar, A4 — NPC/quests, A5 — единый HUD/паузы/UX, A0 сверяет риски. После этого владелец проекта отдельно подтверждает точный commit SHA и только тогда допускается `G0_APPROVED`; ни один автоматический тест не является подписью владельца.

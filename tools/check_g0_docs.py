@@ -87,7 +87,7 @@ checks = {
     "owner decisions": ("docs/book-01/08-g0-decision-record.md", "OD-11"),
     "independent A0": ("docs/book-01/agents/A0.md", "A5"),
     "A5 all UI": ("docs/book-01/agents/A5.md", "весь UI"),
-    "one contract": ("docs/book-01/05-integration-contracts.md", "v1.5-PROPOSED"),
+    "one contract": ("docs/book-01/05-integration-contracts.md", "v1.6-PROPOSED"),
     "sandbox continuation": ("docs/book-01/03-requirements.md", "FR-29"),
     "acceptance tests": ("docs/book-01/10-qa-acceptance-matrix.md", "CT-26"),
 }
