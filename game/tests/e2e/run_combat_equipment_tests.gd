@@ -17,7 +17,8 @@ class ArenaApp extends RefCounted:
 	var full_snapshot_requested := false
 	func running() -> bool:
 		return true
-	func snapshot() -> Dictionary:
+	func snapshot(include_receipts: bool = true) -> Dictionary:
+		full_snapshot_requested = full_snapshot_requested or include_receipts
 		return state.duplicate(true)
 	func rules() -> Dictionary:
 		return catalog.duplicate(true)
@@ -97,6 +98,7 @@ func run() -> void:
 	hero.attack_cooldown = 0.0
 	facade.state = armed
 	check(hero.try_attack(foe.global_position) and foe.health == hp - knife_profile.damage, "real actor melee uses equipped knife damage and reach")
+	check(not facade.full_snapshot_requested, "combat attack never asks facade for the full durable receipt journal")
 	foe.health = hp
 	hero.attack_cooldown = 0.0
 	var wall := StaticBody2D.new()
