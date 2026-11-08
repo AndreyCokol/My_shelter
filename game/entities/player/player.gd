@@ -1,6 +1,7 @@
 extends CharacterBody2D
 
 const DODGE_COOLDOWN := 0.85
+const ActorPainter = preload("res://game/entities/visual/pixel_actor.gd")
 
 var app
 var health: int = 100
@@ -11,6 +12,7 @@ var dodge_remaining: float = 0.0
 var hurt_remaining: float = 0.0
 var swing_remaining: float = 0.0
 var defeated: bool = false
+var visual_stride := 0.0
 
 func _ready() -> void:
 	z_index = 10
@@ -35,6 +37,8 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("dodge"):
 		try_dodge()
 	velocity = facing * 320 if dodge_remaining > 0 else direction * 115
+	if velocity.length_squared() > 0.1:
+		visual_stride += delta * (17.0 if dodge_remaining > 0 else 12.0)
 	move_and_slide()
 	var world = app.scene_router.current_world()
 	if is_instance_valid(world):
@@ -95,12 +99,9 @@ func restore(hp: int) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	draw_circle(Vector2(1, 5), 12, Color(0, 0, 0, 0.3))
-	draw_circle(Vector2.ZERO, 9, Color("f4c788") if hurt_remaining == 0 else Color("f07878"))
-	draw_rect(Rect2(-7, 1, 14, 11), Color("61bdb1"))
-	draw_line(facing * 8, facing * 17, Color("e8e7d5"), 3)
-	if dodge_remaining > 0:
-		draw_arc(Vector2.ZERO, 15, 0, TAU, 20, Color("96e6db"), 2)
-	if swing_remaining > 0:
-		var angle := facing.angle()
-		draw_arc(Vector2.ZERO, 38, angle - 0.8, angle + 0.8, 12, Color("f6db91"), 3)
+	# Distinct UI selection arcs, never a world transition marker.
+	for angle in [-2.85, -1.18, 0.52, 2.18]:
+		draw_arc(Vector2(0, 8), 13, angle, angle + 0.62, 5,
+			Color("8bdf53") if not defeated else Color("786a58"), 1.5)
+	ActorPainter.hero(self, facing, visual_stride, hurt_remaining > 0,
+		dodge_remaining > 0, swing_remaining > 0)
