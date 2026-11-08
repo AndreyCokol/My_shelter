@@ -42,6 +42,7 @@ func config(mode: String, food_ids: Array = ["crop.potato"]) -> Dictionary:
 
 func make_session(rules: Dictionary, food_type: String, quantity: int) -> Dictionary:
 	var state: Dictionary = Model.new_state(rules)
+	check(Model.validate(state, rules), "new procedural seed itself satisfies current schema")
 	# Trusted fixture: first victory already recorded and NPC contact is at
 	# louvre. All subsequent actions use real transactional CoreSession.
 	state.scene.current_scene_id = "louvre"
@@ -49,8 +50,11 @@ func make_session(rules: Dictionary, food_type: String, quantity: int) -> Dictio
 	state.world_states.first_enemy_defeated = true
 	state.story_flags.append("system_unlocked")
 	state.claimed_reward_ids.append("system")
+	check(Model.validate(state, rules), "trusted first-victory scene/flags fixture remains valid")
 	check(Logic.give(state, rules, food_type, quantity, "work-food-start"), "fixture gives allowed food stock " + food_type)
 	check(Model.validate(state, rules), "fixture is a valid procedural checkpoint " + food_type)
+	if not Model.validate(state, rules):
+		return {"ok": false}
 	var path := "user://work-food/%s-%d.json" % [food_type.replace(".", "-"), Time.get_ticks_usec()]
 	var store = Store.new(path)
 	check(store.write_checkpoint(state, Model.validate.bind(rules)).get("committed", false), "fixture checkpoint written")
@@ -76,6 +80,10 @@ func _initialize() -> void:
 		var rules := config(mode, ["food.test_ration"])
 		check(Rules.validate(rules), "custom ration catalog validates " + mode)
 		var fixture := make_session(rules, "food.test_ration", 3)
+		if not fixture.get("ok", true):
+			print("RESIDENT WORK FOOD TESTS: %d checks, %d failures" % [checks, failures])
+			quit(1)
+			return
 		var session = fixture.session
 		var store = fixture.store
 		join_and_go_home(session, store)
@@ -123,6 +131,10 @@ func _initialize() -> void:
 	# old joined NPC uses historical ration while NEW work uses the new whitelist.
 	var old_rules := config("reserve")
 	var legacy := make_session(old_rules, "crop.potato", 2)
+	if not legacy.get("ok", true):
+		print("RESIDENT WORK FOOD TESTS: %d checks, %d failures" % [checks, failures])
+		quit(1)
+		return
 	join_and_go_home(legacy.session, legacy.store)
 	var old_state: Dictionary = legacy.session.get_snapshot()
 	check(old_state.inventory.reservations.size() == 1 and Logic.quantity(old_state, "crop.potato") == 0, "historical potato is fully reserved")
