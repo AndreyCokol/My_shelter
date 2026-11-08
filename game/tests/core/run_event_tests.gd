@@ -127,6 +127,12 @@ func _initialize() -> void:
 	print("EVENT PROFILE: published=100000 elapsed_ms=%.3f retained_ids=%d order_entries=%d" % [stress_ms, stress_bus._seen.size(), stress_bus._seen_order.size()])
 	check(stress_ok and stress_bus._seen.size() == Bus.MAX_RECENT_EVENT_IDS and stress_bus._seen_order.size() <= Bus.MAX_RECENT_EVENT_IDS * 2, "A0-F04 100k unique event notifications retain only bounded recent IDs")
 	check(not stress_bus._seen.has("stress-event-0") and stress_bus._seen.has("stress-event-99999"), "A0-F04 old events evicted after 100k notifications")
+	check(not stress_bus.publish_after_commit(fact("stress-event-99999"))
+		and stress_bus.publish_after_commit(fact("stress-event-0")),
+		"A0-F04 old notification can be delivered again; recent duplicate stays blocked without granting rewards")
+	stress_bus.reset_history()
+	check(stress_bus._seen.is_empty() and stress_bus._seen_order.is_empty() and stress_bus._seen_offset == 0,
+		"A0-F04 all history is cleared after a 100k event session")
 	bounded.reset_history()
 	check(bounded._seen.is_empty() and bounded._seen_order.is_empty() and bounded._seen_offset == 0, "A0-F04 loading clears both dedup lookup and ring window")
 	var campaign = Campaign.new(Fixtures.rules())
