@@ -60,6 +60,69 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 	if layout.has("rooms"):
 		room_ground(canvas, kind, layout.rooms, variant)
 
+# Deterministic cosmetic passes. No collision, no save mutations and no
+# fake usable containers. A procedural location retains exactly the same
+# stains, small leaves and rug on redraw and after loading its v4/v5 manifest.
+static func atmosphere(canvas: CanvasItem, kind: String, layout: Dictionary) -> void:
+	var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
+	var source_id := str(layout.get("segment", kind))
+	if layout.has("floor_plan"):
+		var plan: Dictionary = layout.floor_plan
+		source_id += ":%d:%d" % [int(plan.floor), int(plan.pattern)]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = absi(source_id.hash()) + 4109
+	if layout.has("floor_plan"):
+		for room in layout.floor_plan.rooms.values():
+			var rect: Rect2 = room.rect.grow(-13)
+			if not rect.has_area():
+				continue
+			match room.kind:
+				"living", "studio", "bedroom":
+					var rug := Rect2(rect.get_center() - Vector2(24, 15), Vector2(48, 30))
+					canvas.draw_rect(rug.grow(2), Color("43352f"))
+					canvas.draw_rect(rug, Color("65504b"))
+					canvas.draw_rect(rug.grow(-4), Color("8a6158"), false, 2)
+					canvas.draw_line(rug.position + Vector2(8, 15), rug.end - Vector2(8, 15), Color("b18969"), 1)
+				"reception", "ward", "recovery", "triage":
+					canvas.draw_rect(Rect2(rect.position + Vector2(10, 17), Vector2(15, 4)), Color("53656c"))
+					canvas.draw_line(rect.position + Vector2(10, 22), rect.position + Vector2(30, 22), Color("b2beb8"))
+				_:
+					pass
+			for i in range(6):
+				var p := Vector2(rng.randf_range(rect.position.x, rect.end.x),
+					rng.randf_range(rect.position.y, rect.end.y))
+				if room.kind == "bath":
+					canvas.draw_rect(Rect2(p, Vector2(2, 2)), Color("405b61", 0.52))
+				elif kind == "hospital":
+					canvas.draw_rect(Rect2(p, Vector2(rng.randi_range(2, 4), 1)),
+						Color("4d4244", 0.42))
+				else:
+					canvas.draw_rect(Rect2(p, Vector2(2, 2)), Color("55453b", 0.42))
+		return
+
+	var count := 195 if kind == "shelter" else 160 if kind == "outside" else 48
+	for i in range(count):
+		var x := rng.randf_range(bounds.position.x + 5, bounds.end.x - 5)
+		var y := rng.randf_range(bounds.position.y + 5, bounds.end.y - 5)
+		var p := Vector2(x, y)
+		if kind == "shelter":
+			canvas.draw_line(p, p + Vector2(2, -3),
+				Color("a6b46b", 0.62) if i % 3 == 0 else Color("526f34", 0.67), 1)
+			if i % 7 == 0:
+				canvas.draw_circle(p + Vector2(2, -3), 1.4,
+					Color("e8d8a1") if i % 2 == 0 else Color("bd8464"))
+		elif kind == "outside":
+			canvas.draw_line(p, p + Vector2(rng.randf_range(3, 10), -2),
+				Color("384247", 0.57), 1)
+			if i % 11 == 0:
+				var puddle := Rect2(p, Vector2(rng.randf_range(7, 19), rng.randf_range(2, 5)))
+				canvas.draw_rect(puddle, Color("526e7b", 0.32))
+				canvas.draw_line(puddle.position + Vector2(2, 1),
+					puddle.position + Vector2(puddle.size.x - 1, 1), Color("8d9b9f", 0.26))
+		else:
+			canvas.draw_rect(Rect2(p, Vector2(2, 2)),
+				Color("768389", 0.47) if i % 3 == 0 else Color("384749", 0.54))
+
 static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 	for room in plan.rooms.values():
 		var surface := "parquet"
