@@ -41,7 +41,9 @@ func config(mode: String, food_ids: Array = ["crop.potato"]) -> Dictionary:
 	return rules
 
 func make_session(rules: Dictionary, food_type: String, quantity: int) -> Dictionary:
-	var state: Dictionary = Model.new_state(rules)
+	# CampaignSession seeds offer/container optimistic revision counters.
+	# A bare Model.new_state is intentionally not a commit-ready checkpoint.
+	var state: Dictionary = Campaign.new(rules).coordinator.get_snapshot()
 	check(Model.validate(state, rules), "new procedural seed itself satisfies current schema")
 	# Trusted fixture: first victory already recorded and NPC contact is at
 	# louvre. All subsequent actions use real transactional CoreSession.
