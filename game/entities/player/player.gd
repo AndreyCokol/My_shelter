@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 const DODGE_COOLDOWN := 0.85
 const Combat = preload("res://game/systems/combat/combat_loadout.gd")
+const PixelActors = preload("res://game/entities/characters/pixel_actor_frames.gd")
 
 var app
 var health: int = 100
@@ -12,6 +13,7 @@ var dodge_remaining: float = 0.0
 var hurt_remaining: float = 0.0
 var swing_remaining: float = 0.0
 var defeated: bool = false
+var pixel_sprite: AnimatedSprite2D
 
 func _ready() -> void:
 	z_index = 10
@@ -20,6 +22,36 @@ func _ready() -> void:
 	shape.radius = 9
 	collider.shape = shape
 	add_child(collider)
+	pixel_sprite = AnimatedSprite2D.new()
+	pixel_sprite.name = "PixelActor64"
+	pixel_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	pixel_sprite.sprite_frames = PixelActors.frames(false)
+	pixel_sprite.scale = Vector2(0.75, 0.75)
+	add_child(pixel_sprite)
+	pixel_sprite.play("idle_right")
+
+# An attack, dodge, damage flash and directional walk change animation without
+# replacing any input/physics/hitbox logic. The 64x64 source pixels are real PNG
+# assets; their world display size is deliberately smaller than the map doors.
+func _update_pixel_animation(moving: bool) -> void:
+	if not is_instance_valid(pixel_sprite):
+		return
+	var direction: String = PixelActors.direction_name(facing)
+	var pose := "idle"
+	if swing_remaining > 0.0:
+		pose = "attack"
+	elif moving or dodge_remaining > 0.0:
+		pose = "walk"
+	var target: String = pose + "_" + direction
+	if pixel_sprite.animation != target:
+		pixel_sprite.play(target)
+	elif not pixel_sprite.is_playing() and pose != "attack":
+		pixel_sprite.play(target)
+	pixel_sprite.speed_scale = 1.5 if dodge_remaining > 0.0 else 1.0
+	pixel_sprite.modulate = Color("ecb7ad") if hurt_remaining > 0.0 else Color.WHITE
+	if defeated:
+		pixel_sprite.pause()
+		pixel_sprite.modulate = Color("656666")
 
 func _physics_process(delta: float) -> void:
 	if app == null or not app.running() or defeated:
@@ -41,6 +73,7 @@ func _physics_process(delta: float) -> void:
 	if is_instance_valid(world):
 		var walkable: Rect2 = world.floor_rect().grow(-15)
 		position = position.clamp(walkable.position, walkable.end)
+	_update_pixel_animation(direction.length() > 0.1)
 	queue_redraw()
 
 func dodge_readiness() -> float:
@@ -61,6 +94,7 @@ func try_attack(target: Vector2) -> bool:
 	var attack_profile: Dictionary = Combat.profile(app.snapshot(false), app.rules())
 	attack_cooldown = float(attack_profile.cooldown)
 	swing_remaining = 0.15
+	_update_pixel_animation(false)
 	var enemy = app.enemy()
 	if is_instance_valid(enemy):
 		enemy.hear_noise(global_position, 132.0)
@@ -75,6 +109,7 @@ func take_damage(amount: int) -> bool:
 		return false
 	health = maxi(0, health - amount)
 	hurt_remaining = 0.45
+	_update_pixel_animation(false)
 	queue_redraw()
 	app.update_hud()
 	if health == 0:
@@ -91,13 +126,12 @@ func restore(hp: int) -> void:
 	attack_cooldown = 0
 	hurt_remaining = 0
 	swing_remaining = 0
+	_update_pixel_animation(false)
 	queue_redraw()
 
 func _draw() -> void:
-	draw_circle(Vector2(1, 5), 12, Color(0, 0, 0, 0.3))
-	draw_circle(Vector2.ZERO, 9, Color("f4c788") if hurt_remaining == 0 else Color("f07878"))
-	draw_rect(Rect2(-7, 1, 14, 11), Color("61bdb1"))
-	draw_line(facing * 8, facing * 17, Color("e8e7d5"), 3)
+	# 64x64 animated sprite is the actor artwork; only combat indicators use
+	# primitive overlays. No placeholder circle/body is drawn behind the sprite.
 	if dodge_remaining > 0:
 		draw_arc(Vector2.ZERO, 15, 0, TAU, 20, Color("96e6db"), 2)
 	if swing_remaining > 0:
