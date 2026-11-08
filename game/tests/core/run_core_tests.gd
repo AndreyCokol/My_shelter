@@ -51,6 +51,14 @@ func _initialize() -> void:
 	# Compact receipts link the original revision at index 2.
 	var corrupted_receipt: Array = corrupt.completed_actions["one"]
 	corrupted_receipt[2] = 9999
+	var primary_before := FileAccess.get_file_as_string(store.path)
+	var backup_before := FileAccess.get_file_as_string(store.path + ".bak")
+	check(not store.write_checkpoint(corrupt, Session.validate).committed, "checkpoint store rejects a new state with an invalid receipt")
+	check(FileAccess.get_file_as_string(store.path) == primary_before and FileAccess.get_file_as_string(store.path + ".bak") == backup_before, "rejected new checkpoint preserves primary and backup bytes")
+	# Restore the fixture even when a regression overwrites either file.
+	var fixture := FileAccess.open(store.path + ".bak", FileAccess.WRITE)
+	fixture.store_string(backup_before)
+	fixture.close()
 	var file := FileAccess.open(store.path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(corrupt))
 	file.close()
@@ -58,7 +66,12 @@ func _initialize() -> void:
 	session.state_loaded.connect(func(): loaded_count[0] += 1)
 	check(not session.load_checkpoint(store).ok and session.get_snapshot().counter == 3 and loaded_count[0] == 0, "CT-29 invalid linked receipt leaves live session intact")
 	check(session.load_checkpoint(store, true).ok and session.get_snapshot().counter == 2, "CT-11 explicit backup load")
+	var rejected := FileAccess.get_file_as_bytes(store.path + ".rejected")
+	check(rejected == JSON.stringify(corrupt).to_utf8_buffer(), "first backup restore retains the corrupted primary byte for byte")
 	check(session.execute(command("after-backup"), store).ok, "CT-11 restored backup accepts subsequent writes")
+	var displaced := FileAccess.get_file_as_bytes(store.path)
+	check(session.load_checkpoint(store, true).ok and session.get_snapshot().counter == 2, "repeating backup restore is supported")
+	check(FileAccess.get_file_as_bytes(store.path + ".rejected") == rejected and FileAccess.get_file_as_bytes(store.path + ".rejected.1") == displaced, "repeating restore keeps each displaced primary in its own archive")
 	var malformed := command("bad-context")
 	malformed.context = []
 	check(session.execute(malformed, store).code == "INVALID_ARGUMENT", "malformed context rejected")
@@ -83,7 +96,7 @@ func _initialize() -> void:
 	var whole: Array = Clock.ordered_deadlines(deadlines, 0, 12)
 	var split: Array = Clock.ordered_deadlines(deadlines, 0, 10) + Clock.ordered_deadlines(deadlines, 10, 12)
 	check(whole == split and whole[0].entity_id == "a" and whole[2].minute == 12, "CT-32 ordered scheduler, split interval equivalence")
-	for suffix in ["", ".tmp", ".bak", ".rejected"]:
+	for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
 	print("CORE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

@@ -80,13 +80,14 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	# Scene validation happens AFTER receipt replay in CoreSession.
 	if request.context.get("scene_id") != state.scene.current_scene_id:
 		return fail("INVALID_STATE")
-	if kind in ["scene.transition", "session.save"] and request.context.has("departure_position"):
+	# A gameplay command can autosave without a portal or an explicit save.
+	var capture_actor: bool = rules.get("gameplay", false) or kind in ["scene.transition", "session.save"]
+	if capture_actor and request.context.has("departure_position"):
 		if not Model.valid_position(request.context.departure_position):
 			return fail("INVALID_ARGUMENT")
 		state.player.position = request.context.departure_position.duplicate(true)
 		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
-	# Portal and shelter transitions are durable checkpoints: keep live combat HP.
-	if kind in ["scene.transition", "session.save"] and request.context.has("health"):
+	if capture_actor and request.context.has("health"):
 		if not Core.valid_integer(request.context.health) or request.context.health > 100:
 			return fail("INVALID_ARGUMENT")
 		state.player.hp = int(request.context.health)
@@ -239,17 +240,9 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate()
 			if state.scene.last_outside_position != null:
 				state.scene.last_outside_position = safe_legacy_position(nodes[state.scene.return_scene_id], state.scene.last_outside_position)
-			if request.context.has("health"):
-				if not Core.valid_integer(request.context.health) or request.context.health > 100:
-					return fail("INVALID_ARGUMENT")
-				state.player.hp = int(request.context.health)
 			bump(state, ["world", "scene"])
 			return success({"seed": seed_value})
 		"session.save":
-			if rules.get("gameplay", false) and request.context.has("health"):
-				if not Core.valid_integer(request.context.health) or request.context.health > 100:
-					return fail("INVALID_ARGUMENT")
-				state.player.hp = int(request.context.health)
 			return success({})
 	return fail("UNAVAILABLE")
 
