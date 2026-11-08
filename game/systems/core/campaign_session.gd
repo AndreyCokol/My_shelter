@@ -4,10 +4,13 @@ const Core = preload("res://game/systems/core/core_session.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Calendar = preload("res://game/systems/core/calendar_planner.gd")
 const Commands = preload("res://game/systems/inventory/campaign_commands.gd")
+const GameplayCalendar = preload("res://game/systems/gameplay/gameplay_calendar.gd")
 var coordinator
 var _rules: Dictionary
 var _commands
 var calendar = Calendar.new()
+var _builtin_calendar: bool = false
+var _fractional_fast_ticks: int = 0 # Runtime profiler counter, never saved.
 
 func _init(rules: Dictionary) -> void:
 	if not valid_rules(rules):
@@ -23,8 +26,8 @@ func _init(rules: Dictionary) -> void:
 	coordinator = Core.new(state, Model.validate.bind(_rules), _commands.normalize, _commands.plan)
 	coordinator._domain_owner = _commands
 	if _rules.get("gameplay", false):
-		var adapter = preload("res://game/systems/gameplay/gameplay_calendar.gd")
-		configure_calendar(adapter.deadlines, adapter.apply)
+		if configure_calendar(GameplayCalendar.deadlines, GameplayCalendar.apply):
+			_builtin_calendar = true
 
 func get_rules() -> Dictionary:
 	return _rules.duplicate(true)
@@ -33,11 +36,28 @@ func get_rules() -> Dictionary:
 func configure_calendar(source: Callable, consumer: Callable) -> bool:
 	if coordinator == null or coordinator.is_busy():
 		return false
-	return calendar.configure(source, consumer)
+	var installed: bool = calendar.configure(source, consumer)
+	if installed:
+		_builtin_calendar = false # A custom provider may reject even zero-minute ticks.
+	return installed
 
 func tick(delta: float) -> bool:
 	if coordinator == null or not is_finite(delta) or delta < 0:
 		return false
+	# The bundled gameplay adapter only schedules deadlines at whole GameMinutes
+	# and has no pending-choice gate. A replacement/custom adapter can refuse an
+	# interval, so it always takes the original validated planner path.
+	if _builtin_calendar and calendar.provider == GameplayCalendar.deadlines and calendar.handler == GameplayCalendar.apply:
+		var probe: Dictionary = coordinator.clock_probe()
+		if not probe.is_empty():
+			var accumulated: float = float(probe.remainder) + delta * _rules.minutes_per_real_second
+			if not is_finite(accumulated) or accumulated > Calendar.MAX_MINUTE - int(probe.minute):
+				return false
+			if int(floor(accumulated + 0.000000001)) == 0:
+				var applied: bool = coordinator.apply_fractional_remainder(maxf(0.0, accumulated))
+				if applied:
+					_fractional_fast_ticks += 1
+				return applied
 	var drafts: Array = []
 	return coordinator.apply_runtime(func(state):
 		var accumulated: float = state.clock_remainder + delta * _rules.minutes_per_real_second
