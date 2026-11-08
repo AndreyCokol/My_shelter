@@ -3,7 +3,10 @@ extends RefCounted
 const DURATION := 120
 const RESTED_DURATION := 90
 const Construction = preload("res://game/systems/shelter/construction.gd")
-const FOOD := "crop.potato"
+# One unit per shift, selected from trusted GameRules.food.accepted_food_type_ids.
+# Never use residents' reserved allocations, even when the same item stack
+# includes both reserved and unreserved portions.
+const FOOD_UNITS_PER_SHIFT := 1
 const JOBS := {
 	"sort": {"label": "Разобрать утиль", "output": "material.salvage", "quantity": 3},
 	"seed": {"label": "Подготовить семена", "output": "seed.basic", "quantity": 2},

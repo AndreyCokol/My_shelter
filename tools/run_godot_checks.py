@@ -21,6 +21,7 @@ commands = [
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_ruleset_compat_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/e2e/run_gameplay_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/e2e/run_food_catalog_tests.gd'],
+    ['--headless', '--path', '.', '--script', 'game/tests/e2e/run_resident_work_food_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/e2e/run_edge_tests.gd'],
     ['--headless', '--max-fps', '60', '--path', '.', '--script', 'game/tests/e2e/run_runtime_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/e2e/run_combat_equipment_tests.gd'],
@@ -49,7 +50,7 @@ for args in commands:
     if args == ['--version'] and not run.stdout.strip().startswith('4.7.2.stable.'):
         print('FAIL: expected Godot 4.7.2 stable')
         sys.exit(1)
-    if '--script' in args and not re.search(r'(CORE|CAMPAIGN|ROUTER|EVENT|CALENDAR|PERFORMANCE|RECEIPT|RULESET|GAMEPLAY|FOOD CATALOG|EDGE|RUNTIME|COMBAT|UI CONTENT|ASSET|WORLD|LAYOUT) TESTS: [1-9][0-9]* checks, 0 failures', run.stdout):
+    if '--script' in args and not re.search(r'(CORE|CAMPAIGN|ROUTER|EVENT|CALENDAR|PERFORMANCE|RECEIPT|RULESET|GAMEPLAY|FOOD CATALOG|RESIDENT WORK FOOD|EDGE|RUNTIME|COMBAT|UI CONTENT|ASSET|WORLD|LAYOUT) TESTS: [1-9][0-9]* checks, 0 failures', run.stdout):
         print('FAIL: missing successful test completion marker')
         sys.exit(1)
     if run.returncode or any(marker in run.stdout for marker in ('SCRIPT ERROR:', 'ERROR:', 'WARNING: ObjectDB instances leaked')):
