@@ -2,6 +2,7 @@ extends RefCounted
 
 const Numbers = preload("res://game/state/json_numbers.gd")
 const MAX_MINUTE: int = 9007199254740991
+const MINUTE_EPSILON := 0.000000001
 
 # Trusted domain adapters only. Provider returns all boundaries in (from, target],
 # including derived ones (e.g. both maturity and spoilage), without side effects.
@@ -17,6 +18,9 @@ func configure(source: Callable, consumer: Callable) -> bool:
 	handler = consumer
 	_configured = source.is_valid()
 	return true
+
+func has_adapter() -> bool:
+	return _configured or provider.is_valid()
 
 static func valid_minute(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= MAX_MINUTE and value == floor(value)

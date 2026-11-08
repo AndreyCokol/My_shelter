@@ -27,7 +27,8 @@ static func new_state(rules: Dictionary) -> Dictionary:
 			state.world_states.locations = {}
 	return state
 
-static func validate(state: Dictionary, rules: Dictionary) -> bool:
+# The clock transaction can skip rescanning the already validated receipt log.
+static func validate(state: Dictionary, rules: Dictionary, check_receipts: bool = true) -> bool:
 	var shape := new_state(rules)
 	var legacy: bool = shape.schema_version == 4 and state.get("schema_version") == 3
 	if state.size() != shape.size():
@@ -127,9 +128,10 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	for key in state.resource_revisions:
 		if not key is String or not Core.valid_integer(state.resource_revisions[key]):
 			return false
-	for id in state.completed_actions:
-		if not Receipts.valid(id, state.completed_actions[id], state.state_revision, true):
-			return false
+	if check_receipts:
+		for id in state.completed_actions:
+			if not Receipts.valid(id, state.completed_actions[id], state.state_revision, true):
+				return false
 	if rules.get("gameplay", false) and not Gameplay.validate(state, rules):
 		return false
 	return true
