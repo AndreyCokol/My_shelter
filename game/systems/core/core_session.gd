@@ -124,7 +124,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if _recovery_token != 0 or _busy:
 		return _result(false, "UNAVAILABLE", action_id)
 	if _state.completed_actions.has(action_id):
-		var receipt: Dictionary = _state.completed_actions[action_id]
+		var receipt = _state.completed_actions[action_id]
 		if Receipts.fingerprint(receipt) != fingerprint:
 			return _result(false, "ACTION_CONFLICT", action_id)
 		return Receipts.replay(action_id, receipt)
