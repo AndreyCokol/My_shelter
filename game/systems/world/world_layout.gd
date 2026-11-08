@@ -1,7 +1,8 @@
 extends RefCounted
 
 const Plans = preload("res://game/systems/world/building_plan.gd")
-const VERSION = 4
+const VERSION = 5
+const DISTINCT_HOSPITAL_VERSION = 5
 const BUILDING_VERSION = 4
 const SEGMENT_VERSION = 1
 const ORIGINAL_ROADS = [[0, 1], [0, 2], [1, 3], [2, 3]]
@@ -89,7 +90,7 @@ static func valid_manifest(value) -> bool:
 	if not value is Dictionary or value.size() != 3:
 		return false
 	var seed_value = value.get("seed")
-	return (seed_value is int or seed_value is float) and is_finite(seed_value) and seed_value >= 0 and seed_value <= MAX_SEED and seed_value == floor(seed_value) and value.get("generator_version") in [1, 2, 3, VERSION] and value.get("catalog_version") == CATALOG_VERSION
+	return (seed_value is int or seed_value is float) and is_finite(seed_value) and seed_value >= 0 and seed_value <= MAX_SEED and seed_value == floor(seed_value) and value.get("generator_version") in [1, 2, 3, 4, VERSION] and value.get("catalog_version") == CATALOG_VERSION
 
 # Local streams prevent future loot rolls from changing the geometry.
 static func _variant_order(world_seed: int, stream: String) -> Array:
@@ -160,10 +161,10 @@ static func _expand_interior(node: Dictionary, variant: int) -> void:
 		node.loot = Vector2(769 + variant * 75, 326)
 		node.enemy = Vector2(902, 253)
 
-static func _apply_floor_plan(node: Dictionary, world_seed: int, building: String, floor: int, variant: int) -> void:
+static func _apply_floor_plan(node: Dictionary, world_seed: int, building: String, floor: int, variant: int, architectural_slot: int = -1) -> void:
 	var fingerprint := ("%d:%s:floor-plan" % [world_seed, building]).sha256_text().substr(0, 8)
 	var pattern := variant * 2 + fingerprint.hex_to_int() % 2
-	var plan := Plans.get_plan(node.kind, floor, pattern)
+	var plan := Plans.get_plan(node.kind, floor, pattern, architectural_slot)
 	node.bounds = Rect2(LEGACY_FLOOR.position, INTERIOR_SIZE)
 	node.building_id = building
 	node.floor_number = floor
@@ -310,7 +311,8 @@ static func build(world_seed: int, version: int = VERSION) -> Dictionary:
 			obstacles.append(Rect2(101 + 18 * floor_index, 112 + 11 * floor_index, 20, 26))
 			nodes[id] = _record("hospital", "Больница %d · этаж %d" % [district + 1, floor_index + 1], "hospital:%d:%d" % [floor_index, variant], obstacles)
 			if version >= BUILDING_VERSION:
-				_apply_floor_plan(nodes[id], world_seed, hospital(district, 0), floor_index + 1, variant)
+				_apply_floor_plan(nodes[id], world_seed, hospital(district, 0), floor_index + 1, variant,
+					district * FLOORS + floor_index if version >= DISTINCT_HOSPITAL_VERSION else -1)
 			elif version >= 3:
 				_expand_interior(nodes[id], variant)
 			_connect(nodes, exterior if floor_index == 0 else hospital(district, floor_index - 1), id)
