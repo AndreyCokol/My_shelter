@@ -63,8 +63,15 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 		state.player.position = request.context.departure_position.duplicate(true)
 		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
 	if rules.get("gameplay", false):
-		if kind in ["scene.transition", "inventory.purchase", "inventory.claim_parcel"] and not state.world_states.first_enemy_defeated:
-			return fail("UNAVAILABLE")
+		if not state.world_states.first_enemy_defeated:
+			# The shelter is an unconditional player escape, including onboarding.
+			# Only ordinary world travel and locked System resources need the first victory.
+			var returning_from_shelter: bool = kind == "scene.transition" and state.scene.current_scene_id == "shelter" and p.get("destination_scene_id") == state.scene.return_scene_id
+			var entering_shelter: bool = kind == "scene.transition" and p.get("destination_scene_id") == "shelter"
+			if kind == "scene.transition" and not entering_shelter and not returning_from_shelter:
+				return fail("UNAVAILABLE")
+			if kind in ["inventory.purchase", "inventory.claim_parcel"]:
+				return fail("UNAVAILABLE")
 		if kind.begins_with("game."):
 			var keys := ["world", "farm", "residents", "inventory:player", "inventory:storage"]
 			if kind in ["game.expand_farm", "game.fulfill_contract", "game.trade_camp", "game.claim_expedition", "game.resolve_district"]:
