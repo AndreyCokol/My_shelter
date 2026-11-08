@@ -23,11 +23,55 @@ const LABELS := {
 }
 static var _catalog := {}
 
-static func get_plan(kind: String, floor: int, pattern: int) -> Dictionary:
-	var key := "%s:%d:%d" % [kind, floor, pattern]
+# The optional v5 architectural slot adds real physical partitions and must
+# never affect historical v4 plans or saved procedural manifests.
+static func get_plan(kind: String, floor: int, pattern: int, architectural_slot: int = -1) -> Dictionary:
+	var key := "%s:%d:%d:%d" % [kind, floor, pattern, architectural_slot]
 	if not _catalog.has(key):
-		_catalog[key] = checked(_generate(kind, floor, pattern), kind, floor, pattern)
+		var plan: Dictionary = checked(_generate(kind, floor, pattern), kind, floor, pattern)
+		if kind == "hospital" and architectural_slot >= 0:
+			plan = _with_hospital_alcove(plan, architectural_slot)
+		_catalog[key] = plan
 	return _catalog[key]
+
+# V5: 2 different upper rooms x 2 alcove depths x 4 partition lengths.
+# These are L-shaped physical wall segments visible in the floor artwork and
+# traversable around by the actor. All variants are in the northern part of
+# an upper room, far from its south corridor door and its north-west furniture.
+# Historical v4 saves never request an architectural_slot.
+static func _with_hospital_alcove(source: Dictionary, architectural_slot: int) -> Dictionary:
+	var plan: Dictionary = source.duplicate(true)
+	if architectural_slot < 0 or architectural_slot >= 16:
+		push_error("Invalid hospital architectural slot")
+		return plan
+	var room_id := "room_%02d" % (1 + architectural_slot % 2)
+	var room: Dictionary = plan.rooms.get(room_id, {})
+	if room.is_empty():
+		push_error("Hospital floor is missing an upper room")
+		return plan
+	var length := 64.0 + float(architectural_slot / 4) * 22.0
+	var height_offset := 16.0 + float((architectural_slot / 2) % 2) * 12.0
+	var alcove := Rect2(
+		Vector2(room.rect.end.x - length - 20, room.rect.position.y + height_offset),
+		Vector2(length, 10))
+	var return_wall := Rect2(
+		Vector2(room.rect.end.x - 29, alcove.end.y),
+		Vector2(9, 16))
+	var inset: Rect2 = room.rect.grow(-14)
+	if not inset.encloses(alcove) or not inset.encloses(return_wall):
+		push_error("Hospital alcove does not fit room geometry")
+		return plan
+	# The existing floor generator puts furnishings on the north-west side
+	# of upper rooms. Keep these architectural walls clear of every fixture.
+	for fixture in plan.furniture:
+		if fixture.room == room_id and (fixture.rect.grow(8).intersects(alcove)
+				or fixture.rect.grow(8).intersects(return_wall)):
+			push_error("Hospital alcove would intersect room furniture")
+			return plan
+	plan.walls.append(alcove)
+	plan.walls.append(return_wall)
+	assert(valid(plan), "The specialized hospital plan must pass wall, room and door validation")
+	return plan
 
 static func _generate(kind: String, floor: int, pattern: int) -> Dictionary:
 	var plan := structure(kind, floor, pattern)
