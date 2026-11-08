@@ -201,6 +201,7 @@ func _draw() -> void:
 	var footer := Rect2(0, size.y - 19, size.x, 19)
 	draw_rect(footer, Color("111511", 0.79) if safe else Color("0e141a", 0.86))
 	draw_line(Vector2(0, footer.position.y), Vector2(size.x, footer.position.y), Skin.trim(safe), 1.0)
+	caption(self, Vector2(9, size.y - 5), "ЛКМ Атака   ·   E Подобрать/взаимодействовать   ·   Space Уклонение   ·   Ctrl Круг   ·   Tab Меню   ·   G Убежище", 8)
 
 
 func _fit(value: String, max_width: float, font_size: int) -> String:
