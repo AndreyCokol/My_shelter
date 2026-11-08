@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Art = preload("res://game/ui/asset_theme.gd")
+const Radial = preload("res://game/ui/radial_menu.gd")
 var checks: int = 0
 var failures: int = 0
 
@@ -37,6 +38,16 @@ func run() -> void:
 	app.ui.close_panel()
 	await process_frame
 	var viewport: Vector2 = app.ui.get_viewport_rect().size
+	var center: Vector2 = app.ui.radial.wheel_center()
+	var wheel_rect := Rect2(center - Vector2.ONE * Radial.RADIUS,
+		Vector2.ONE * Radial.RADIUS * 2.0)
+	check(Rect2(Vector2.ZERO, viewport).encloses(wheel_rect)
+		and wheel_rect.position.x >= viewport.x * 0.64
+		and wheel_rect.end.y < viewport.y * 0.84,
+		"PC radial wheel fits to the right of construction and above bottom shortcuts")
+	check([app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation].all(
+		func(section): return not wheel_rect.intersects(section.get_global_rect())),
+		"PC radial wheel does not obscure minimap, hotbar or bottom navigation")
 	for section in [app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation]:
 		check(Rect2(Vector2.ZERO, viewport).encloses(section.get_global_rect()), "HUD section fits design viewport: " + section.name)
 	var quick: Button = app.ui.shelter_nav_button
