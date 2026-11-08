@@ -8,6 +8,7 @@ const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const Enemy = preload("res://game/entities/enemies/enemy.gd")
 const Receipts = preload("res://game/systems/core/action_receipt.gd")
+const Loadout = preload("res://game/systems/combat/combat_loadout.gd")
 
 static func integer(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= 9007199254740991 and value == floor(value)
@@ -20,6 +21,7 @@ static func seed(state: Dictionary) -> void:
 	state.scene.current_scene_id = "hospital"
 	state.player.position = {"x": 120, "y": 260}
 	state.player.hp = 100
+	state.player.equipped_weapon_instance_id = ""
 	state.crops.plots = []
 	for id in ["plot_1", "plot_2"]:
 		state.crops.plots.append(empty_plot(id))
@@ -35,6 +37,8 @@ static func seed(state: Dictionary) -> void:
 
 static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not integer(state.player.get("hp")) or state.player.hp > 100:
+		return false
+	if not Loadout.valid_equipment(state, rules):
 		return false
 	var plot_counts := [2, 3] if state.schema_version == 4 else [2]
 	if not state.crops.get("plots") is Array or not state.crops.plots.size() in plot_counts:

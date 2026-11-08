@@ -1,6 +1,7 @@
 extends CharacterBody2D
 
 const DODGE_COOLDOWN := 0.85
+const Combat = preload("res://game/systems/combat/combat_loadout.gd")
 
 var app
 var health: int = 100
@@ -57,15 +58,16 @@ func try_attack(target: Vector2) -> bool:
 		return false
 	if target.distance_to(global_position) > 1:
 		facing = global_position.direction_to(target)
-	attack_cooldown = 0.45
+	var attack_profile: Dictionary = Combat.profile(app.snapshot(), app.rules())
+	attack_cooldown = float(attack_profile.cooldown)
 	swing_remaining = 0.15
 	var enemy = app.enemy()
 	if is_instance_valid(enemy):
 		enemy.hear_noise(global_position, 132.0)
-	if is_instance_valid(enemy) and enemy.health > 0 and global_position.distance_to(enemy.global_position) < 64:
+	if is_instance_valid(enemy) and enemy.health > 0 and global_position.distance_to(enemy.global_position) < float(attack_profile.reach):
 		var toward: Vector2 = global_position.direction_to(enemy.global_position)
 		if facing.dot(toward) > 0.2 and enemy.has_clear_line_to(self):
-			enemy.take_damage(25)
+			enemy.take_damage(int(attack_profile.damage))
 	return true
 
 func take_damage(amount: int) -> bool:

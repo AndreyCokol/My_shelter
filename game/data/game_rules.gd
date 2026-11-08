@@ -10,11 +10,16 @@ static func build() -> Dictionary:
 		"offers": {"seed": {"type_id": "seed.basic", "quantity": 2, "price": 3}},
 		"parcels": {"starter": {"type_id": "seed.basic", "quantity": 4, "coins": 10, "eligible": true}},
 		"rewards": {"system": {"type_id": "tool.basic", "quantity": 1, "hero_xp": 10, "coins": 8, "eligible": false}},
+		"combat": {"unarmed": {"damage": 25, "reach": 64.0, "cooldown": 0.45},
+			"weapons": {"tool.basic": {"damage": 38, "reach": 76.0, "cooldown": 0.55}},
+			"xp_per_bonus": 10, "max_bonus": 5},
 		"crop": {"grow_minutes": 180, "spoil_minutes": 120, "yield_units": 3},
 		"food": {"accepted_food_type_ids": ["crop.potato"], "units_per_resident": 2, "reserve_mode": "reserve"},
 		"resource_respawn_minutes": 60, "resource_quantity": 2, "farm_expansion_cost": 12, "housing_required": false}
 
 static func validate(rules: Dictionary) -> bool:
+	if not preload("res://game/systems/combat/combat_loadout.gd").valid_catalog(rules):
+		return false
 	if rules.has("world_seed"):
 		var layout = preload("res://game/systems/world/world_layout.gd")
 		if not rules.world_seed is int or rules.world_seed < 0 or rules.world_seed > layout.MAX_SEED or rules.get("scenes") != layout.entries():
