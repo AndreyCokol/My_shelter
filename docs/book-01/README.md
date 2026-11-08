@@ -12,13 +12,14 @@
 | [02-story.md](02-story.md) | Необязательные сюжетные задания, добровольные NPC, редакторская политика |
 | [03-requirements.md](03-requirements.md) | **PRD/SRS**, приоритеты, FR/NFR, MVP |
 | [04-five-agent-workplan.md](04-five-agent-workplan.md) | A1–A5 + A0: задачи, владельцы файлов, gates и процесс GitHub |
-| [05-integration-contracts.md](05-integration-contracts.md) | **Единый кандидат технического контракта:** команды, события, GameClock, ресурсы, save/recovery |
+| [05-integration-contracts.md](05-integration-contracts.md) | **Единый контракт-кандидат v1.6:** реальные команды, schema v4, события, farm/LOS, GameClock, replay, save/recovery |
 | [06-application-architecture-proposal.md](06-application-architecture-proposal.md) | Предлагаемая модульная архитектура Godot |
 | [08-g0-decision-record.md](08-g0-decision-record.md) | **12 утверждённых продуктовых решений** и остающиеся технические проверки |
 | [09-sandbox-gameplay-design.md](09-sandbox-gameplay-design.md) | Свободный игровой цикл и способы продолжать игру без сюжетного задания |
 | [10-qa-acceptance-matrix.md](10-qa-acceptance-matrix.md) | Contract tests, E2E, негативные сценарии и независимый A0 audit |
 | [11-technical-decisions-and-handoff.md](11-technical-decisions-and-handoff.md) | Делегированные инженерные кандидаты: InputMap, Godot, время, ресурсы, G1a и ownership/claims |
 | [12-next-development-backlog.md](12-next-development-backlog.md) | Следующие задачи M0–M3 для A0–A5, технические зависимости и приёмка полноценного закрытого прототипа |
+| [13-implementation-verification-20261108.md](13-implementation-verification-20261108.md) | Воспроизводимый обзор PR #50–53, измерения журнала операций, текущий состав единого контракта v1.6 и оставшиеся блокеры G0 |
 
 **Второй контракт `07-contract-spec-proposal.md` из старого PR #5 не является действующим документом и не должен одновременно нормативно применяться с 05.** Исторический кандидат 07 консолидирован в 05; нумерация 07 намеренно не используется для сохранения истории.
 
@@ -34,5 +35,5 @@
 - **[К]** — сведения из литературного источника; **[П]** — предлагаемая/утверждённая игровая адаптация; **[?]** — не установленное фактическое правило.
 - Книга 1 [досье](../../lore/books/01-kartoshka-est.md) — источник стартовых мотивов, не обязательная хронология для игрока; в исследовательском каталоге есть 13 томов, но их механики **не** входят автоматически в игру.
 - **G0 ещё не APPROVED:** [Issue #4](https://github.com/AndreyCokol/My_shelter/issues/4). Уже принятые продуктовые решения не равны принятой ревизии API и не являются лицензией начать писать код; для G0 нужны review A1–A5, merge единой документации, owner-approved SHA.
-- **Фактическая реализация:** в `main` нет `project.godot`, Windows exe или выполненных E2E. Нельзя называть NOT_RUN тест PASS.
+- **Фактическая реализация (08.11.2026):** `main` всё ещё содержит проектные документы, **но** в открытой цепочке [PR #31](https://github.com/AndreyCokol/My_shelter/pull/31) → [#50](https://github.com/AndreyCokol/My_shelter/pull/50) → [#51](https://github.com/AndreyCokol/My_shelter/pull/51) → [#52](https://github.com/AndreyCokol/My_shelter/pull/52) → [#53](https://github.com/AndreyCokol/My_shelter/pull/53) уже существует запускаемый Godot 4.7.2-прототип, автоматические Linux/Windows тесты и headless export. **Ручной Windows GUI/UX, A1–A5/A0 approvals и G0 owner-approved SHA отсутствуют**; не выдавать автоматические проверки за личную приёмку.
 - Публичное использование литературных имён/узнаваемых защищённых материалов и ассетов требует отдельной проверки прав. **Текущий план распространяется только на закрытый личный прототип.**
