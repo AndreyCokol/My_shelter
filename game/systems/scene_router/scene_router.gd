@@ -32,7 +32,7 @@ func mount_current() -> bool:
 	var ticket := prepare_runtime(_session.get_snapshot(), "load")
 	return ticket.get("ok", false) and bool(ticket.install.call())
 
-func try_transition(action_id: String, destination_scene_id: String, entry_point_id: String, actor_health: int = -1, enemy_health: int = -1) -> Dictionary:
+func try_transition(action_id: String, destination_scene_id: String, entry_point_id: String, actor_health: int = -1, enemy_health: int = -1, enemy_runtime: Dictionary = {}) -> Dictionary:
 	if _transitioning or _session.is_busy():
 		return _error("UNAVAILABLE", action_id)
 	var state: Dictionary = _session.get_snapshot()
@@ -50,6 +50,7 @@ func try_transition(action_id: String, destination_scene_id: String, entry_point
 		request.context.health = actor_health
 	if enemy_health >= 0:
 		request.context.enemy_health = enemy_health
+		request.context.enemy_runtime = enemy_runtime.duplicate(true)
 	var restore_position: bool = state.schema_version != 4 or (
 		state.scene.current_scene_id == "shelter" and destination_scene_id == state.scene.return_scene_id and entry_point_id == "default")
 	request.context.arrival_position = state.scene.positions.get(destination_scene_id, staged.position).duplicate(true) if restore_position else staged.position
