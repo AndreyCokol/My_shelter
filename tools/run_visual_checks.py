@@ -44,7 +44,7 @@ for name in ['shelter', 'radial', 'inventory', 'farm', 'rest', 'residents',
         sys.exit('VISUAL CHECKS: FAIL missing Full HD image ' + name)
     with image.open('rb') as stream:
         header = stream.read(24)
-    if header[:8] != b'\\x89PNG\\r\\n\\x1a\\n':
+    if header[:8] != bytes.fromhex('89504e470d0a1a0a'):
         sys.exit('VISUAL CHECKS: FAIL invalid PNG header ' + name)
     width, height = struct.unpack('>II', header[16:24])
     if (width, height) != (1920, 1080):
