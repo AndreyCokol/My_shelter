@@ -74,6 +74,15 @@ func _initialize() -> void:
 	check(small.coordinator.get_snapshot().player.xp == state.player.xp and small.coordinator.get_snapshot().game_time_minutes == 10, "CT-44 large and small advances equivalent")
 	var fractional = make_campaign()
 	check(fractional.tick(0.4) and fractional.coordinator.get_snapshot().player.xp == 0, "fractional tick does not cross boundary")
+	var revision_before: int = int(fractional.coordinator.get_snapshot().state_revision)
+	var subminute_ok := true
+	var frame_started: int = Time.get_ticks_usec()
+	for frame in range(50):
+		subminute_ok = fractional.tick(0.01) and subminute_ok
+	var subminute_us: int = Time.get_ticks_usec() - frame_started
+	var fractional_state: Dictionary = fractional.coordinator.get_snapshot()
+	print("FRACTIONAL TICK PERF: 50 frames in %.3f ms, revision_delta=%d" % [subminute_us / 1000.0, int(fractional_state.state_revision) - revision_before])
+	check(subminute_ok and fractional_state.state_revision == revision_before and absf(float(fractional_state.clock_remainder) - 0.9) < 0.00001, "A0-F03 sub-minute frames preserve revision and avoid full calendar commit")
 	var token: int = fractional.coordinator.pauses.acquire_pause("modal")
 	var before: Dictionary = fractional.coordinator.get_snapshot()
 	check(not fractional.tick(9.0) and fractional.coordinator.get_snapshot() == before, "modal pause preserves remainder and domains")
