@@ -6,6 +6,7 @@ const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const Receipts = preload("res://game/systems/core/action_receipt.gd")
 
 static func integer(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= 9007199254740991 and value == floor(value)
@@ -83,7 +84,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if resident.status == "joined" and (resident.food_receipt_id.is_empty() or not state.completed_actions.has(resident.food_receipt_id)):
 			return false
 		if resident.status == "joined":
-			var receipt: Dictionary = state.completed_actions[resident.food_receipt_id].result.data
+			var receipt: Dictionary = Receipts.data(state.completed_actions[resident.food_receipt_id])
 			if receipt.get("resident_id") != resident.id or receipt.get("reserve_mode") != rules.food.reserve_mode or receipt.get("units") != rules.food.units_per_resident or not receipt.get("food_allocations") is Array:
 				return false
 			var total: int = 0
