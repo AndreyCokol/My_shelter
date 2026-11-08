@@ -4,6 +4,8 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
+const GameplayState = preload("res://game/state/gameplay_state.gd")
+const Enemy = preload("res://game/entities/enemies/enemy.gd")
 var calendar
 var rules: Dictionary
 
@@ -42,12 +44,33 @@ func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var result := _plan(state, request)
 	if result.get("ok", false):
 		if rules.get("gameplay", false):
+			var scene: String = before.scene.current_scene_id
+			if request.command_type == "game.enemy_defeated":
+				record_enemy_health(state, scene, Enemy.MAX_HEALTH)
+			elif request.context.has("enemy_health"):
+				var health = request.context.enemy_health
+				if not GameplayState.has_live_enemy(before, scene) or not Core.valid_integer(health) or health > Enemy.MAX_HEALTH:
+					return fail("INVALID_ARGUMENT")
+				record_enemy_health(state, scene, int(health))
+			if state.world_states.get("enemy_health", {}) != before.world_states.get("enemy_health", {}) and state.resource_revisions.world == before.resource_revisions.world:
+				bump(state, ["world"])
 			Gameplay.refresh_quests(state)
 		if request.command_type != "clock.rest":
 			result.events = command_events(before, state, request, result)
 			if request.command_type.begins_with("game."):
 				result.events.append({"event_type": "gameplay_changed", "payload": {"command_type": request.command_type}})
 	return result
+
+static func record_enemy_health(state: Dictionary, scene: String, health: int) -> void:
+	var injuries: Dictionary = state.world_states.get("enemy_health", {})
+	if health < Enemy.MAX_HEALTH:
+		injuries[scene] = health
+	else:
+		injuries.erase(scene)
+	if injuries.is_empty():
+		state.world_states.erase("enemy_health")
+	else:
+		state.world_states.enemy_health = injuries
 
 func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var p: Dictionary = request.payload

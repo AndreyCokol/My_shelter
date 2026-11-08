@@ -18,6 +18,7 @@ const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const GameplayState = preload("res://game/state/gameplay_state.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
 	location_id = id
@@ -128,13 +129,13 @@ func bind(runtime) -> void:
 	foe = null
 	var state: Dictionary = app.snapshot()
 	hospital_cache = Layout.hospital_cache(location_id, state.world_states.layout) if state.schema_version == 4 else {}
-	var defeated: bool = state.world_states.first_enemy_defeated if location_id in ["", "hospital"] else state.world_states.get("locations", {}).get(location_id, {}).get("defeated", false)
-	var patrol: bool = state.schema_version == 4 and Layout.street_has_patrol(location_id, state.world_states.layout) and not location_id in state.world_states.get("cleared_patrols", [])
-	if (scene_id == "hospital" and not defeated) or patrol:
+	var current_id: String = state.scene.current_scene_id
+	if GameplayState.has_live_enemy(state, current_id):
 		foe = preload("res://game/entities/enemies/enemy.gd").new()
 		foe.app = app
+		foe.health = int(state.world_states.get("enemy_health", {}).get(current_id, foe.health))
 		foe.position = layout.get("enemy", Vector2(330, 190))
-		if patrol:
+		if state.schema_version == 4 and Layout.street_has_patrol(location_id, state.world_states.layout):
 			foe.patrol = layout.patrol
 			foe.patrol_index = floori(float(state.game_time_minutes) / 30) % foe.patrol.size()
 			foe.position = foe.patrol[foe.patrol_index]

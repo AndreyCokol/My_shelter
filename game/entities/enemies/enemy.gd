@@ -1,7 +1,8 @@
 extends CharacterBody2D
 
 var app
-var health: int = 100
+const MAX_HEALTH := 100
+var health: int = MAX_HEALTH
 var hit_cooldown: float = 0.0
 var reported: bool = false
 var patrol := PackedVector2Array()
@@ -74,6 +75,6 @@ func _draw() -> void:
 		draw_rect(Rect2(-1, -32, 3, 5), Color("f4c56f"))
 		draw_rect(Rect2(-1, -26, 3, 2), Color("f4c56f"))
 	draw_rect(Rect2(-13, -22, 26, 3), Color("362a30"))
-	draw_rect(Rect2(-13, -22, 26.0 * health / 100, 3), Color("df8e78"))
+	draw_rect(Rect2(-13, -22, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
 	draw_circle(Vector2(-4, -2), 2, Color("242830"))
 	draw_circle(Vector2(4, -2), 2, Color("242830"))
