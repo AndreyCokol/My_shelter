@@ -80,3 +80,46 @@ func _draw() -> void:
 	draw_rect(Rect2(-13, -22, 26.0 * health / MAX_HEALTH, 3), Color("df8e78"))
 	draw_circle(Vector2(-4, -2), 2, Color("242830"))
 	draw_circle(Vector2(4, -2), 2, Color("242830"))
+
+# Persistent encounter state is optional in schema v4: old checkpoints still
+# reconstruct the deterministic initial patrol/position when no record exists.
+# Timers are frozen off-scene, just as the rest of the unmounted AI is.
+func runtime_snapshot() -> Dictionary:
+	return {
+		"position": {"x": float(position.x), "y": float(position.y)},
+		"last_noise": {"x": float(last_noise.x), "y": float(last_noise.y)},
+		"patrol_index": patrol_index,
+		"alert_remaining": alert_remaining,
+		"hit_cooldown": hit_cooldown,
+	}
+
+static func valid_runtime(data) -> bool:
+	if not data is Dictionary or data.size() != 5:
+		return false
+	for field in ["position", "last_noise"]:
+		var point = data.get(field)
+		if not point is Dictionary or point.size() != 2:
+			return false
+		for axis in ["x", "y"]:
+			var number = point.get(axis)
+			if not (number is int or number is float) or not is_finite(float(number)) or absf(float(number)) > 1000000.0:
+				return false
+	var index = data.get("patrol_index")
+	if not index is int or index < 0 or index >= 100:
+		return false
+	for field in ["alert_remaining", "hit_cooldown"]:
+		var remaining = data.get(field)
+		if not (remaining is int or remaining is float) or not is_finite(float(remaining)) or remaining < 0:
+			return false
+	if data.alert_remaining > SEARCH_DURATION or data.hit_cooldown > 1.0:
+		return false
+	return true
+
+func restore_runtime(data: Dictionary) -> void:
+	if not valid_runtime(data):
+		return
+	position = Vector2(data.position.x, data.position.y)
+	last_noise = Vector2(data.last_noise.x, data.last_noise.y)
+	patrol_index = int(data.patrol_index) % maxi(patrol.size(), 1)
+	alert_remaining = float(data.alert_remaining)
+	hit_cooldown = float(data.hit_cooldown)
