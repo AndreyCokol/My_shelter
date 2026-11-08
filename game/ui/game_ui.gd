@@ -91,12 +91,15 @@ func _ready() -> void:
 	top.add_child(hud)
 	var nav := HBoxContainer.new()
 	nav.position = Vector2(15, 53)
+	nav.add_theme_constant_override("separation", 2)
 	top.add_child(nav)
-	for entry in [["Рюкзак [I]", "inventory"], ["Задания [Tab]", "quests"], ["Магазин", "shop"], ["Меню [Esc]", "menu"]]:
+	# Short labels leave room for the always-available shelter action at 640 px.
+	for entry in [["Рюкзак", "inventory"], ["Задания", "quests"], ["Магазин", "shop"], ["Меню", "menu"]]:
 		var nav_button := button(nav, entry[0], open_panel.bind(entry[1]))
 		nav_button.focus_mode = Control.FOCUS_NONE
 		nav_button.icon = Art.icon(entry[1])
 		nav_button.expand_icon = false
+		nav_button.tooltip_text = entry[0] + {"inventory": " [I]", "quests": " [Tab]", "menu": " [Esc]", "shop": ""}.get(entry[1], "")
 	shelter_nav_button = button(nav, "Убежище [G]", toggle_shelter)
 	shelter_nav_button.name = "ShelterQuickButton"
 	shelter_nav_button.focus_mode = Control.FOCUS_NONE
@@ -141,11 +144,13 @@ func _ready() -> void:
 	titlebar.add_child(heading_icon)
 	heading = Label.new()
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.clip_text = true
+	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	heading.add_theme_font_size_override("font_size", 19)
 	titlebar.add_child(heading)
 	shelter_modal_button = button(titlebar, "Убежище [G]", toggle_shelter)
 	shelter_modal_button.name = "ShelterModalButton"
-	button(titlebar, "Закрыть [Esc]", close_panel)
+	button(titlebar, "× [Esc]", close_panel)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(530, 220)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
