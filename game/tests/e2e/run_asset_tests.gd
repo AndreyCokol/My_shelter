@@ -60,7 +60,11 @@ func run() -> void:
 		"hotbar and I/M/J/K navigation sit above the actual PC control ribbon")
 	check(app.ui.hud.get_node("QuestTracker").get_global_rect().position.y <= 80,
 		"approved quest tracker starts below the compact survival status")
-	var hero_shape: CollisionShape2D = app.hero.get_node("CollisionShape2D")
+	var hero_shape: CollisionShape2D = null
+	for part in app.hero.get_children():
+		if part is CollisionShape2D:
+			hero_shape = part
+			break
 	check(hero_shape != null and hero_shape.shape is CircleShape2D
 		and is_equal_approx(hero_shape.shape.radius, 9.0),
 		"visual hero sprite keeps 9px collision radius")
