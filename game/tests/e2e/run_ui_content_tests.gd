@@ -36,6 +36,12 @@ func run() -> void:
 	changed.offers.seed.quantity = 7
 	changed.resource_respawn_minutes = 95
 	check(Rules.validate(changed), "alternate offer price/quantity/respawn catalog valid")
+	var nonpotato: Dictionary = canonical.duplicate(true)
+	nonpotato.items["food.test_ration"] = {"name": "Полевой паёк", "edible": true}
+	nonpotato.food.accepted_food_type_ids = ["food.test_ration"]
+	check(Rules.validate(nonpotato) and "Полевой паёк" in UI.work_ration_hint(nonpotato) and not "Картофель" in UI.work_ration_hint(nonpotato), "A0-F09 work panel text follows the non-potato edible catalog")
+	nonpotato.food.accepted_food_type_ids = ["crop.potato", "food.test_ration"]
+	check("Картофель, Полевой паёк" in UI.work_ration_hint(nonpotato) and "1 ед. свободной еды" in UI.work_ration_hint(nonpotato), "A0-F09 multiple work foods are listed in the configured priority order")
 	check(UI.offer_description(canonical, "seed") != UI.offer_description(changed, "seed"), "pricing UI is derived from current rules")
 	check("7 ед." in UI.offer_description(changed, "seed") and "17 мон." in UI.offer_description(changed, "seed"), "shop adapts to alternative quantity and price")
 	check("95 игровых минут" in UI.shop_hint(changed, "seed"), "resource refresh hint respects configured duration")
