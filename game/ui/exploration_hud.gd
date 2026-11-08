@@ -4,6 +4,7 @@ signal panel_requested(id: String)
 signal slot_requested(index: int)
 
 const SHEET = preload("res://game/assets/project/hud/night_hud.png")
+const Skin = preload("res://game/ui/reference_skin.gd")
 const TITLE = Rect2(0, 0, 526, 57)
 const PORTRAIT = Rect2(0, 59, 131, 106)
 const HEART = Rect2(134, 59, 43, 42)
@@ -17,9 +18,9 @@ const NAV = [
 	["workshop", Rect2(471, 166, 153, 56), "Ремесло [K]"],
 ]
 const INK = Color("f3e4c1")
-const GOLD = Color("a48158")
-const SHADOW = Color("403024")
-const FILL = Color("181511")
+const GOLD = Color("b99559")
+const SHADOW = Color("493520")
+const FILL = Color("17140e")
 const MAP_AREA = Rect2(8, 11, 80, 73)
 
 var app
@@ -34,6 +35,10 @@ var capacity := 0
 var hero_xp := 0
 var coins := 0
 var shelter_xp := 0
+var current_scene_id := "shelter"
+var current_day: int = 1
+var current_hour: int = 0
+var current_minute: int = 0
 var zoom := 1.0
 var map_node: Control
 var hotbar: Control
@@ -139,8 +144,13 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 	health = app.hero.health
 	dodge_charge = app.hero.dodge_readiness()
 	hero_xp = state.player.xp
-	shelter_xp = state.shelter.xp
+		shelter_xp = state.shelter.xp
 	coins = state.wallet.system_coins
+	current_scene_id = str(state.scene.current_scene_id)
+	var elapsed_minutes := maxi(0, int(state.get("game_time_minutes", 0)))
+	current_day = 1 + elapsed_minutes / 1440
+	current_hour = (elapsed_minutes / 60) % 24
+	current_minute = elapsed_minutes % 60
 	load_units = 0
 	capacity = 0
 	for item in items:
@@ -159,39 +169,59 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 
 
 func _draw() -> void:
-	draw_texture_rect_region(SHEET, Rect2(6, 4, 202, 22), TITLE)
-	frame(self, Rect2(7, 28, 48, 53))
-	draw_texture_rect_region(SHEET, Rect2(6, 27, 50, 40.5), PORTRAIT)
-	caption(self, Vector2(11, 76), "%d XP" % hero_xp, 9)
-	draw_texture_rect_region(SHEET, Rect2(57, 29, 16, 16), HEART)
-	draw_texture_rect_region(SHEET, Rect2(57, 47, 16, 16), DODGE)
-	draw_texture_rect_region(SHEET, Rect2(58, 66, 14, 14), BACKPACK)
-	_bar(Rect2(74, 30, 110, 14), health / 100.0, Color("a72918"), "%d / 100" % health)
-	_bar(Rect2(74, 48, 105, 14), dodge_charge, Color("c77c16"), "Уклонение")
-	var load_ratio := float(load_units) / maxi(capacity, 1)
-	_bar(Rect2(74, 66, 73, 14), load_ratio, Color("466d3e"), "%d / %d" % [load_units, capacity])
-	caption(self, Vector2(153, 76), "Монеты %d · Уб. %d XP" % [coins, shelter_xp], 9)
-	frame(self, Rect2(7, 85, 115, 17))
-	draw_texture_rect_region(SHEET, Rect2(10, 86, 14, 14), QUEST)
-	caption(self, Vector2(28, 97), "Текущее задание", 10, Color("f5cc4d"))
-	frame(self, Rect2(9, 101, 203, 18))
-	caption(self, Vector2(16, 113), objective, 10)
-	caption(self, Vector2(8, 132), location_text, 9)
+	# Reference R1–R4: persistent title, portrait, gauges, compact session
+	# metadata and quest tracker. All metrics derive from actual runtime state.
+	var safe: bool = Skin.is_shelter(current_scene_id)
+	Skin.panel(self, Rect2(6, 4, 206, 23), safe)
+	draw_texture_rect_region(SHEET, Rect2(8, 5, 200, 21), TITLE)
+	draw_rect(Rect2(6, 4, 206, 23), Skin.trim(safe), false, 1)
+	Skin.panel(self, Rect2(7, 29, 208, 54), safe)
+	frame(self, Rect2(9, 31, 47, 49))
+	draw_texture_rect_region(SHEET, Rect2(10, 32, 45, 39), PORTRAIT)
+	caption(self, Vector2(16, 78), "XP %d" % hero_xp, 9)
+	draw_texture_rect_region(SHEET, Rect2(58, 30, 16, 16), HEART)
+	draw_texture_rect_region(SHEET, Rect2(58, 48, 16, 16), DODGE)
+	draw_texture_rect_region(SHEET, Rect2(58, 66, 15, 15), BACKPACK)
+	_bar(Rect2(75, 31, 135, 14), health / 100.0, Color("bc382b"), "%d / 100" % health)
+	_bar(Rect2(75, 49, 135, 14), dodge_charge, Color("d39a25"), "Уклонение %d%%" % roundi(dodge_charge * 100))
+	_bar(Rect2(75, 67, 135, 13), float(load_units) / maxi(capacity, 1), Color("397f7d"), "%d / %d предм." % [load_units, capacity])
+	# The reference's temperature/water bars are intentionally NOT faked:
+	# game-state currently has no temperature or hydration simulation.
+	Skin.panel(self, Rect2(219, 29, 136, 54), safe)
+	caption(self, Vector2(225, 43), "Опыт: %d" % hero_xp, 11)
+	caption(self, Vector2(225, 56), "Монеты: %d" % coins, 10, Color("e9c15c"))
+	caption(self, Vector2(225, 69), "День %d · %02d:%02d" % [current_day, current_hour, current_minute], 10)
+	caption(self, Vector2(225, 79), "Убежище XP: %d" % shelter_xp, 8, Color("aeaa91"))
+	Skin.panel(self, Rect2(7, 87, 209, 54), safe)
+	draw_texture_rect_region(SHEET, Rect2(12, 90, 15, 15), QUEST)
+	caption(self, Vector2(31, 101), "Текущее задание", 11, Color("f5cc4d"))
+	draw_line(Vector2(12, 106), Vector2(211, 106), Skin.trim(safe), 1.0)
+	caption(self, Vector2(14, 121), _fit(objective, 195.0, 10), 10)
+	caption(self, Vector2(14, 135), _fit(location_text, 195.0, 9), 9, Color("cdbd9c"))
+	var footer := Rect2(0, size.y - 19, size.x, 19)
+	draw_rect(footer, Color("111511", 0.79) if safe else Color("0e141a", 0.86))
+	draw_line(Vector2(0, footer.position.y), Vector2(size.x, footer.position.y), Skin.trim(safe), 1.0)
 
+
+func _fit(value: String, max_width: float, font_size: int) -> String:
+	var font := ThemeDB.fallback_font
+	if font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= max_width:
+		return value
+	var candidate := value
+	while not candidate.is_empty() and font.get_string_size(candidate + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > max_width:
+		candidate = candidate.substr(0, candidate.length() - 1)
+	return candidate + "…"
 
 func _bar(rect: Rect2, ratio: float, tint: Color, value: String) -> void:
-	frame(self, rect)
-	var inner := rect.grow(-3)
-	inner.size.x *= clampf(ratio, 0, 1)
-	draw_rect(inner, tint)
+	Skin.gauge(self, rect, ratio, tint, Skin.is_shelter(current_scene_id))
 	var font := ThemeDB.fallback_font
 	var width := font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
 	caption(self, Vector2(rect.end.x - width - 5, rect.position.y + 10), value, 9)
 
 
 func _draw_map() -> void:
-	frame(map_node, Rect2(0, 3, 96, 89))
-	map_node.draw_rect(MAP_AREA, Color("121510"))
+	Skin.panel(map_node, Rect2(0, 3, 96, 89), Skin.is_shelter(current_scene_id))
+	map_node.draw_rect(MAP_AREA, Color("182119") if Skin.is_shelter(current_scene_id) else Color("131b22"))
 	var world = app.scene_router.current_world()
 	if not is_instance_valid(world):
 		return
