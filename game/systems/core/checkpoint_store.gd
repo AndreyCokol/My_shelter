@@ -46,11 +46,21 @@ func restore_checkpoint(state: Dictionary) -> bool:
 	var absolute := ProjectSettings.globalize_path(path)
 	if not _stage_checkpoint(state):
 		return false
-	if FileAccess.file_exists(path) and DirAccess.copy_absolute(absolute, absolute + ".rejected") != OK:
-		DirAccess.remove_absolute(absolute + ".tmp")
-		return false
+	var archive := ""
+	if FileAccess.file_exists(path):
+		var prefix := absolute + ".rejected"
+		archive = prefix
+		var index := 1
+		while FileAccess.file_exists(archive) or DirAccess.dir_exists_absolute(archive):
+			archive = "%s.%d" % [prefix, index]
+			index += 1
+		if DirAccess.copy_absolute(absolute, archive) != OK:
+			DirAccess.remove_absolute(absolute + ".tmp")
+			return false
 	if DirAccess.rename_absolute(absolute + ".tmp", absolute) != OK:
 		DirAccess.remove_absolute(absolute + ".tmp")
+		if not archive.is_empty():
+			DirAccess.remove_absolute(archive)
 		return false
 	return true
 

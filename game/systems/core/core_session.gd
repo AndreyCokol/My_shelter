@@ -232,6 +232,9 @@ func _ensure_recovery() -> void:
 func is_busy() -> bool:
 	return _busy
 
+func requires_recovery() -> bool:
+	return _recovery_token != 0
+
 static func _valid_drafts(drafts, max_minute: int = 0) -> bool:
 	if not drafts is Array:
 		return false

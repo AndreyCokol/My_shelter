@@ -64,7 +64,12 @@ func _initialize() -> void:
 	session.state_loaded.connect(func(): loaded_count[0] += 1)
 	check(not session.load_checkpoint(store).ok and session.get_snapshot().counter == 3 and loaded_count[0] == 0, "CT-29 invalid linked receipt leaves live session intact")
 	check(session.load_checkpoint(store, true).ok and session.get_snapshot().counter == 2, "CT-11 explicit backup load")
+	var rejected := FileAccess.get_file_as_bytes(store.path + ".rejected")
+	check(rejected == JSON.stringify(corrupt).to_utf8_buffer(), "first backup restore retains the corrupted primary byte for byte")
 	check(session.execute(command("after-backup"), store).ok, "CT-11 restored backup accepts subsequent writes")
+	var displaced := FileAccess.get_file_as_bytes(store.path)
+	check(session.load_checkpoint(store, true).ok and session.get_snapshot().counter == 2, "repeating backup restore is supported")
+	check(FileAccess.get_file_as_bytes(store.path + ".rejected") == rejected and FileAccess.get_file_as_bytes(store.path + ".rejected.1") == displaced, "repeating restore keeps each displaced primary in its own archive")
 	var malformed := command("bad-context")
 	malformed.context = []
 	check(session.execute(malformed, store).code == "INVALID_ARGUMENT", "malformed context rejected")
@@ -89,7 +94,7 @@ func _initialize() -> void:
 	var whole: Array = Clock.ordered_deadlines(deadlines, 0, 12)
 	var split: Array = Clock.ordered_deadlines(deadlines, 0, 10) + Clock.ordered_deadlines(deadlines, 10, 12)
 	check(whole == split and whole[0].entity_id == "a" and whole[2].minute == 12, "CT-32 ordered scheduler, split interval equivalence")
-	for suffix in ["", ".tmp", ".bak", ".rejected"]:
+	for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
 	print("CORE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
