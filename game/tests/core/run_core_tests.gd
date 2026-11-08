@@ -48,7 +48,9 @@ func _initialize() -> void:
 	check(session.load_checkpoint(store).ok and session.get_snapshot().counter == 3, "CT-30 recover committed checkpoint")
 	check(session.execute(command("after"), store).code == "ALREADY_APPLIED" and emitted == 2, "CT-30 no duplicate recovery effect")
 	var corrupt: Dictionary = session.get_snapshot()
-	corrupt.completed_actions.one.result.state_revision = 9999
+	# Compact receipts link the original revision at index 2.
+	var corrupted_receipt: Array = corrupt.completed_actions["one"]
+	corrupted_receipt[2] = 9999
 	var file := FileAccess.open(store.path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(corrupt))
 	file.close()

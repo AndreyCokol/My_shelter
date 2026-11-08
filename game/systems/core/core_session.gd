@@ -5,10 +5,12 @@ signal state_loaded
 
 const JsonNumbers = preload("res://game/state/json_numbers.gd")
 const EventBus = preload("res://game/systems/core/event_bus.gd")
+const Receipts = preload("res://game/systems/core/action_receipt.gd")
 const PauseRegistry = preload("res://game/systems/core/pause_registry.gd")
 var pauses = PauseRegistry.new()
 var events = EventBus.new()
 var _load_serial: int = 0
+var _legacy_receipts_present: bool = false
 var _state: Dictionary = initial_state()
 var _busy: bool = false
 var _recovery_token: int = 0
@@ -29,6 +31,7 @@ func _init(start: Dictionary = {}, validator: Callable = Callable(), normalizer:
 	if planner.is_valid():
 		_planner = planner
 	_state = JsonNumbers.normalize_numbers(_state)
+	_legacy_receipts_present = Receipts.has_legacy(_state.get("completed_actions", {}))
 
 static func _normalize_core(request: Dictionary) -> Dictionary:
 	var payload = request.get("payload", {})
@@ -56,17 +59,7 @@ static func validate(state: Dictionary) -> bool:
 	if not valid_integer(state.get("counter")) or not valid_integer(state.get("state_revision")) or not state.get("completed_actions") is Dictionary:
 		return false
 	for action_id in state.completed_actions:
-		var receipt = state.completed_actions[action_id]
-		if not action_id is String or action_id.is_empty() or not receipt is Dictionary:
-			return false
-		if not receipt.get("fingerprint") is String or not receipt.get("result") is Dictionary:
-			return false
-		var result: Dictionary = receipt.result
-		if result.get("action_id") != action_id or result.get("ok") != true or result.get("code") != "OK":
-			return false
-		if not valid_integer(result.get("state_revision")) or result.state_revision > state.state_revision:
-			return false
-		if not result.get("data") is Dictionary:
+		if not Receipts.valid(action_id, state.completed_actions[action_id], state.state_revision):
 			return false
 	return true
 
@@ -93,6 +86,7 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 		return _result(false, "SAVE_FAILED", "")
 	# One root swap after all validation. Domain validators join here in G1b.
 	_state = loaded.state.duplicate(true)
+	_legacy_receipts_present = Receipts.has_legacy(_state.completed_actions)
 	if not _install_runtime(ticket):
 		_ensure_recovery()
 		pauses.release_pause(token)
@@ -130,12 +124,10 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if _recovery_token != 0 or _busy:
 		return _result(false, "UNAVAILABLE", action_id)
 	if _state.completed_actions.has(action_id):
-		var receipt: Dictionary = _state.completed_actions[action_id]
-		if receipt.fingerprint != fingerprint:
+		var receipt = _state.completed_actions[action_id]
+		if Receipts.fingerprint(receipt) != fingerprint:
 			return _result(false, "ACTION_CONFLICT", action_id)
-		var replay: Dictionary = receipt.result.duplicate(true)
-		replay.code = "ALREADY_APPLIED"
-		return replay
+		return Receipts.replay(action_id, receipt)
 	if pauses.is_paused() and request.command_type != "session.save":
 		return _result(false, "PAUSED", action_id)
 	_busy = true
@@ -153,7 +145,9 @@ func execute(request: Dictionary, store) -> Dictionary:
 	var result := _result(true, "OK", action_id)
 	result.state_revision = tentative.state_revision
 	result.data = planned.get("data", {}).duplicate(true)
-	tentative.completed_actions[action_id] = {"fingerprint": fingerprint, "result": result.duplicate(true)}
+	if _legacy_receipts_present:
+		Receipts.compact_canonical_legacy(tentative.completed_actions, tentative.state_revision)
+	tentative.completed_actions[action_id] = Receipts.pack(fingerprint, result)
 	if not _state_validator.call(tentative):
 		_busy = false
 		return _result(false, "INVALID_STATE", action_id)
@@ -176,6 +170,7 @@ func execute(request: Dictionary, store) -> Dictionary:
 		_busy = false
 		return _result(false, "UNAVAILABLE", action_id)
 	_state = tentative
+	_legacy_receipts_present = Receipts.has_legacy(_state.completed_actions)
 	if not _install_runtime(ticket):
 		_ensure_recovery()
 		_busy = false

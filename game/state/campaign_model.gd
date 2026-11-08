@@ -4,6 +4,7 @@ const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldLayout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/state/gameplay_state.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
+const Receipts = preload("res://game/systems/core/action_receipt.gd")
 
 static func new_state(rules: Dictionary) -> Dictionary:
 	var state: Dictionary = {
@@ -127,11 +128,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if not key is String or not Core.valid_integer(state.resource_revisions[key]):
 			return false
 	for id in state.completed_actions:
-		var receipt = state.completed_actions[id]
-		if not id is String or id.is_empty() or not receipt is Dictionary or not receipt.get("fingerprint") is String or not receipt.get("result") is Dictionary:
-			return false
-		var result: Dictionary = receipt.result
-		if result.get("ok") != true or result.get("code") != "OK" or result.get("action_id") != id or not Core.valid_integer(result.get("state_revision")) or result.state_revision > state.state_revision or not result.get("data") is Dictionary or not result.get("message_key") is String:
+		if not Receipts.valid(id, state.completed_actions[id], state.state_revision, true):
 			return false
 	if rules.get("gameplay", false) and not Gameplay.validate(state, rules):
 		return false
