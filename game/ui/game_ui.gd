@@ -28,6 +28,8 @@ var pause_token: int = 0
 var hud: ExplorationHUD
 var radial: RadialMenu
 var radial_pause_token := 0
+var shelter_nav_button: Button
+var shelter_modal_button: Button
 var notice: Label
 var modal: ColorRect
 var body: VBoxContainer
@@ -71,6 +73,14 @@ func _ready() -> void:
 	hud.panel_requested.connect(open_panel)
 	hud.slot_requested.connect(open_quick_slot)
 	add_child(hud)
+	# Always-visible control between title and top-right minimap (640x360).
+	shelter_nav_button = button(self, "Убежище [G]", toggle_shelter)
+	shelter_nav_button.name = "ShelterQuickButton"
+	shelter_nav_button.position = Vector2(222, 4)
+	shelter_nav_button.size = Vector2(132, 25)
+	shelter_nav_button.focus_mode = Control.FOCUS_NONE
+	shelter_nav_button.icon = Art.icon("shelter")
+	shelter_nav_button.tooltip_text = "В убежище / вернуться к месту выхода [G]"
 	notice = Label.new()
 	add_child(notice)
 	notice.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
@@ -122,9 +132,16 @@ func _ready() -> void:
 	titlebar.add_child(heading_icon)
 	heading = Label.new()
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.clip_text = true
+	heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	heading.add_theme_font_size_override("font_size", 19)
 	titlebar.add_child(heading)
-	button(titlebar, "Закрыть [Esc]", close_panel)
+	shelter_modal_button = button(titlebar, "G", toggle_shelter)
+	shelter_modal_button.name = "ShelterModalButton"
+	shelter_modal_button.tooltip_text = "В убежище / вернуться к месту выхода [G]"
+	shelter_modal_button.focus_mode = Control.FOCUS_NONE
+	shelter_modal_button.icon = Art.icon("shelter")
+	button(titlebar, "× [Esc]", close_panel)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(530, 220)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -205,6 +222,24 @@ func open_quick_slot(index: int) -> void:
 	inventory_selection = hud.items[index].instance_id if index >= 0 else ""
 	open_panel("inventory")
 
+# Release only UI-owned pause tokens; CoreSession still protects recovery and
+# failed durable transitions without partial changes to the world.
+func toggle_shelter() -> void:
+	var previous_panel: String = panel_id
+	var previous_radial: bool = radial.visible
+	if previous_radial:
+		close_radial()
+	if not previous_panel.is_empty():
+		close_panel()
+	var result: Dictionary = app.toggle_shelter()
+	if not result.get("ok", false):
+		if not previous_panel.is_empty():
+			open_panel(previous_panel)
+		elif previous_radial and app.running():
+			toggle_radial()
+		show_result(result)
+	update_hud()
+
 func run_command(kind: String, payload: Dictionary = {}) -> void:
 	# Release only this panel's token for the synchronous transaction; unrelated
 	# menu/recovery tokens remain active. No simulation frame runs in this gap.
@@ -253,6 +288,12 @@ func update_hud() -> void:
 				objective = QUEST_TITLES[index]
 				break
 	hud.update_state(state, items, place, objective, next_exit)
+	var returning: bool = state.scene.current_scene_id == "shelter"
+	if is_instance_valid(shelter_nav_button):
+		shelter_nav_button.text = "Назад [G]" if returning else "Убежище [G]"
+		shelter_nav_button.tooltip_text = "Вернуться к месту выхода [G]" if returning else "Войти в убежище [G]"
+	if is_instance_valid(shelter_modal_button):
+		shelter_modal_button.tooltip_text = "Вернуться к месту выхода [G]" if returning else "Войти в убежище [G]"
 
 func _expedition_exit(state: Dictionary, target: String) -> String:
 	var manifest: Dictionary = state.world_states.layout
@@ -289,8 +330,8 @@ func render_panel() -> void:
 	match panel_id:
 		"welcome":
 			line("Офлайн-песочница · процедурный город")
-			line("Победите противника в больнице. Откройте убежище, вырастите урожай и помогите двум путникам обустроиться. После обучения игра свободная.")
-			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище после открытия. Левый Ctrl — быстрое меню рюкзака; 1–4 — открыть предмет в рюкзаке.")
+			line("Убежище доступно сразу: G переносит туда из любого района, даже до первого боя. Повторная G возвращает к месту выхода. Победите врага в больнице для получения Системы.")
+			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище всегда. Левый Ctrl — быстрое меню рюкзака; 1–4 — открыть предмет в рюкзаке.")
 			if FileAccess.file_exists(app.save_location):
 				button(body, "Продолжить сохранённую игру", app.load_game)
 				button(body, "Новая игра…", open_panel.bind("new_confirm"))
@@ -332,7 +373,7 @@ func render_panel() -> void:
 				line("Выходы")
 				for id in nodes[here].links:
 					line(("↩ " if arrival == "from_" + id else "• ") + nodes[id].label)
-				if here == "shelter" and arrival == "default":
+				if here == "shelter":
 					line("G — вернуться в «%s»" % nodes[state.scene.return_scene_id].label)
 				var expedition: Dictionary = state.quests.get("expedition", {})
 				if not expedition.is_empty() and not expedition.claimed and not expedition.target.is_empty():
