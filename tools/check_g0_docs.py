@@ -20,6 +20,7 @@ EXPECTED = (
     "docs/book-01/10-qa-acceptance-matrix.md",
     "docs/book-01/11-technical-decisions-and-handoff.md",
     "docs/book-01/13-p0-01-live-contract-reconciliation.md",
+    "docs/book-01/14-mechanics-code-audit-20261108.md",
     "docs/book-01/agents/A0.md",
     "docs/book-01/agents/A1.md",
     "docs/book-01/agents/A2.md",

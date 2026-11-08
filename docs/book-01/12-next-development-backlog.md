@@ -44,3 +44,21 @@
 - [PR #32](https://github.com/AndreyCokol/My_shelter/pull/32) — статические замечания A0; задачи #33–35 ещё требуют исправлений.
 
 **Готовность к полноценной эксплуатации:** не ранее фактического прохождения M1, проверки M2, Windows GUI/UX и целевого принятия A5/владельцем. Статусы задач обновляются по реальным коммитам, тестам и PR, а не количеством открытых Issues.
+
+
+## 08.11.2026 — обязательные поправки по аудитору A0 (после PR #58)
+
+Полные доказательства по каждой механике — [14-mechanics-code-audit-20261108.md](14-mechanics-code-audit-20261108.md), [CT-53–CT-70](10-qa-acceptance-matrix.md). Этот раздел дополняет существующие P0-01..16, **не создаёт повторно 25 независимых задач**.
+
+| Очередь | Почему это важно | GitHub | Условие завершения |
+|---|---|---|---|
+| **P0 BLOCKER / раньше G4** | Старое заселение NPC зависит от нового food rule; после балансировки возможен отказ загрузки | [#61](https://github.com/AndreyCokol/My_shelter/issues/61) · F06 | Старый reserve/consume/type receipt сохраняется после 2→3, проверки CT-53..56 PASS |
+| **P0 FEATURE GAP** | Нож выдан как предмет, но атака всегда 25 урона; level-up тоже отсутствует вопреки FR-03/04 | [#62](https://github.com/AndreyCokol/My_shelter/issues/62) · F07 | Оружие и состояние экипировки работают в gameplay и save, CT-57/58; либо отдельно согласовать с владельцем сокращение MVP |
+| **P0 BATTLE DESIGN** | Промежуточное HP противника сбрасывается при G-отступлении; момент kill+G не проверен | [#63](https://github.com/AndreyCokol/My_shelter/issues/63) · F08 | Вопрос persistence или явного reset решён, CT-59/60 проверены, unique XP не дублируется |
+| **P0 UI** | Задание Q02 сообщает ложную блокировку убежища; магазин показывает фиксированную цену | [#65](https://github.com/AndreyCokol/My_shelter/issues/65) · F10 | Динамический UI по правилам, Q02 согласуется с OD-12, CT-63/64 и GUI |
+| **P0 ENGINE/RECOVERY** | Возрождение на 120×260, потенциальная блокировка после постройки; покрытие AI/процедурной физики неполно | [#41](https://github.com/AndreyCokol/My_shelter/issues/41), [#44](https://github.com/AndreyCokol/My_shelter/issues/44) · F11/F12/F17/F21 | CT-65..67, реальная геометрия/seed, профиль препятствий, сейв |
+| **P0 PERF/LEDGER** | Fast-path кадра из альтернативного PR #53 и benchmark #56 ещё не интегрированы в PR #58; receipts сохраняются без ограничения | [#35](https://github.com/AndreyCokol/My_shelter/issues/35) · F15/F20 | Одна проверенная реализация, не две разные EventBus; profiler/CT-70 и сохранение exactly-once |
+| **P1 WORK** | Расход на смену NPC жёстко привязан к картофелю, несмотря на конфиг допустимого питания | [#64](https://github.com/AndreyCokol/My_shelter/issues/64) · F09 | Правило питания работника согласовано, CT-61/62 и старые reserve сохранены |
+| **G4 VISUAL / DELIVERY** | Нет полноценной покадровой 64×64 анимации, нет живого GUI/UX проверки, не все лицензии подтверждены | [#45](https://github.com/AndreyCokol/My_shelter/issues/45), [#46](https://github.com/AndreyCokol/My_shelter/issues/46), [#14](https://github.com/AndreyCokol/My_shelter/issues/14) · F14/F23 | Реальный Windows UX, 15–35 минут, private asset/license checklist и A5/A0 |
+
+**Статусы:** `CONFIRMED_CODE_DEFECT` означает прямую несогласованность исходников, но новые тесты пока `NOT_RUN`. Графы/геометрия, новый баланс еды, CPU и GUI требуют своих испытаний, несмотря на старые 489/28 PASS. Не менять owner-правило **«убежище всегда доступно»** для обхода этих дефектов.

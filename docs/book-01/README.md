@@ -20,6 +20,7 @@
 | [11-technical-decisions-and-handoff.md](11-technical-decisions-and-handoff.md) | Делегированные инженерные кандидаты: InputMap, Godot, время, ресурсы, G1a и ownership/claims |
 | [12-next-development-backlog.md](12-next-development-backlog.md) | Следующие задачи M0–M3 для A0–A5, технические зависимости и приёмка полноценного закрытого прототипа |
 | [13-p0-01-live-contract-reconciliation.md](13-p0-01-live-contract-reconciliation.md) | **Карта действующего runtime и schema4**, последовательность PR #50–52, расхождения API с проектным контрактом и блокеры до G0 |
+| [14-mechanics-code-audit-20261108.md](14-mechanics-code-audit-20261108.md) | **Аудит 25 механик**: подтверждённые F06/F07/F09/F10, риски F08/F11–F23, тесты CT-53–70 и ответственные |
 
 **Второй контракт `07-contract-spec-proposal.md` из старого PR #5 не является действующим документом и не должен одновременно нормативно применяться с 05.** Исторический кандидат 07 консолидирован в 05; нумерация 07 намеренно не используется для сохранения истории.
 
