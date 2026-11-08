@@ -218,6 +218,7 @@ func draw_location_detail() -> void:
 func _draw() -> void:
 	var variant := int(str(layout.get("segment", "")).get_slice(":", 1))
 	WorldArt.ground(self, scene_id, variant, layout)
+	WorldArt.atmosphere(self, scene_id, layout)
 	draw_location_detail()
 	for obstacle in layout.get("floor_plan", {}).get("walls", layout.get("obstacles", [])):
 		WorldArt.obstacle(self, scene_id, obstacle)
