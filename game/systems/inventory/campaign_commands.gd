@@ -62,6 +62,11 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			return fail("INVALID_ARGUMENT")
 		state.player.position = request.context.departure_position.duplicate(true)
 		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
+	# Portal and shelter transitions are durable checkpoints: keep live combat HP.
+	if kind in ["scene.transition", "session.save"] and request.context.has("health"):
+		if not Core.valid_integer(request.context.health) or request.context.health > 100:
+			return fail("INVALID_ARGUMENT")
+		state.player.hp = int(request.context.health)
 	if rules.get("gameplay", false):
 		if not state.world_states.first_enemy_defeated:
 			# The shelter is an unconditional player escape, including onboarding.
