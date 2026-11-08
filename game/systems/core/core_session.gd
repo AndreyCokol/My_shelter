@@ -188,6 +188,25 @@ func execute(request: Dictionary, store) -> Dictionary:
 func _result(ok: bool, code: String, action_id: String) -> Dictionary:
 	return {"ok": ok, "code": code, "action_id": action_id, "state_revision": _state.state_revision, "data": {}, "message_key": "core." + code.to_lower()}
 
+# Fast path for sub-minute physics frames. Only the bounded fractional
+# remainder changes, so avoid duplicating and globally validating a potentially
+# large CampaignState 60 times/second. Full calendar ticks still go through
+# apply_runtime's transactional validation barrier and increment revision.
+# The remainder remains part of the authoritative save snapshot on any commit.
+func try_accumulate_fractional_clock(delta: float, rate: float) -> bool:
+	if _busy or _recovery_token != 0 or pauses.is_paused() or _state.get("scope") != "campaign-core":
+		return false
+	if not is_finite(delta) or delta < 0 or not is_finite(rate) or rate <= 0:
+		return false
+	var old = _state.get("clock_remainder")
+	if not (old is float or old is int) or not is_finite(float(old)) or old < 0 or old >= 1:
+		return false
+	var accumulated: float = float(old) + delta * rate
+	if not is_finite(accumulated) or accumulated < 0 or accumulated + 0.000000001 >= 1.0:
+		return false
+	_state.clock_remainder = accumulated
+	return true
+
 # Trusted runtime hook for the calendar; never exposed as a player payload.
 # It uses the same serialization/validation barrier but does not write each frame.
 func apply_runtime(plan: Callable, event_factory: Callable = Callable()) -> bool:
