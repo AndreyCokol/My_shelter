@@ -163,6 +163,7 @@ func test_apartment(app):
 func test_unconditional_shelter(app) -> void:
 	# The player may retreat before the first kill, even with a living enemy.
 	var original: Vector2 = app.hero.position
+	app.hero.health = 73 # A retreat from combat must also checkpoint current HP.
 	check(not app.snapshot().world_states.first_enemy_defeated and is_instance_valid(app.enemy()), "shelter shortcut scenario starts before System unlock with a living enemy")
 	check(app.transition("outside").code == "UNAVAILABLE" and app.command("inventory.claim_parcel", {"parcel_id": "starter"}).code == "UNAVAILABLE", "ordinary travel and System parcel remain locked before first victory")
 	check(app.ui.shelter_nav_button != null and app.ui.shelter_modal_button != null, "shelter shortcut is present in HUD and modal UI")
@@ -170,8 +171,8 @@ func test_unconditional_shelter(app) -> void:
 	app.ui.shelter_modal_button.pressed.emit()
 	var entered: Dictionary = app.snapshot()
 	check(entered.scene.current_scene_id == "shelter" and entered.scene.return_scene_id == "hospital" and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "modal shelter action escapes before first kill without leaking pause")
-	check(not entered.world_states.first_enemy_defeated and entered.claimed_reward_ids.is_empty() and entered.wallet.system_coins == 0, "early shelter escape does not grant System or duplicate XP/coins")
-	check(app.save_game().ok and app.load_game().ok and app.snapshot().scene.return_scene_id == "hospital", "pre-unlock shelter and return scene persist across save and load")
+	check(not entered.world_states.first_enemy_defeated and entered.claimed_reward_ids.is_empty() and entered.wallet.system_coins == 0 and entered.player.hp == 73, "early shelter escape preserves damaged health without granting System or XP/coins")
+	check(app.save_game().ok and app.load_game().ok and app.snapshot().scene.return_scene_id == "hospital" and app.hero.health == 73, "pre-unlock shelter, combat HP and return scene persist across save and load")
 	app.ui.open_panel("menu")
 	var shortcut := InputEventKey.new()
 	shortcut.physical_keycode = KEY_G
