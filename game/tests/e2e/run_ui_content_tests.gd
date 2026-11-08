@@ -77,6 +77,10 @@ func run() -> void:
 	await process_frame
 	check(label_found(app.ui.body, "Q02 · Вернуться в убежище после первого боя — выполнено"), "completed Q02 is visibly clear in real UI")
 	app.ui.close_panel()
+	app.ui.open_panel("jobs")
+	await process_frame
+	check(label_found(app.ui.body, "1 ед. еды из свободных запасов (Картофель)"), "resident jobs panel shows one unreserved unit and the configured food name")
+	app.ui.close_panel()
 	var weapon_stacks: Array = app.snapshot().inventory.items.filter(func(item): return item.type_id == "tool.basic" and item.container_id == "player")
 	check(weapon_stacks.size() == 1, "victory puts one usable knife into the real inventory")
 	if not weapon_stacks.is_empty():

@@ -432,7 +432,12 @@ static func plan_shift(state: Dictionary, request: Dictionary, rules: Dictionary
 				return fail("INVALID_ARGUMENT")
 			if resident.has("shift"):
 				return fail("INVALID_STATE")
-			if not take(state, Work.FOOD, 1):
+			var ration_used := false
+			for food_type in rules.food.accepted_food_type_ids:
+				if take(state, food_type, 1):
+					ration_used = true
+					break
+			if not ration_used:
 				return fail("INSUFFICIENT_RESOURCES")
 			resident.shift = {"job": p.job, "due": state.game_time_minutes + Work.duration(state, resident.id), "ready": false}
 		else:
