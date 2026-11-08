@@ -68,20 +68,21 @@ func _ready() -> void:
 	var theme := Theme.new()
 	theme.default_font_size = 13
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("203134")
-	style.border_color = Color("537773")
+	style.bg_color = Color("21190f")
+	style.border_color = Color("b99559")
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(5)
+	style.set_corner_radius_all(2)
 	style.content_margin_left = 9
 	style.content_margin_right = 9
 	style.content_margin_top = 4
 	style.content_margin_bottom = 4
 	theme.set_stylebox("normal", "Button", style)
 	var hover := style.duplicate()
-	hover.bg_color = Color("365650")
+	hover.bg_color = Color("44311b")
 	theme.set_stylebox("hover", "Button", hover)
 	theme.set_stylebox("pressed", "Button", hover)
-	Art.apply_buttons(theme)
+	# VIS-02: keep consistent brass pixel frames even when optional vendor UI is present.
+	# Vendor icons remain available through Art.icon() but cannot replace golden borders.
 	self.theme = theme
 	hud = ExplorationHUD.new()
 	hud.name = "ExplorationHUD"
@@ -94,6 +95,7 @@ func _ready() -> void:
 	shelter_nav_button.name = "ShelterQuickButton"
 	shelter_nav_button.position = Vector2(222, 4)
 	shelter_nav_button.size = Vector2(132, 25)
+	shelter_nav_button.add_theme_font_size_override("font_size", 11)
 	shelter_nav_button.focus_mode = Control.FOCUS_NONE
 	shelter_nav_button.icon = Art.icon("shelter")
 	shelter_nav_button.tooltip_text = "В убежище / вернуться к месту выхода [G]"
@@ -117,18 +119,18 @@ func _ready() -> void:
 	add_child(radial)
 	modal = ColorRect.new()
 	modal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	modal.color = Color(0.02, 0.06, 0.08, 0.85)
+	modal.color = Color(0.045, 0.041, 0.028, 0.88)
 	add_child(modal)
 	var panel := PanelContainer.new()
 	panel.position = Vector2(35, 42)
 	panel.size = Vector2(570, 290)
 	var panelstyle := StyleBoxFlat.new()
-	panelstyle.bg_color = Color("182a30")
-	panelstyle.border_color = Color("73998b")
+	panelstyle.bg_color = Color("211a12")
+	panelstyle.border_color = Color("b99559")
 	panelstyle.set_border_width_all(1)
-	panelstyle.set_corner_radius_all(8)
+	panelstyle.set_corner_radius_all(2)
 	panel.add_theme_stylebox_override("panel", panelstyle)
-	var panel_art := Art.textured_style("panel_frame", 10, Color(0.9, 0.95, 1.0))
+	var panel_art := Art.textured_style("panel_frame", 10, Color(1.0, 0.85, 0.61))
 	if panel_art != null:
 		panel.add_theme_stylebox_override("panel", panel_art)
 	modal.add_child(panel)
@@ -316,7 +318,7 @@ func update_hud() -> void:
 	hud.update_state(state, items, place, objective, next_exit)
 	var returning: bool = state.scene.current_scene_id == "shelter"
 	if is_instance_valid(shelter_nav_button):
-		shelter_nav_button.text = "Назад [G]" if returning else "Убежище [G]"
+		shelter_nav_button.text = "Назад · День %d [G]" % (minute / 1440 + 1) if returning else "Убежище [G]"
 		shelter_nav_button.tooltip_text = "Вернуться к месту выхода [G]" if returning else "Войти в убежище [G]"
 	if is_instance_valid(shelter_modal_button):
 		shelter_modal_button.tooltip_text = "Вернуться к месту выхода [G]" if returning else "Войти в убежище [G]"
