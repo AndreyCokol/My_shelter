@@ -156,8 +156,16 @@ func test_apartment(app):
 	app.starting_seed = 777
 	root.add_child(app)
 	check(app.load_game().ok and app.snapshot().scene.current_scene_id == "house_0_2" and app.hero.position == saved_position and app.scene_router.current_world().layout.floor_plan == plan, "restarting restores the same apartment and position upstairs")
+	var upstairs_hp: int = app.hero.health
+	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "house_0_2", "G retreat from upper apartment retains its exact procedural floor")
+	check(app.save_game().ok and app.load_game().ok and app.snapshot().scene.current_scene_id == "shelter", "shelter entered from the apartment survives full save/load")
+	check(app.toggle_shelter().ok and app.snapshot().scene.current_scene_id == "house_0_2" and app.hero.position == saved_position and app.hero.health == upstairs_hp, "G returns to apartment floor, exact position and original HP after reload")
 	check(follow(app, "house_0") and follow(app, "outside") and app.hero.position == app.scene_router.current_world().layout.exits.house_0.arrival, "going downstairs returns to the original street facade")
-	check(app.transition("shelter").ok, "the shelter remains accessible after leaving the house")
+	var street_position: Vector2 = app.hero.position
+	var street_hp: int = app.hero.health
+	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "outside", "G from outside always enters shelter, remembering street origin")
+	check(app.toggle_shelter().ok and app.snapshot().scene.current_scene_id == "outside" and app.hero.position == street_position and app.hero.health == street_hp, "G returns to exact street entry point and HP")
+	check(app.toggle_shelter().ok, "G has no cooldown when re-entering shelter immediately after return")
 	return app
 
 func test_unconditional_shelter(app) -> void:
@@ -279,6 +287,8 @@ func run() -> void:
 	check(app.last_result.ok and app.snapshot().world_states.locations.house_0.looted, "house loot commits to its own location")
 	house_world.interact()
 	check(app.last_result.code == "UNAVAILABLE", "cleared house cannot duplicate its loot")
+	var first_house_position: Vector2 = app.hero.position
+	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "house_0" and app.toggle_shelter().ok and app.hero.position == first_house_position, "G returns to exact ground-floor house position without duplicating house loot")
 	check(follow(app, "outside") and follow(app, "hospital") and follow(app, "hospital_0_2"), "hospital entry and stairs reach the selected floor")
 	var stairs = app.scene_router.current_world()
 	check(app.hero.position == stairs.layout.exits.hospital.arrival and stairs.layout.exits.hospital.form == "stairs_down", "upper floor arrives at the paired staircase landing")
@@ -288,7 +298,8 @@ func run() -> void:
 	app.enemy_defeated()
 	check(app.snapshot().world_states.locations.hospital_0_2.defeated and app.snapshot().claimed_reward_ids == ["system"], "floor enemy persists without duplicating onboarding reward")
 	app.hero.position = Vector2(310, 270)
-	check(app.transition("shelter").ok and app.transition("hospital_0_2").ok and app.hero.position == Vector2(310, 270), "shelter return restores exact floor and coordinates")
+	var hospital_floor_hp: int = app.hero.health
+	check(app.toggle_shelter().ok and app.snapshot().scene.return_scene_id == "hospital_0_2" and app.toggle_shelter().ok and app.hero.position == Vector2(310, 270) and app.hero.health == hospital_floor_hp, "G returns to exact hospital upper-floor coordinates and HP")
 	check(app.save_game().ok, "procedural state saves")
 	var saved: Dictionary = app.snapshot()
 	app.free()
