@@ -65,7 +65,13 @@ func try_attack(target: Vector2) -> bool:
 	if is_instance_valid(enemy) and enemy.health > 0 and global_position.distance_to(enemy.global_position) < 64:
 		var toward: Vector2 = global_position.direction_to(enemy.global_position)
 		if facing.dot(toward) > 0.2:
-			enemy.take_damage(25)
+			# A nearby target behind a wall is not hittable. Use the same
+			# physics collision bodies as actual world movement, including
+			# procedural walls and player-built structures.
+			var query := PhysicsRayQueryParameters2D.create(global_position, enemy.global_position)
+			query.exclude = [get_rid(), enemy.get_rid()]
+			if get_world_2d().direct_space_state.intersect_ray(query).is_empty():
+				enemy.take_damage(25)
 	return true
 
 func take_damage(amount: int) -> bool:

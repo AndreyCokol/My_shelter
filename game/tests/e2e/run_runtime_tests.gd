@@ -50,6 +50,18 @@ func run() -> void:
 	check(not app.hero.take_damage(20) and app.hero.health == hp, "step5 dodge grants invulnerability")
 	app.hero.dodge_remaining = 0
 	app.hero.position = app.enemy().position + Vector2(-38, 0)
+	# A0-F02: create a real physics wall between two nearby actors.
+	var blocked_enemy = app.enemy()
+	var blocking_rect := Rect2(blocked_enemy.position + Vector2(-24, -19), Vector2(10, 38))
+	var blocking_wall = app.scene_router.current_world().add_wall(blocking_rect)
+	await physics_frame
+	app.hero.position = blocked_enemy.position + Vector2(-38, 0)
+	var blocked_hp: int = blocked_enemy.health
+	check(app.hero.try_attack(blocked_enemy.global_position) and blocked_enemy.health == blocked_hp, "A0-F02 melee cannot damage an enemy through a real collision wall")
+	blocking_wall.queue_free()
+	await physics_frame
+	app.hero.attack_cooldown = 0.0
+	app.hero.position = app.enemy().position + Vector2(-38, 0)
 	check(app.hero.try_attack(app.enemy().global_position) and not app.hero.try_attack(app.enemy().global_position), "step5 attack cooldown prevents repeated frame hit")
 	for i in range(3):
 		await create_timer(0.5).timeout
