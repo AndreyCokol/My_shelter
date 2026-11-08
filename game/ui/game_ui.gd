@@ -11,7 +11,7 @@ const Combat = preload("res://game/systems/combat/combat_loadout.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
 const ExplorationHUD = preload("res://game/ui/exploration_hud.gd")
 const RadialMenu = preload("res://game/ui/radial_menu.gd")
-const QUEST_TITLES = ["Победить противника", "Открыть убежище", "Посадить семена", "Собрать урожай", "Найти путников", "Получить согласие", "Заселить двух жителей"]
+const QUEST_TITLES = ["Победить противника", "Вернуться в убежище после первого боя", "Посадить семена", "Собрать урожай", "Найти путников", "Получить согласие", "Заселить двух жителей"]
 
 const ITEM_ICONS = {
 	"seed.basic": preload("res://game/assets/project/inventory/seed.svg"),
@@ -45,6 +45,21 @@ const NAMES = {"hospital": "Больница", "outside": "Город", "shelter
 const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города", "workshop": "Строительство и мастерская", "jobs": "Работа жителей", "camp": "Объявления и торговля", "journal": "Журнал находок", "district_event": "Встреча в районе"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
 const ERRORS = {"INVALID_WORLD_SEED": "Введите целое число от 0 до 2147483647 или оставьте поле пустым.", "OK": "Готово", "ALREADY_APPLIED": "Действие уже выполнено", "UNAVAILABLE": "Сейчас недоступно. Проверьте условия или восстановите сохранение.", "INVALID_STATE": "Состояние изменилось: обновите действие или выберите резервную копию.", "INVALID_ARGUMENT": "Проверьте параметры действия.", "INSUFFICIENT_RESOURCES": "Не хватает доступных ресурсов. Зарезервированная еда не расходуется.", "CAPACITY_EXCEEDED": "В рюкзаке или хранилище не хватает места.", "NEEDS_HOUSING": "Для жильцов нужна свободная кровать.", "REQUIRES_CONSENT": "Сначала нужно добровольное согласие путника.", "STALE_REVISION": "Данные изменились. Экран обновлён — повторите выбор.", "NOT_IN_SAFE_AREA": "Отдых и работа с грядками доступны в убежище.", "SAVE_FAILED": "Не удалось записать сохранение. Действие не подтверждено.", "PAUSED": "Осталась другая причина паузы. Закройте её прежде, чем действовать.", "NOT_FOUND": "Объект не найден."}
+
+# The store display is derived from the exact offer used by A1 transactions.
+# Balance changes must never leave a hard-coded amount/price in the UI.
+static func offer_description(config: Dictionary, offer_id: String) -> String:
+	var offer: Dictionary = config.get("offers", {}).get(offer_id, {})
+	var item: Dictionary = config.get("items", {}).get(offer.get("type_id", ""), {})
+	if offer.is_empty() or item.is_empty():
+		return ""
+	return "%d ед. «%s» — %d мон." % [int(offer.get("quantity", 0)), str(item.get("name", "")), int(offer.get("price", 0))]
+
+static func shop_hint(config: Dictionary, offer_id: String) -> String:
+	var deal: String = offer_description(config, offer_id)
+	if deal.is_empty():
+		return "Сейчас нет предложений."
+	return deal + " Семена можно найти и в городе. Повторное появление ресурсов — через %d игровых минут." % int(config.get("resource_respawn_minutes", 60))
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -494,8 +509,10 @@ func render_panel() -> void:
 				if i >= 2 and quest.status != "completed":
 					button(body, "Отслеживать / скрыть", run_command.bind("game.quest_track", {"quest_id": quest.id}))
 		"shop":
-			line("2 семени — 3 монеты. Если монеты закончились, семена можно найти в городе: запасы возобновляются через час игрового времени.")
-			button(body, "Купить семена", run_command.bind("inventory.purchase", {"offer_id": "seed"}))
+			var catalog: Dictionary = app.rules()
+			line(shop_hint(catalog, "seed"))
+			if catalog.offers.has("seed"):
+				button(body, "Купить: " + offer_description(catalog, "seed"), run_command.bind("inventory.purchase", {"offer_id": "seed"}))
 	if panel_id != "inventory" and not notice.text.is_empty():
 		line(notice.text)
 
