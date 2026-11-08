@@ -7,6 +7,7 @@ const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
+const Combat = preload("res://game/systems/combat/combat_loadout.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
 const ExplorationHUD = preload("res://game/ui/exploration_hud.gd")
 const RadialMenu = preload("res://game/ui/radial_menu.gd")
@@ -272,7 +273,7 @@ func update_hud() -> void:
 		if item.container_id == "player":
 			items.append({
 				"instance_id": item.instance_id, "quantity": item.quantity,
-				"label": catalog[item.type_id].name,
+				"label": catalog[item.type_id].name + (" [в руках]" if item.instance_id == state.player.get("equipped_weapon_instance_id", "") else ""),
 				"icon": ITEM_ICONS.get(item.type_id, Art.texture("inventory")),
 			})
 	var objective := "Нет отслеживаемых заданий"
@@ -596,6 +597,16 @@ func render_inventory(state: Dictionary) -> void:
 		details.add_child(hint)
 	else:
 		var available: int = Gameplay.available(state, selected)
+		if inventory_container == "player" and rules.combat.weapons.has(selected.type_id):
+			var equipped: bool = state.player.get("equipped_weapon_instance_id", "") == selected.instance_id
+			var skill: Dictionary = Combat.profile(state, rules)
+			var weapon: Dictionary = rules.combat.weapons[selected.type_id]
+			var fighting: Label = Label.new()
+			fighting.text = "В руках" if equipped else "Оружие — не экипировано"
+			fighting.text += "\nУрон: %d · Дальность: %d" % [int(weapon.damage) + int(skill.experience_bonus), int(weapon.reach)]
+			fighting.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			details.add_child(fighting)
+			button(details, "Снять оружие" if equipped else "Взять в руки", run_command.bind("game.equip_weapon", {"instance_id": "" if equipped else selected.instance_id}))
 		var quantities := Label.new()
 		quantities.text = "Всего: %d
 Свободно: %d
