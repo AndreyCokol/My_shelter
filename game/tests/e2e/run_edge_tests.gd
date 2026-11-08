@@ -157,7 +157,7 @@ func _initialize() -> void:
 
 func test_food_rebalance(saved: Dictionary, store, previous_mode: String, previous_units: int) -> void:
 	var config := Rules.build()
-	config.items["food.test_ration"] = {"name": "Тестовый паёк"}
+	config.items["food.test_ration"] = {"name": "Тестовый паёк", "edible": true}
 	config.food.accepted_food_type_ids = ["food.test_ration"]
 	config.food.reserve_mode = "consume" if previous_mode == "reserve" else "reserve"
 	config.food.units_per_resident = previous_units + 1
