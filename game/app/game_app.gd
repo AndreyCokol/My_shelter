@@ -101,7 +101,7 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return last_result
 
 func transition(destination: String, entry_id: String = "default") -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id)
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health)
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
@@ -110,6 +110,15 @@ func transition(destination: String, entry_id: String = "default") -> Dictionary
 		if direction != Vector2.ZERO:
 			hero.facing = direction
 	return result
+
+# One player-controlled round trip to the Shelter, independent of story unlocks.
+# Keep all writes inside SceneRouter/CoreSession for durable position and return state.
+func toggle_shelter() -> Dictionary:
+	if scene_router == null or campaign == null or not is_instance_valid(hero) or hero.defeated:
+		return {"ok": false, "code": "UNAVAILABLE"}
+	var state: Dictionary = snapshot()
+	var destination: String = state.scene.return_scene_id if state.scene.current_scene_id == "shelter" else "shelter"
+	return transition(destination)
 
 func bind_world() -> void:
 	var world = scene_router.current_world()
@@ -254,6 +263,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			ui.close_panel()
 		get_viewport().set_input_as_handled()
 		return
+	# Shelter access also works with the player's own open modal. UI safely
+	# releases just that modal's pause token; recovery or external pause is preserved.
+	if event.is_action_pressed("shelter_skill") and not event.is_echo():
+		ui.toggle_shelter()
+		get_viewport().set_input_as_handled()
+		return
 	if not running():
 		return
 	if event.is_action_pressed("inventory"):
@@ -262,8 +277,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		ui.open_panel("quests")
 	elif event.is_action_pressed("interact"):
 		scene_router.current_world().interact()
-	elif event.is_action_pressed("shelter_skill") and snapshot().world_states.first_enemy_defeated:
-		if snapshot().scene.current_scene_id == "shelter":
-			transition(snapshot().scene.return_scene_id)
-		else:
-			transition("shelter")
+

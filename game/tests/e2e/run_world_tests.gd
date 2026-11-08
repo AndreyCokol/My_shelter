@@ -160,6 +160,42 @@ func test_apartment(app):
 	check(app.transition("shelter").ok, "the shelter remains accessible after leaving the house")
 	return app
 
+func test_unconditional_shelter(app) -> void:
+	# The player may retreat before the first kill, even with a living enemy.
+	var original: Vector2 = app.hero.position
+	app.hero.health = 73 # A retreat from combat must also checkpoint current HP.
+	check(not app.snapshot().world_states.first_enemy_defeated and is_instance_valid(app.enemy()), "shelter shortcut scenario starts before System unlock with a living enemy")
+	check(app.transition("outside").code == "UNAVAILABLE" and app.command("inventory.claim_parcel", {"parcel_id": "starter"}).code == "UNAVAILABLE", "ordinary travel and System parcel remain locked before first victory")
+	check(app.ui.shelter_nav_button != null and app.ui.shelter_modal_button != null, "shelter shortcut is present in HUD and modal UI")
+	app.ui.open_panel("inventory")
+	app.ui.shelter_modal_button.pressed.emit()
+	var entered: Dictionary = app.snapshot()
+	check(entered.scene.current_scene_id == "shelter" and entered.scene.return_scene_id == "hospital" and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "modal shelter action escapes before first kill without leaking pause")
+	check(not entered.world_states.first_enemy_defeated and entered.claimed_reward_ids.is_empty() and entered.wallet.system_coins == 0 and entered.player.hp == 73, "early shelter escape preserves damaged health without granting System or XP/coins")
+	check(app.save_game().ok and app.load_game().ok and app.snapshot().scene.return_scene_id == "hospital" and app.hero.health == 73, "pre-unlock shelter, combat HP and return scene persist across save and load")
+	app.ui.open_panel("menu")
+	var shortcut := InputEventKey.new()
+	shortcut.physical_keycode = KEY_G
+	shortcut.keycode = KEY_G
+	shortcut.pressed = true
+	app._unhandled_input(shortcut)
+	check(app.snapshot().scene.current_scene_id == "hospital" and app.hero.position == original and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "G shortcut from paused menu returns to exact hospital exit position")
+	check(is_instance_valid(app.enemy()) and not app.snapshot().world_states.first_enemy_defeated, "return after combat retreat keeps enemy alive and System locked")
+	var external: int = app.session.pauses.acquire_pause("test-external-pause")
+	app.ui.open_panel("menu")
+	var paused_scene: String = app.snapshot().scene.current_scene_id
+	app.ui.shelter_modal_button.pressed.emit()
+	check(app.snapshot().scene.current_scene_id == paused_scene and app.last_result.code == "PAUSED" and app.ui.panel_id == "menu" and app.session.pauses.is_paused(), "shelter button cannot bypass unrelated pause or silently close its menu")
+	app.ui.close_panel()
+	app.session.pauses.release_pause(external)
+	var before_failure: Dictionary = app.snapshot()
+	# SceneRouter holds a separate checkpoint store from GameApp's UI command store.
+	# Fault the store used by the *transition*, not the UI command fixture.
+	app.scene_router._store.fault = "before_replace"
+	check(app.toggle_shelter().code == "SAVE_FAILED" and app.snapshot() == before_failure and app.hero.position == original, "failed shelter commit keeps live scene, position and rewards unchanged")
+	app.scene_router._store.fault = ""
+	check(app.toggle_shelter().ok and app.toggle_shelter().ok and app.hero.position == original and is_instance_valid(app.enemy()), "player can enter shelter and return to live enemy repeatedly without cooldown before onboarding")
+
 func run() -> void:
 	var geometry := {}
 	var signatures := {}
@@ -232,6 +268,7 @@ func run() -> void:
 	app.ui.close_panel()
 	var initial: Dictionary = app.snapshot()
 	check(initial.schema_version == 4 and initial.world_states.layout.seed == 54, "normal game scene starts a versioned seeded world")
+	test_unconditional_shelter(app)
 	var enemy = app.enemy()
 	enemy.health = 0
 	app.enemy_defeated()
