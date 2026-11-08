@@ -73,9 +73,9 @@ func run() -> void:
 		check(library.get_animation_names().size() == 12,
 			"CT-88 actor has idle, four-frame walk and four-frame attack in all four directions")
 		for direction in PixelActors.DIRECTIONS:
-			check(library.get_animation_frames_count("idle_" + direction) == 1
-				and library.get_animation_frames_count("walk_" + direction) == 4
-				and library.get_animation_frames_count("attack_" + direction) == 4
+			check(library.get_frame_count("idle_" + direction) == 1
+				and library.get_frame_count("walk_" + direction) == 4
+				and library.get_frame_count("attack_" + direction) == 4
 				and not library.get_animation_loop("attack_" + direction),
 				"CT-88 64px walk/attack animation frame contract: " + direction)
 			var region: Texture2D = library.get_frame_texture("walk_" + direction, 1)
