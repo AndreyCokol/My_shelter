@@ -1,0 +1,114 @@
+{
+  "version": "visual-reference-lock-v1",
+  "date": "2026-11-08",
+  "resolution": [
+    1672,
+    941
+  ],
+  "source": "User-supplied reference screenshots in current ChatGPT task; original binaries distributed separately as my_shelter_visual_reference_pack_v1.zip; not yet committed to GitHub.",
+  "note": "Do not substitute generated screenshots, thumbnails or rescaled copies for the originals; verify sha256 on import.",
+  "references": [
+    {
+      "id": "R1",
+      "name": "Убежище — тёплая развивающаяся база",
+      "file": "R1_shelter.png",
+      "sha256": "d70f66c758ebb4fcf137f92ffd190a7dd833c5c1766306ebbe29d2f92ed9ddb3",
+      "width": 1672,
+      "height": 941,
+      "zone": "shelter"
+    },
+    {
+      "id": "R2",
+      "name": "Улица перед больницей — холодный мир зомби",
+      "file": "R2_zombie_street.png",
+      "sha256": "8416a6d9c2e4a9fa7bd34dce69dfc6280c0fc15f1b2e48831868675d70d3c327",
+      "width": 1672,
+      "height": 941,
+      "zone": "outside"
+    },
+    {
+      "id": "R3",
+      "name": "Больница — этаж 1, медицинские комнаты и контейнер",
+      "file": "R3_hospital.png",
+      "sha256": "a22e12e90e8d3e419d625a07948e31b752bd8eb0175380894b9b6e1bb7a29720",
+      "width": 1672,
+      "height": 941,
+      "zone": "hospital"
+    },
+    {
+      "id": "R4",
+      "name": "Жилой этаж/квартира — бытовые комнаты, боевой коридор",
+      "file": "R4_apartment.png",
+      "sha256": "0a05c39bd74af351737a16b01f514401f10ece6b3001f069574acc2ff7c395bf",
+      "width": 1672,
+      "height": 941,
+      "zone": "house"
+    }
+  ],
+  "regions": {
+    "title": [
+      16,
+      8,
+      420,
+      43
+    ],
+    "status": [
+      14,
+      47,
+      666,
+      150
+    ],
+    "quest": [
+      14,
+      157,
+      342,
+      310
+    ],
+    "minimap": [
+      1433,
+      17,
+      1640,
+      204
+    ],
+    "hotbar": [
+      15,
+      782,
+      350,
+      872
+    ],
+    "footer": [
+      0,
+      873,
+      1672,
+      941
+    ],
+    "mode_label": [
+      400,
+      7,
+      735,
+      51
+    ],
+    "shelter_construction": [
+      612,
+      323,
+      1250,
+      680
+    ]
+  },
+  "pixel_review": {
+    "align": "native reference 1672x941 or documented deterministic transformation before per-pixel comparison",
+    "metrics": [
+      "unmasked absolute RGB difference/MAE",
+      "heatmap and alpha overlay",
+      "region-aligned text/border geometry",
+      "palette & contrast samples"
+    ],
+    "non_regression": [
+      "G always from outdoor and before first kill",
+      "left Ctrl radial",
+      "no input-through UI",
+      "all procedural floors/doors and collision",
+      "scene and enemy/NPC persistence"
+    ]
+  }
+}

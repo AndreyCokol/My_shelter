@@ -38,6 +38,7 @@ func run() -> void:
 	check(app.snapshot().world_states.first_enemy_defeated, "step13 render scene keeps gameplay alive")
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/hospital.png")
+	await capture_reference_candidate(app, "R3_hospital")
 	await measure_frames(app, "hospital", Vector2(120, 299))
 	var hospital = app.scene_router.current_world()
 	app.hero.position = hospital.layout.exits.hospital_0_2.position
@@ -49,6 +50,7 @@ func run() -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
+	await capture_reference_candidate(app, "R1_shelter")
 	var ctrl := InputEventKey.new()
 	ctrl.physical_keycode = KEY_CTRL
 	ctrl.keycode = KEY_CTRL
@@ -70,6 +72,7 @@ func run() -> void:
 	check(app.transition("outside").ok, "render the generated city")
 	app.hero.position = Vector2(740, 272)
 	await capture("city")
+	await capture_reference_candidate(app, "R2_street")
 	await measure_frames(app, "street", Vector2(780, 272))
 	var street = app.scene_router.current_world()
 	app.hero.position = street.layout.exits.hospital.position
@@ -94,6 +97,7 @@ func run() -> void:
 	var apartment: Dictionary = plan.units.apt_01
 	app.hero.position = plan.rooms[apartment.rooms[1]].rect.get_center()
 	await capture("apartment")
+	await capture_reference_candidate(app, "R4_apartment")
 	app.hero.position = interior.layout.exits.house_0.position
 	interior.interact()
 	interior = app.scene_router.current_world()
@@ -217,6 +221,57 @@ func check_full_hd_interface(app) -> void:
 	check(root.get_texture().get_image().get_size() == previous_window_size
 		and not app.session.pauses.is_paused(),
 		"Returning to original PC resolution preserves pause and viewport")
+
+
+# VIS-01: capture real playable Godot at exactly the owner's 1672x941
+# original pixel dimensions. Comparing to originals remains REPORT_ONLY
+# until a reviewed pixel-overlay and asset pass; this is NOT a 1:1 claim.
+func capture_reference_candidate(app, reference_id: String) -> void:
+	var old_window: Vector2i = DisplayServer.window_get_size()
+	var old_viewport: Vector2i = root.size
+	var old_aspect: int = root.content_scale_aspect
+	var benchmark := Vector2i(1672, 941)
+	# The Godot default KEEP aspect maps 640x360 to 1672x940 and loses
+	# a physical output row. IGNORE only for this fixed-dimension reference
+	# capture, restoring KEEP before gameplay resumes.
+	root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
+	DisplayServer.window_set_size(benchmark)
+	root.size = benchmark
+	for index in range(4):
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var screenshot: Image = root.get_texture().get_image()
+	print("VIS REF DEBUG id=%s window=%s root=%s screenshot=%s screen=%s" % [reference_id, str(DisplayServer.window_get_size()), str(root.size), str(screenshot.get_size()), str(DisplayServer.screen_get_size())])
+	var native_size: Vector2i = screenshot.get_size()
+	# On a platform that still rounds the canvas to 1672x940, pad ONE
+	# bottom row without resampling existing pixels and clearly log this.
+	# This is output-size normalization, not proof of visual parity.
+	if native_size == Vector2i(1672, 940):
+		var normalized := Image.create(1672, 941, false, screenshot.get_format())
+		normalized.fill(Color("08090b"))
+		normalized.blit_rect(screenshot, Rect2i(Vector2i.ZERO, native_size), Vector2i.ZERO)
+		screenshot = normalized
+		print("VIS REF NORMALIZED: %s native=%s added_one_bottom_row=true" % [reference_id, str(native_size)])
+	check(native_size == benchmark or native_size == Vector2i(1672, 940),
+		"VIS-01 %s native Godot renderer differs by no more than one letterboxed row" % reference_id)
+	check(screenshot.get_size() == benchmark,
+		"VIS-01 %s reference candidate PNG dimensions match exact 1672x941" % reference_id)
+	check(app.ui.get_viewport_rect().size == Vector2(640, 360),
+		"VIS-01 %s keeps the logical interactive PC viewport" % reference_id)
+	check(app.ui.hud.current_scene_id == app.snapshot().scene.current_scene_id,
+		"VIS-02 %s displays live correct-world HUD palette state" % reference_id)
+	var filename := "/tmp/shelter-visual/reference_%s_1672x941.png" % reference_id
+	check(screenshot.save_png(filename) == OK,
+		"VIS-01 %s actual GPU/CPU screenshot saved for owner pixel audit" % reference_id)
+	root.content_scale_aspect = old_aspect
+	DisplayServer.window_set_size(old_window)
+	root.size = old_viewport
+	for index in range(4):
+		await process_frame
+	await RenderingServer.frame_post_draw
+	check(root.get_texture().get_image().get_size() == old_viewport,
+		"VIS-01 %s returns to playable PC resolution" % reference_id)
+
 
 func capture(name: String) -> void:
 	await process_frame
