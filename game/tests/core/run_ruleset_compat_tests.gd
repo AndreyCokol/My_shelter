@@ -63,5 +63,5 @@ func _initialize() -> void:
 		var target := ProjectSettings.globalize_path(pathname + suffix)
 		if FileAccess.file_exists(pathname + suffix):
 			DirAccess.remove_absolute(target)
-	print("RULESET COMPAT: %d checks, %d failures" % [checks, failures])
+	print("RULESET TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
