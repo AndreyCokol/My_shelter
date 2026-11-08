@@ -1,5 +1,7 @@
 extends SceneTree
 
+const RadialMenu = preload("res://game/ui/radial_menu.gd")
+
 var checks: int = 0
 var failures: int = 0
 
@@ -140,8 +142,8 @@ func check_full_hd_interface(app) -> void:
 	check(app.ui.radial.visible and app.session.pauses.is_paused(),
 		"Full HD left-Ctrl wheel preserves the radial pause contract")
 	var center: Vector2 = app.ui.radial.wheel_center()
-	var wheel := Rect2(center - Vector2.ONE * app.ui.radial.RADIUS,
-		Vector2.ONE * app.ui.radial.RADIUS * 2.0)
+	var wheel := Rect2(center - Vector2.ONE * RadialMenu.RADIUS,
+		Vector2.ONE * RadialMenu.RADIUS * 2.0)
 	check(logical_rect.encloses(wheel)
 		and not wheel.intersects(app.ui.hud.map_node.get_global_rect())
 		and not wheel.intersects(app.ui.hud.navigation.get_global_rect()),
