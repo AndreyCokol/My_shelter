@@ -1,0 +1,55 @@
+# 13 — Технический контракт P0-01: сверка текущей реализации с требованиями
+
+**Дата аудита:** 08.11.2026 · **Статус:** `RUNTIME_CONTRACT_RECONCILED_ON_PAPER / REVIEW_PENDING` · **Кодовый baseline:** `fix/a2-melee-los-20261108` SHA `6399081e060f9282501c2ffaaf5f7f55d41ec6f4` ([PR #52](https://github.com/AndreyCokol/My_shelter/pull/52), поверх [PR #51](https://github.com/AndreyCokol/My_shelter/pull/51), [PR #50](https://github.com/AndreyCokol/My_shelter/pull/50), [PR #31](https://github.com/AndreyCokol/My_shelter/pull/31)). **Ни этот документ, ни зелёный CI не являются официальным G0 APPROVED**.
+
+## 1. Единственный источник нормативных правил
+
+- **Решения владельца:** [08-g0-decision-record.md](08-g0-decision-record.md), OD-01..OD-12. Они не меняются выбором программистов: свободная песочница с заданиями, real-time combat, два режима времени, балансируемая еда, A5 лично владеет всем UI, A0 независимый советник/сверщик, **убежище доступно всегда**.
+- **Обязательные продуктовые проверки:** [03-requirements.md](03-requirements.md) + [10-qa-acceptance-matrix.md](10-qa-acceptance-matrix.md). Старые отметки «игра NOT_STARTED» относятся только к `main` до PR №18 и не описывают актуальную кодовую ветку.
+- **Один кандидат API:** [05-integration-contracts.md](05-integration-contracts.md), `v1.5-PROPOSED`. **Правда исполняемого API — конкретные файлы и тесты указанного SHA**; любое несовпадение договора и исходника является предметом [Issue #36](https://github.com/AndreyCokol/My_shelter/issues/36), а не поводом заявить, что код уже полностью соответствует тексту.
+- **Схема v4 — версия файла кампании, а не номер договора v1.5**. Не смешивать эти номера или превращать пример JSON из первоначального документа в save fixture.
+
+## 2. Матрица согласования
+
+| Контекст | Исполняемая реализация и подтверждение | Контракт / открытое замечание | Итог |
+|---|---|---|---|
+| Core session | `game/systems/core/core_session.gd`: `execute`, `load_checkpoint`, `apply_runtime`, `get_snapshot` | Возвращает `CommandResult` + receipt и `ALREADY_APPLIED`, события публикует после commit | **Код существует; ревью владельца A1 ожидается** |
+| Command API | `game/systems/inventory/campaign_commands.gd`: `normalize`, `plan`, `revisions`; дополнительные `game.*` в `game/systems/gameplay/gameplay_commands.gd` | Не все перечисленные в 05 «Service» фасады представлены одноимёнными GDScript классами: они **логические домены**, а реально единая точка записи `CoreSession.execute` | **В документе разделено логическое и фактическое API** |
+| Scheme bootstrap | `CoreSession.initial_state()`: `schema_version=1, scope=core-bootstrap` | Это **тестовый core bootstrap**, не версия современного gameplay save | **Согласовано** |
+| Campaign base | `CampaignModel.new_state()`: `schema_version=2, scope=campaign-core` | Доменный shell до `Gameplay.seed`; нельзя подставить schema2 snapshot вместо игрового schema4 | **Согласовано** |
+| Gameplay legacy | `Gameplay.seed()`: `schema_version=3` | `CampaignModel.validate` принимает legacy schema3 при определённых v4 rules, но не гарантирует миграцию **любого** старого сейва | **Нужны версии-фикстуры A1** |
+| Procedural gameplay | При `rules.world_seed` `CampaignModel.new_state` задаёт `schema_version=4`, `world_states.layout=WorldLayout.manifest(seed)`, `locations={}` | Структура связана с `WorldLayout.valid_manifest`, registry входов, scene.position/return. **Нельзя восстановить её из схематичного JSON v1** | **Рабочий baseline v4** |
+| Save path | `game/app/game_app.gd` использует `user://saves/prototype-v3.json` по историческому названию | Имя файла `v3` **не равно** фактической `schema_version=4`. Не переименовывать путь без миграции/копирования и теста старых файлов | **Риск внешней путаницы** |
+| Scene & Shelter | `SceneRouter.try_transition(...,actor_health=-1)`, `GameApp.toggle_shelter()`, `scene.positions`, `return_scene_id`, `player.hp` | `G`/HUD всегда доступен, Q01 не обязателен; сохранение HP/позиции атомарно | **Ветка PR #50; интеграционное ревью ожидается** |
+| Time & Farm | `CampaignSession.tick`, `CalendarPlanner`, `GameplayState.validate`, `GameRules.build().crop` | Настройки `grow_minutes=180`, `spoil_minutes=120` — **кандидат баланса**, не книжная 72/12; PR #51 сохраняет длительности посадки / допускает legacy persisted deadlines | **Кандидат исправления #34, ревью A1/A3** |
+| Combat | `player.gd` и `game/systems/world/world_layout.gd` | PR #52 добавляет LOS проверку попадания; независимое физическое/ручное подтверждение владельцем A2 и A0 остаётся | **Кандидат исправления #33** |
+| Items, food, residents | `GameRules.build().food.units_per_resident=2`; `reserve_mode=reserve`; `Gameplay.plan` + `CampaignCommands.plan` | **Два в runtime — изменяемый баланс, не утверждённое владельцем обязательное число**. Валидация должна отклонять 0; однократность еды/жителей нужно тестировать при разных конфигах | **Функции есть, интеграционная приёмка ожидается** |
+| UI & input | `game/app/game_app.gd` `_unhandled_input`; `game/ui/game_ui.gd`; `game/ui/radial_menu.gd` | Left Ctrl, Right Ctrl ignored, G, pause tokens, 640×360; **A5 отвечает за весь UI**, A0 ревьюит. Semantics tap/toggle vs hold/select уточняются на реальном GUI | **Автотесты CI прошли, ручной UX NOT_RUN** |
+| Runtime performance | `CampaignSession.tick(delta)` → `CoreSession.apply_runtime` full clone+validate; `EventBus._seen` | [Issue #35](https://github.com/AndreyCokol/My_shelter/issues/35): CPU/memory stress **не измерен**; не объявлять FAIL или PASS без profiler | **OPEN RISK** |
+| Procedural topology | `world_layout.gd` создаёт 26 узлов и переходы, тесты проверяют seed/scene transitions | Граф связности ≠ physics reachability; для каждой квартиры/лестницы нужен проверенный путь и корректный spawn | **P0-07 OPEN** |
+
+## 3. API соответствие: что является нормативным для текущей версии
+
+**Request**: `{action_id,command_type,payload,context:{actor_id,scene_id,expected_resource_revisions:[{key,revision}]}}`. `context` может включать trusted transient `departure_position`, `arrival_position`, `health` только в команде transition/save, формируемой SceneRouter, а не напрямую редактируемой игровым UI. Передавать их из пользовательских кнопок запрещено.
+
+**Result**: `{ok,code,action_id,state_revision,data,message_key}`. Повтор успешного `action_id` при совпадающем fingerprint даёт `ok=true,code=ALREADY_APPLIED` и прежний receipt без мутации. Действительная операция `SESSION` валидируется по конкретным ресурсам; весь `state_revision` не является глобальным optimistic lock.
+
+**Snapshot**: `CoreSession.get_snapshot()` возвращает `duplicate(true)`; допустим только сериализуемый `CampaignModel`, хранящий `ruleset_version`, `schema_version`, `world_states.layout`, `world_states.locations`, `scene.positions`, `clock_remainder`, `completed_actions`, ресурсы, NPC, crops и квесты.
+
+**События**: `EventBus` публикует уведомления после подтверждённого commit; доставка не является durable ledger. Нельзя вешать получение опыта или создание предмета на callback UI.
+
+**Save/recovery**: `CheckpointStore.write_checkpoint` и `CoreSession.load_checkpoint` с явным backup, pause token и staged runtime scene installation. Ошибка записи не должна приводить к частичному изменению авторитетного state или недостоверному OK.
+
+## 4. Строгий список G0 acceptance по фактам
+
+1. [ ] A1 прочитал/проверил данный runtime mapping, привёл примеры 05 к реальному v4 snapshot и подтвердил schema2/3/4 loading/backup тестами.
+2. [ ] A2 подтвердил исправление LOS на PR #52 и непрерывность боевых действий при G-сhelter переходе.
+3. [ ] A3 подтвердил таймеры культуры после изменения баланса (PR #51) и резерв еды без недоступных запасов/двойного расхода.
+4. [ ] A4 подтвердил необязательные Q03–Q07 и отсутствие принудительных договоров/зависимости фермы от сюжетного журнала.
+5. [ ] A5 подтвердил интерфейс PR #50/52, положение HUD/radial, паузы и фактический Windows GUI/UX.
+6. [ ] A0 пересверил независимые замечания #33–35 на новом head и оставил конкретный отзыв, включая непройденные измерения.
+7. [ ] [Issue #14](https://github.com/AndreyCokol/My_shelter/issues/14) содержит явное решение о приватности исходников и разрешённых лицензиях перед публикацией реального контента.
+8. [ ] Сверены реальные branch dependencies PR #7 → #16 → #18 → #20 → #22 → #24 → #26 → #28 → #30 → #31 → #50 → #51 → #52; проект не мержит альтернативные PR #38/#39 повторно.
+9. [ ] Владелец **явно утвердил точные финальные SHA** документов/контракта после всех технических отзывов. `G0_APPROVED` ставится только тогда, не задним числом.
+
+**Итог P0-01:** структурная сверка и устранение заведомо ложных статусов — задача этого PR; приёмка техническими владельцами, тесты совместимости и владелец остаются `PENDING`. Не выдавать документальное исправление за завершённую реализацию игры.
