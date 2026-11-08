@@ -69,6 +69,29 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # Short-lived personal prototype artifact. This packaging change is isolated
+      # from all gameplay and must not be merged into main automatically.
+      - name: Include exact source SHA in local preview
+        shell: pwsh
+        run: |
+          @'
+          My Shelter - temporary Windows x64 preview, PRIVATE TEST ONLY
+          Source SHA: db10a24db888b0a62c81f85229f67e8233bc46aa
+          Open MyShelter.exe after extracting the archive.
+          Prototype: manual Windows GUI and 15-35 minute acceptance NOT YET DONE.
+          No permission to redistribute copyrighted literary or art assets.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (-not (Test-Path build/windows/MyShelter.exe)) { throw 'Missing executable' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Unexpected executable size' }
+      - name: Upload temporary owner Windows x64 preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-PR93-preview
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
