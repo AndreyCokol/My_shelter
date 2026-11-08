@@ -108,12 +108,15 @@ func take_damage(amount: int) -> bool:
 	if amount <= 0 or defeated or dodge_remaining > 0 or hurt_remaining > 0 or app == null or not app.running():
 		return false
 	health = maxi(0, health - amount)
+	# Switch to defeated before updating the sprite. Otherwise the last
+	# lethal hit leaves a permanently red "hurt" frame while physics stops.
+	if health == 0:
+		defeated = true
 	hurt_remaining = 0.45
 	_update_pixel_animation(false)
 	queue_redraw()
 	app.update_hud()
 	if health == 0:
-		defeated = true
 		app.call_deferred("player_defeated")
 	return true
 
