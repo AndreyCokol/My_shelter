@@ -14,6 +14,7 @@ var buildings := {}
 var hospital_cache := {}
 var occlusion: Node2D
 var last_occlusion_position := Vector2.INF
+var collision_revision := 0
 const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
@@ -100,9 +101,22 @@ func add_wall(rect: Rect2) -> StaticBody2D:
 	shape.size = rect.size
 	collider.shape = shape
 	wall.position = rect.get_center()
+	wall.set_meta("collision_rect", rect)
+	wall.tree_exited.connect(func(): collision_revision += 1)
 	wall.add_child(collider)
 	add_child(wall)
+	collision_revision += 1
 	return wall
+
+# Live physics walls (including player-built shelter structures) are the
+# authoritative navigation obstacle set. Rebuilding after changes invalidates
+# the zombie chase path; no collision is bypassed by the pathfinder.
+func collision_rects() -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	for child in get_children():
+		if child is StaticBody2D and child.has_meta("collision_rect") and not child.is_queued_for_deletion():
+			rects.append(child.get_meta("collision_rect"))
+	return rects
 
 func refresh_buildings() -> void:
 	if scene_id != "shelter" or layout.is_empty() or app == null:
