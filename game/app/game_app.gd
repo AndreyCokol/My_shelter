@@ -101,7 +101,7 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return last_result
 
 func transition(destination: String, entry_id: String = "default") -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id)
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health)
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
