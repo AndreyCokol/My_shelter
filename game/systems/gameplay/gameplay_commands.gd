@@ -18,6 +18,7 @@ static func normalize(request: Dictionary) -> Dictionary:
 		"game.fulfill_contract": ["day", "faction"], "game.trade_camp": ["faction"],
 		"game.assign_shift": ["resident_id", "job"], "game.collect_shift": ["resident_id"],
 		"game.contact": ["resident_id"], "game.consent": ["resident_id", "accept"], "game.recruit": ["resident_id"],
+		"game.equip_weapon": ["instance_id"],
 		"game.quest_track": ["quest_id"]}
 	var kind = request.get("command_type")
 	var payload = request.get("payload")
@@ -33,7 +34,7 @@ static func normalize(request: Dictionary) -> Dictionary:
 		elif key == "accept":
 			if not value is bool:
 				return {"ok": false}
-		elif not value is String or value.is_empty():
+		elif not value is String or (value.is_empty() and not (kind == "game.equip_weapon" and key == "instance_id")):
 			return {"ok": false}
 		normalized[key] = value
 	return {"ok": true, "payload": normalized}
@@ -104,6 +105,18 @@ static func plan(state: Dictionary, request: Dictionary, rules: Dictionary) -> D
 	var p: Dictionary = request.payload
 	var kind: String = request.command_type
 	var scene: String = state.scene.current_scene_id
+	if kind == "game.equip_weapon":
+		var instance_id: String = p.instance_id
+		if instance_id.is_empty():
+			state.player.equipped_weapon_instance_id = ""
+			bump(state, ["world"])
+			return success({"equipped_weapon_instance_id": ""})
+		for item in state.inventory.items:
+			if item.instance_id == instance_id and item.container_id == "player" and item.quantity > 0 and rules.combat.weapons.has(item.type_id):
+				state.player.equipped_weapon_instance_id = instance_id
+				bump(state, ["world"])
+				return success({"equipped_weapon_instance_id": instance_id})
+		return fail("NOT_FOUND")
 	if kind == "game.enemy_defeated":
 		if state.schema_version == 4 and Layout.street_has_patrol(scene, state.world_states.layout):
 			var cleared: Array = state.world_states.get("cleared_patrols", [])
