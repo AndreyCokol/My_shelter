@@ -98,3 +98,24 @@
 
 **DoD:** на одном SHA `SAVE PROFILE TESTS: 16 checks, 0 failures` в обеих ОС; сохранить реальные строки `F05 SAVE PROFILE ...` из логов и только после этого отметить `CI_PASS`. Целевой 30-минутный пользовательский performance acceptance и memory profiling — отдельная задача и не закрываются этим тестом.
 
+
+## CT-84 / WORLD-01 — физическая доступность после строительства (08.11.2026)
+
+Для ограниченной P0 строительной сетки `Construction.COLUMNS=5`, `ROWS=2` создаются все **1024 возможных конфигурации** размещения сооружений (тип сооружения не меняет footprint). Отдельный Godot-тест `run_shelter_access_tests.gd` накладывает настоящие `Construction.cell_rect` и `layout.obstacles` на `AStarGrid2D` с шагом 16 px и запасом 10 px на радиус игрока. Проверяет доступность от spawn до точек фермы, отдыха, края мастерской и портала наружу. Дополнительно полная застройка проверяется на пограничных seed `0,1,127,2147483647`.
+
+**Точное ограничение:** это проверка геометрической проходимости в сеточной аппроксимации 16 px, а не автоматический GUI-тест на всех зданиях и не доказательство для будущих карт ×12/×4. При изменении footprints / расположения интерактивных точек тест обновлять, не удалять. Если какой-либо mask вызывает FAIL, нельзя принимать P1 строительство: либо ввести policy запрет установки, перекрывающей проход, либо пересмотреть расстановку. После CI `SHELTER ACCESS TESTS` и Windows export — evidence record с точным SHA.
+
+
+## Подтверждённые результаты общей проверки CT-82, CT-85, F05, CT-84 (08.11.2026)
+
+**Тестированная исходная ревизия:** `668c028845dcd7785ef829f5ae360de35307b884` — цепочка PR #93 → [#105](https://github.com/AndreyCokol/My_shelter/pull/105) → [#107](https://github.com/AndreyCokol/My_shelter/pull/107) → [#108](https://github.com/AndreyCokol/My_shelter/pull/108) → [#110](https://github.com/AndreyCokol/My_shelter/pull/110). Всё ещё `DRAFT/UNMERGED` и owner G0/G4 `NOT_ACCEPTED`.
+
+- **Linux Godot CI:** [run 42513550989](https://github.com/AndreyCokol/My_shelter/actions/runs/42513550989), `success`. **Windows native CI/export/headless:** [run 42513551016](https://github.com/AndreyCokol/My_shelter/actions/runs/42513551016), `success`; 18 Kibyra assets проверены. **Docs:** [run 42513551041](https://github.com/AndreyCokol/My_shelter/actions/runs/42513551041), `success`.
+- **CT-82 (AI persistent):** 4 добавленных `PASS` на обеих ОС: G→door→load сохраняет position/noise/timers; legacy save без новых полей принимает; отрицательный alert отвергается; победа очищает запись. **AI pathfinding вокруг сложных стен остаётся отдельным открытым P1.**
+- **CT-85 (Full HD):** Linux real software OpenGL `VISUAL TESTS: 51 checks, 0 failures`, проверены 15 PNG с реальным размером **1920×1080**, HUD/радиальное меню/13 панелей, после масштабирования исходное окно и pause восстанавливаются. **Нативное ручное управление Windows — NOT_RUN.**
+- **F05 (сохранения):** Linux и Windows `SAVE PROFILE TESTS: 16 checks, 0 failures`. На Windows 10 000 **синтетических** receipts: файл **1 628 239 байт**, write **101.030 ms**, load **264.407 ms**; на Linux 102.779 ms и 203.246 ms. Числа относятся только к CI и не должны трактоваться как производительность ПК пользователя.
+- **F04 (EventBus):** существующий тест отправляет 100 000 уведомлений; в CI bounded cache удерживает 4096 event IDs. **Не** создавать дубликат параллельного PR #91 без новых независимых требований.
+- **CT-84 (строительство):** `SHELTER ACCESS TESTS: 6 checks, 0 failures`; **все 1024** комбинации 10 клеток не блокируют маршруты spawn→ферма/отдых/мастерская/портал; худшая застройка также проверена на seed `0, 1, 127, 2147483647`. Проверка на сетке 16px, допуск 10px, не заменяет реальный пользовательский коллизионный тест.
+
+**Не закрытые задачи:** Windows GUI/15–35 минут, динамическая навигация зомби вокруг препятствий, интеграция 64×64 move/attack sprite assets, 30-минутные FPS/RAM, аварийный kill-process/power-loss checkpoint, независимое A0/A1–A5 review, подпись G0/G4 и решение о правомерном распространении. Не объявлять эти задачи DONE на основе зелёного headless CI.
+
