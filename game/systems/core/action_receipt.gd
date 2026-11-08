@@ -16,6 +16,14 @@ static func fingerprint(entry) -> String:
 		return entry.fingerprint
 	return ""
 
+# Linked domain validators read the immutable action data regardless of format.
+static func data(entry) -> Dictionary:
+	if entry is Array and entry.size() == 5 and entry[0] == FORMAT and entry[3] is Dictionary:
+		return entry[3].duplicate(true)
+	if entry is Dictionary and entry.get("result") is Dictionary and entry.result.get("data") is Dictionary:
+		return entry.result.data.duplicate(true)
+	return {}
+
 static func replay(action_id: String, entry) -> Dictionary:
 	if entry is Array:
 		return {"ok": true, "code": "ALREADY_APPLIED", "action_id": action_id,
