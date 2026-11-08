@@ -18,6 +18,7 @@ const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const GameplayState = preload("res://game/state/gameplay_state.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
 	location_id = id
@@ -106,7 +107,7 @@ func add_wall(rect: Rect2) -> StaticBody2D:
 func refresh_buildings() -> void:
 	if scene_id != "shelter" or layout.is_empty() or app == null:
 		return
-	var current: Dictionary = app.snapshot().shelter.get("buildings", {})
+	var current: Dictionary = app.snapshot(false).shelter.get("buildings", {})
 	if buildings == current:
 		return
 	for cell in building_bodies.keys():
@@ -126,15 +127,21 @@ func bind(runtime) -> void:
 	if is_instance_valid(foe):
 		foe.free()
 	foe = null
-	var state: Dictionary = app.snapshot()
+	var state: Dictionary = app.snapshot(false)
+	if scene_id == "shelter" and not state.world_states.first_enemy_defeated:
+		for portal in portals:
+			if portal.to == "outside":
+				portal.to = state.scene.return_scene_id
+				portal.entry = "default"
+				portal.label = "Вернуться в больницу"
 	hospital_cache = Layout.hospital_cache(location_id, state.world_states.layout) if state.schema_version == 4 else {}
-	var defeated: bool = state.world_states.first_enemy_defeated if location_id in ["", "hospital"] else state.world_states.get("locations", {}).get(location_id, {}).get("defeated", false)
-	var patrol: bool = state.schema_version == 4 and Layout.street_has_patrol(location_id, state.world_states.layout) and not location_id in state.world_states.get("cleared_patrols", [])
-	if (scene_id == "hospital" and not defeated) or patrol:
+	var current_id: String = state.scene.current_scene_id
+	if GameplayState.has_live_enemy(state, current_id):
 		foe = preload("res://game/entities/enemies/enemy.gd").new()
 		foe.app = app
+		foe.health = int(state.world_states.get("enemy_health", {}).get(current_id, foe.health))
 		foe.position = layout.get("enemy", Vector2(330, 190))
-		if patrol:
+		if state.schema_version == 4 and Layout.street_has_patrol(location_id, state.world_states.layout):
 			foe.patrol = layout.patrol
 			foe.patrol_index = floori(float(state.game_time_minutes) / 30) % foe.patrol.size()
 			foe.position = foe.patrol[foe.patrol_index]
@@ -147,7 +154,7 @@ func interact() -> void:
 		if exit_reached(portal):
 			app.transition(portal.to, portal.get("entry", "default"))
 			return
-	if scene_id == "outside" and app.hero.position.distance_to(event_point()) < 28 and DistrictEvents.available(app.snapshot(), location_id):
+	if scene_id == "outside" and app.hero.position.distance_to(event_point()) < 28 and DistrictEvents.available(app.snapshot(false), location_id):
 		app.ui.open_panel("district_event")
 		return
 	if scene_id == "outside" and not layout.is_empty() and app.hero.position.distance_to(salvage_point()) < 24:
@@ -230,14 +237,14 @@ func _draw() -> void:
 			draw_rect(Rect2(x, 120, 44, 68), Color("62747c"))
 			draw_rect(Rect2(x + 5, 125, 34, 16), Color("d3d6c8"))
 	elif scene_id == "hospital" and not hospital_cache.is_empty():
-		var looted: bool = app.snapshot().world_states.locations.get(location_id, {}).get("cache_looted", false)
+		var looted: bool = app.snapshot(false).world_states.locations.get(location_id, {}).get("cache_looted", false)
 		draw_rect(Rect2(resource_point - Vector2(11, 8), Vector2(22, 16)), Color("49595d") if looted else Color("8d876b"))
 		var label: String = "Пустой ящик" if looted else hospital_cache.label
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-62, -12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c1cbce"))
 	elif scene_id == "shelter":
 		draw_colored_polygon(PackedVector2Array([Vector2(360, 205), Vector2(405, 130), Vector2(450, 205)]), Color("bda16c"))
 		WorldArt.tile(self, "wood", Rect2(386, 168, 40, 38), WorldArt.WARM)
-		var plots: Array = app.snapshot().crops.plots if app != null else []
+		var plots: Array = app.snapshot(false).crops.plots if app != null else []
 		for i in range(plots.size()):
 			var status: String = plots[i].status
 			WorldArt.tile(self, "soil", Rect2(170 + i * 65, 175, 55, 50), WorldArt.WARM)
@@ -268,7 +275,7 @@ func _draw() -> void:
 				draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 8), str(index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("eff0d6"))
 			draw_string(ThemeDB.fallback_font, Vector2(185, 245), "Стройплощадка [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
 	elif scene_id in ["outside", "house"]:
-		var exhausted: bool = scene_id == "house" and app != null and app.snapshot().world_states.locations.get(location_id, {}).get("looted", false)
+		var exhausted: bool = scene_id == "house" and app != null and app.snapshot(false).world_states.locations.get(location_id, {}).get("looted", false)
 		var resource_label := "Пустой тайник" if exhausted else "Запасы семян"
 		draw_rect(Rect2(resource_point - Vector2(16, 12), Vector2(32, 24)), Color("8e7954"))
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-49, -17), resource_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dce5ce"))
@@ -276,7 +283,7 @@ func _draw() -> void:
 			var salvage := salvage_point()
 			draw_rect(Rect2(salvage - Vector2(10, 7), Vector2(20, 14)), Color("677b83"))
 			draw_string(ThemeDB.fallback_font, salvage + Vector2(16, 4), "Утиль [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
-		if scene_id == "outside" and app != null and DistrictEvents.available(app.snapshot(), location_id):
+		if scene_id == "outside" and app != null and DistrictEvents.available(app.snapshot(false), location_id):
 			var point := event_point()
 			draw_circle(point, 9, Color("ad8360"))
 			draw_string(ThemeDB.fallback_font, point + Vector2(-45, -13), "Выжившие [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e6d0a6"))

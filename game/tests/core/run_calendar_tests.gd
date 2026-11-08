@@ -4,6 +4,7 @@ const Campaign = preload("res://game/systems/core/campaign_session.gd")
 const Calendar = preload("res://game/systems/core/calendar_planner.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Fixtures = preload("res://game/tests/core/campaign_fixtures.gd")
+const GameRules = preload("res://game/data/game_rules.gd")
 var checks: int = 0
 var failures: int = 0
 var notifications: Array = []
@@ -46,6 +47,52 @@ func make_campaign():
 	var campaign = Campaign.new(Fixtures.rules())
 	campaign.configure_calendar(source, consume)
 	return campaign
+
+func check_gameplay_ticks(store) -> void:
+	var campaign := Campaign.new(GameRules.build())
+	var session = campaign.coordinator
+	session.events.subscribe(self, receive)
+	var planted: bool = session.apply_runtime(func(state):
+		state.crops.plots[0].merge({"status": "growing", "ripe_at": 1, "spoil_at": 2}, true)
+		return true)
+	check(planted, "production clock fixture has one growing crop")
+	notifications.clear()
+	var start: Dictionary = session.get_snapshot()
+	var all_ticks_ok := true
+	for frame in range(59):
+		all_ticks_ok = campaign.tick(1.0 / 60.0) and all_ticks_ok
+	var partial: Dictionary = session.get_snapshot()
+	check(all_ticks_ok and partial.game_time_minutes == 0 and is_equal_approx(partial.clock_remainder, 59.0 / 60.0) and partial.state_revision == start.state_revision + 59 and notifications.is_empty(), "production subminute ticks retain fractional time and revisions without events")
+	var token: int = session.pauses.acquire_pause("test")
+	check(not campaign.tick(1.0 / 60.0) and session.get_snapshot() == partial, "paused production tick preserves fractional time and revisions")
+	session.pauses.release_pause(token)
+	var save := {"action_id": "gameplay-clock-save", "command_type": "session.save", "payload": {}, "context": {"actor_id": "player", "scene_id": "hospital"}}
+	check(session.execute(save, store).ok, "production checkpoint saves a fractional minute")
+	var reloaded := Campaign.new(GameRules.build())
+	var resumed = reloaded.coordinator
+	check(resumed.load_checkpoint(store).ok and is_equal_approx(resumed.get_snapshot().clock_remainder, partial.clock_remainder), "production checkpoint restores fractional time")
+	resumed.events.subscribe(self, receive)
+	notifications.clear()
+	var before_boundary: Dictionary = resumed.get_snapshot()
+	check(reloaded.tick(1.0 / 60.0), "production tick reaches the crop boundary after reload")
+	var after_boundary: Dictionary = resumed.get_snapshot()
+	check(after_boundary.game_time_minutes == 1 and after_boundary.crops.plots[0].status == "ripe" and after_boundary.resource_revisions.farm == before_boundary.resource_revisions.farm + 1, "minute boundary commits farm state with the clock")
+	check(notifications.map(func(e): return e.event_type) == ["time_advanced", "crop_changed"] and notifications.all(func(e): return e.game_minute == 1 and e.state_revision == after_boundary.state_revision), "production boundary publishes time and crop events at one revision")
+	check(resumed.execute(save, store).code == "ALREADY_APPLIED" and resumed.get_snapshot() == after_boundary, "calendar tick retains saved command receipts for replay")
+	var presentation: Dictionary = resumed.get_snapshot(false)
+	presentation.crops.plots[0].status = "empty"
+	check(not presentation.has("completed_actions") and resumed.get_snapshot() == after_boundary, "presentation snapshot omits receipts and isolates nested state")
+
+	var revision_at_limit: bool = resumed.apply_runtime(func(state):
+		state.resource_revisions.farm = Calendar.MAX_MINUTE
+		return true)
+	var before_failure: Dictionary = resumed.get_snapshot()
+	notifications.clear()
+	check(revision_at_limit and not reloaded.tick(1.0) and resumed.get_snapshot() == before_failure and notifications.is_empty(), "invalid deadline update rolls back clock, crop, revisions and events")
+	check(reloaded.configure_calendar(source, consume), "production campaign accepts a replacement calendar adapter")
+	deny = true
+	check(not reloaded.tick(0.1) and resumed.get_snapshot() == before_failure, "replacement provider can veto even a fractional tick")
+	deny = false
 
 func _initialize() -> void:
 	var campaign = make_campaign()
@@ -143,7 +190,10 @@ func _initialize() -> void:
 	check(bootstrap.tick(1.0e300, false) == 0 and bootstrap.minute == 0 and bootstrap.remainder == 0, "bootstrap clock also guards numeric overflow")
 	var plain = Calendar.new()
 	check(not plain.advance({"game_time_minutes": 4}, 3, "tick").ok, "calendar never moves backward")
-	for suffix in ["", ".tmp", ".bak", ".rejected"]:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
+	var gameplay_store = Store.new(store.path + ".gameplay")
+	check_gameplay_ticks(gameplay_store)
+	for path in [store.path, gameplay_store.path]:
+		for suffix in ["", ".tmp", ".bak", ".rejected"]:
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 	print("CALENDAR TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)

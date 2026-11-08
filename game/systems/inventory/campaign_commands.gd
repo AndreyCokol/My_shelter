@@ -4,6 +4,8 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Core = preload("res://game/systems/core/core_session.gd")
+const GameplayState = preload("res://game/state/gameplay_state.gd")
+const Enemy = preload("res://game/entities/enemies/enemy.gd")
 var calendar
 var rules: Dictionary
 
@@ -42,12 +44,33 @@ func plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var result := _plan(state, request)
 	if result.get("ok", false):
 		if rules.get("gameplay", false):
+			var scene: String = before.scene.current_scene_id
+			if request.command_type == "game.enemy_defeated":
+				record_enemy_health(state, scene, Enemy.MAX_HEALTH)
+			elif request.context.has("enemy_health"):
+				var health = request.context.enemy_health
+				if not GameplayState.has_live_enemy(before, scene) or not Core.valid_integer(health) or health > Enemy.MAX_HEALTH:
+					return fail("INVALID_ARGUMENT")
+				record_enemy_health(state, scene, int(health))
+			if state.world_states.get("enemy_health", {}) != before.world_states.get("enemy_health", {}) and state.resource_revisions.world == before.resource_revisions.world:
+				bump(state, ["world"])
 			Gameplay.refresh_quests(state)
 		if request.command_type != "clock.rest":
 			result.events = command_events(before, state, request, result)
 			if request.command_type.begins_with("game."):
 				result.events.append({"event_type": "gameplay_changed", "payload": {"command_type": request.command_type}})
 	return result
+
+static func record_enemy_health(state: Dictionary, scene: String, health: int) -> void:
+	var injuries: Dictionary = state.world_states.get("enemy_health", {})
+	if health < Enemy.MAX_HEALTH:
+		injuries[scene] = health
+	else:
+		injuries.erase(scene)
+	if injuries.is_empty():
+		state.world_states.erase("enemy_health")
+	else:
+		state.world_states.enemy_health = injuries
 
 func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	var p: Dictionary = request.payload
@@ -57,17 +80,20 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 	# Scene validation happens AFTER receipt replay in CoreSession.
 	if request.context.get("scene_id") != state.scene.current_scene_id:
 		return fail("INVALID_STATE")
-	if kind in ["scene.transition", "session.save"] and request.context.has("departure_position"):
+	# A gameplay command can autosave without a portal or an explicit save.
+	var capture_actor: bool = rules.get("gameplay", false) or kind in ["scene.transition", "session.save"]
+	if capture_actor and request.context.has("departure_position"):
 		if not Model.valid_position(request.context.departure_position):
 			return fail("INVALID_ARGUMENT")
 		state.player.position = request.context.departure_position.duplicate(true)
 		state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate(true)
-	# Portal and shelter transitions are durable checkpoints: keep live combat HP.
-	if kind in ["scene.transition", "session.save"] and request.context.has("health"):
+	if capture_actor and request.context.has("health"):
 		if not Core.valid_integer(request.context.health) or request.context.health > 100:
 			return fail("INVALID_ARGUMENT")
 		state.player.hp = int(request.context.health)
 	if rules.get("gameplay", false):
+		if kind == "scene.transition" and state.player.hp == 0:
+			return fail("UNAVAILABLE")
 		if not state.world_states.first_enemy_defeated:
 			# The shelter is an unconditional player escape, including onboarding.
 			# Only ordinary world travel and locked System resources need the first victory.
@@ -210,17 +236,9 @@ func _plan(state: Dictionary, request: Dictionary) -> Dictionary:
 			state.scene.positions[state.scene.current_scene_id] = state.player.position.duplicate()
 			if state.scene.last_outside_position != null:
 				state.scene.last_outside_position = safe_legacy_position(nodes[state.scene.return_scene_id], state.scene.last_outside_position)
-			if request.context.has("health"):
-				if not Core.valid_integer(request.context.health) or request.context.health > 100:
-					return fail("INVALID_ARGUMENT")
-				state.player.hp = int(request.context.health)
 			bump(state, ["world", "scene"])
 			return success({"seed": seed_value})
 		"session.save":
-			if rules.get("gameplay", false) and request.context.has("health"):
-				if not Core.valid_integer(request.context.health) or request.context.health > 100:
-					return fail("INVALID_ARGUMENT")
-				state.player.hp = int(request.context.health)
 			return success({})
 	return fail("UNAVAILABLE")
 

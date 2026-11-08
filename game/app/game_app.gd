@@ -57,8 +57,8 @@ func _process(delta: float) -> void:
 		hud_elapsed = 0
 		update_hud()
 
-func snapshot() -> Dictionary:
-	return session.get_snapshot()
+func snapshot(include_receipts: bool = true) -> Dictionary:
+	return session.get_snapshot(include_receipts)
 
 func rules() -> Dictionary:
 	return campaign.get_rules()
@@ -70,6 +70,10 @@ func enemy():
 	var world = scene_router.current_world()
 	return world.foe if is_instance_valid(world) else null
 
+func _enemy_health() -> int:
+	var target = enemy()
+	return target.health if is_instance_valid(target) else -1
+
 func next_action() -> String:
 	action_serial += 1
 	return "%s:%s:%d" % [Time.get_unix_time_from_system(), Time.get_ticks_usec(), action_serial]
@@ -79,7 +83,14 @@ func _request(kind: String, payload: Dictionary) -> Dictionary:
 	var revisions: Array = []
 	for key in state.resource_revisions:
 		revisions.append({"key": key, "revision": state.resource_revisions[key]})
-	return {"action_id": next_action(), "command_type": kind, "payload": payload, "context": {"actor_id": "player", "scene_id": state.scene.current_scene_id, "expected_resource_revisions": revisions}}
+	var context := {"actor_id": "player", "scene_id": state.scene.current_scene_id, "expected_resource_revisions": revisions}
+	if kind != "game.player_defeated":
+		context.departure_position = {"x": hero.position.x, "y": hero.position.y}
+		context.health = hero.health
+	var health := _enemy_health()
+	if health >= 0:
+		context.enemy_health = health
+	return {"action_id": next_action(), "command_type": kind, "payload": payload, "context": context}
 
 func command(kind: String, payload: Dictionary = {}) -> Dictionary:
 	if kind in ["game.enemy_defeated", "game.player_defeated"]:
@@ -90,9 +101,6 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	var request := _request(kind, payload)
 	if kind == "game.build":
 		request.context.live_position = {"x": hero.position.x, "y": hero.position.y}
-	if kind == "session.upgrade_world":
-		request.context.departure_position = {"x": hero.position.x, "y": hero.position.y}
-		request.context.health = hero.health
 	last_result = session.execute(request, save_store)
 	if last_result.ok and kind == "session.upgrade_world":
 		bind_world()
@@ -101,7 +109,7 @@ func _execute(kind: String, payload: Dictionary = {}) -> Dictionary:
 	return last_result
 
 func transition(destination: String, entry_id: String = "default") -> Dictionary:
-	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health)
+	var result: Dictionary = scene_router.try_transition(next_action(), destination, entry_id, hero.health, _enemy_health())
 	last_result = result
 	ui.show_result(result)
 	if result.ok:
@@ -155,6 +163,9 @@ func _loaded() -> void:
 	hero.restore(int(snapshot().player.hp))
 	bind_world()
 	update_hud()
+	if hero.defeated:
+		# The load callback runs before the checkpoint transaction releases its lock.
+		call_deferred("player_defeated")
 
 func update_hud() -> void:
 	if ui != null and is_instance_valid(ui):
@@ -187,8 +198,6 @@ func player_defeated() -> void:
 
 func save_game() -> Dictionary:
 	var request := _request("session.save", {})
-	request.context.departure_position = {"x": hero.position.x, "y": hero.position.y}
-	request.context.health = hero.health
 	last_result = session.execute(request, save_store)
 	ui.show_result(last_result)
 	return last_result

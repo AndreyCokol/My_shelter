@@ -6,6 +6,7 @@ const Camp = preload("res://game/systems/world/camp_network.gd")
 const Work = preload("res://game/systems/shelter/resident_work.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const Enemy = preload("res://game/entities/enemies/enemy.gd")
 
 static func integer(value) -> bool:
 	return (value is int or value is float) and is_finite(value) and value >= 0 and value <= 9007199254740991 and value == floor(value)
@@ -72,6 +73,7 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not state.residents.get("records") is Array or state.residents.records.size() != 2:
 		return false
 	ids = []
+	var reserved_by_resident := {}
 	for resident in state.residents.records:
 		if not resident is Dictionary or not resident.get("id") in ["resident_1", "resident_2"] or resident.id in ids or not resident.get("status") in ["unknown", "contacted", "declined", "AWAITING_SUPPLIES", "joined"] or not resident.get("consent") is bool or not resident.get("food_receipt_id") is String:
 			return false
@@ -83,16 +85,22 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		if resident.status == "joined" and (resident.food_receipt_id.is_empty() or not state.completed_actions.has(resident.food_receipt_id)):
 			return false
 		if resident.status == "joined":
-			var receipt: Dictionary = state.completed_actions[resident.food_receipt_id].result.data
-			if receipt.get("resident_id") != resident.id or receipt.get("reserve_mode") != rules.food.reserve_mode or receipt.get("units") != rules.food.units_per_resident or not receipt.get("food_allocations") is Array:
+			var action: Dictionary = state.completed_actions[resident.food_receipt_id]
+			var fingerprint := JSON.stringify(["game.recruit", "player", {"resident_id": resident.id}]).sha256_text()
+			var receipt: Dictionary = action.result.data
+			if action.fingerprint != fingerprint or receipt.get("resident_id") != resident.id or not receipt.get("reserve_mode") in ["reserve", "consume"] or not integer(receipt.get("units")) or receipt.units <= 0 or not receipt.get("food_allocations") is Array:
 				return false
+			var allocations := {}
 			var total: int = 0
 			for part in receipt.food_allocations:
-				if not part is Dictionary or not part.get("instance_id") is String or not part.get("type_id") in rules.food.accepted_food_type_ids or not integer(part.get("quantity")) or part.quantity <= 0:
+				if not part is Dictionary or not part.get("instance_id") is String or part.instance_id.is_empty() or allocations.has(part.instance_id) or not part.get("type_id") is String or part.type_id.is_empty() or not integer(part.get("quantity")) or part.quantity <= 0 or part.quantity > receipt.units - total:
 					return false
+				allocations[part.instance_id] = part
 				total += int(part.quantity)
-			if total != rules.food.units_per_resident:
+			if total != receipt.units:
 				return false
+			if receipt.reserve_mode == "reserve":
+				reserved_by_resident[resident.id] = allocations
 	if not state.quests.get("records") is Array or state.quests.records.size() != 7:
 		return false
 	ids = []
@@ -109,8 +117,13 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		ids.append(flag)
 	if not state.world_states.get("first_enemy_defeated") is bool or not integer(state.world_states.get("resource_ready_at")) or not integer(state.world_states.get("defeats")):
 		return false
+	if state.scene.return_scene_id == "shelter":
+		return false
+	if state.scene.current_scene_id == "shelter" and not state.world_states.first_enemy_defeated and state.scene.return_scene_id != "hospital":
+		return false
+	var has_enemy_health: int = int(state.world_states.has("enemy_health"))
 	if state.schema_version == 4:
-		var known_fields := 5
+		var known_fields := 5 + has_enemy_health
 		for key in ["salvage_ready_at", "camp_network", "cleared_patrols", "district_events"]:
 			known_fields += int(state.world_states.has(key))
 		if state.world_states.size() != known_fields or not state.world_states.get("locations") is Dictionary:
@@ -154,8 +167,14 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 					return false
 		if state.quests.has("expedition") and not Expedition.validate(state.quests.expedition, state, rules.scenes):
 			return false
-	elif state.world_states.size() != 3:
+	elif state.world_states.size() != 3 + has_enemy_health:
 		return false
+	var enemy_health = state.world_states.get("enemy_health", {})
+	if not enemy_health is Dictionary:
+		return false
+	for id in enemy_health:
+		if not id is String or not rules.scenes.has(id) or not has_live_enemy(state, id) or not integer(enemy_health[id]) or enemy_health[id] >= Enemy.MAX_HEALTH:
+			return false
 	if state.world_states.first_enemy_defeated != ("system_unlocked" in state.story_flags) or state.world_states.first_enemy_defeated != ("system" in state.claimed_reward_ids):
 		return false
 	for key in ["farm", "residents", "world"]:
@@ -164,7 +183,6 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 	if not state.inventory.reservations is Array:
 		return false
 	var reserved: Dictionary = {}
-	var food_by_resident: Dictionary = {}
 	for reservation in state.inventory.reservations:
 		if not reservation is Dictionary or not reservation.get("resident_id") in ["resident_1", "resident_2"] or not reservation.get("instance_id") is String or not integer(reservation.get("quantity")) or reservation.quantity <= 0:
 			return false
@@ -172,23 +190,28 @@ static func validate(state: Dictionary, rules: Dictionary) -> bool:
 		for entry in state.inventory.items:
 			if entry.instance_id == reservation.instance_id:
 				item = entry
-		if item.is_empty() or not item.type_id in rules.food.accepted_food_type_ids:
+		var allocations: Dictionary = reserved_by_resident.get(reservation.resident_id, {})
+		var part: Dictionary = allocations.get(reservation.instance_id, {})
+		if item.is_empty() or part.is_empty() or item.type_id != part.type_id or reservation.quantity != part.quantity:
 			return false
-		var joined := false
-		for resident in state.residents.records:
-			if resident.id == reservation.resident_id:
-				joined = resident.status == "joined"
-		if not joined:
-			return false
+		allocations.erase(reservation.instance_id)
 		reserved[item.instance_id] = reserved.get(item.instance_id, 0) + reservation.quantity
-		food_by_resident[reservation.resident_id] = food_by_resident.get(reservation.resident_id, 0) + reservation.quantity
 		if reserved[item.instance_id] > item.quantity:
 			return false
-	for resident in state.residents.records:
-		if resident.status == "joined" and rules.food.reserve_mode == "reserve" and food_by_resident.get(resident.id, 0) != rules.food.units_per_resident:
+	for allocations in reserved_by_resident.values():
+		if not allocations.is_empty():
 			return false
 	if state.schema_version == 4 and rules.get("housing_required", false):
 		var housed: Array = state.residents.records.filter(func(resident): return resident.status == "joined")
 		if Construction.count(state.shelter.get("buildings", {}), "bed") < housed.size():
 			return false
-	return rules.food.reserve_mode == "reserve" or state.inventory.reservations.is_empty()
+	return true
+
+static func has_live_enemy(state: Dictionary, id: String) -> bool:
+	if id == "hospital":
+		return not state.world_states.first_enemy_defeated
+	if state.schema_version != 4:
+		return false
+	if Layout.kind(id) == "hospital":
+		return not state.world_states.locations.get(id, {}).get("defeated", false)
+	return Layout.street_has_patrol(id, state.world_states.layout) and not id in state.world_states.get("cleared_patrols", [])

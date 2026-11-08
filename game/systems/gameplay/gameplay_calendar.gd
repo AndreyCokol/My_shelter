@@ -1,5 +1,6 @@
 extends RefCounted
 
+# Natural ticks pass a detached clock, farm, residents and revisions projection.
 static func deadlines(state: Dictionary, from: int, target: int) -> Array:
 	var due: Array = []
 	for plot in state.crops.plots:
