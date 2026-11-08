@@ -25,7 +25,7 @@
 
 | ID | Результат / кандидат | Текущий статус | Кто закрывает |
 |---|---|---|---|
-| D-01 | Godot **4.7.2-stable** + GDScript, Windows x64, export templates; версия опубликована 2026-08-18 | `SELECTED_ON_PAPER / RUNTIME_NOT_TESTED` | A1 GUI/headless/Windows smoke в G1a, A5 audit |
+| D-01 | Godot **4.7.2-stable** + GDScript, Windows x64, export templates; версия опубликована 2026-08-18 | `CI_VERIFIED_LINUX_WINDOWS / HUMAN_GUI_NOT_RUN` | A1 GUI/headless/Windows smoke в G1a, A5 audit |
 | D-02 | 2D top-down pixel-art, 32×32 tile начальный вариант; nearest-neighbor; UI масштабируется отдельно | `DESIGN_CANDIDATE` | A5 screenshot/визуальный тест; уточнение без владельца |
 | D-03 | Real-time бой: ходьба, атака, dodge, оружие, модальное UI ставит на паузу | `OWNER_CORE_APPROVED / UI_DETAILS_DELEGATED` | A2+A5 |
 | D-04 | InputMap actions движение/атака/уклонение/взаимодействие/убежище/меню/пауза | `DELEGATED` | A1/A2/A5 |
@@ -33,15 +33,15 @@
 | D-06 | Картофель 72/12 **как литературная фикстура**, не hardcode, эффективность из active rules | `CONFIG_CANDIDATE` | A3+A5 баланс |
 | D-07 | Еда по `arrival_food_requirement`; добровольное согласие и atomic reserve+resident | `OWNER_PRINCIPLE_APPROVED / NUMBERS_DELEGATED` | A1/A3/A4/A5 |
 | D-08 | Один обычный зомби полноценно в P0; другие типы P1 | `SCOPE_CANDIDATE` | A2+A5 |
-| D-09 | **Единственный нормативный кандидат:** [05-integration-contracts.md](05-integration-contracts.md) (commands, result, post-commit, receipts, error codes) | `AWAITING_REVIEW_AND_SHA` | A1–A5, A0 reviewer |
+| D-09 | **Единственный нормативный кандидат:** [05-integration-contracts.md](05-integration-contracts.md) v1.6-PROPOSED (commands, schema-v4, replay, crop, UI, events) | `CI_SUPPORTED / CONTRACT_REVIEW_AND_SHA_PENDING` | A1–A5, A0 reviewer |
 | D-10 | Локальное версионированное JSON save/backup, reset on corruption запрещён | `AWAITING_REVIEW` | A1/A5 |
 | D-11 | A1 core, A2 combat, A3 farm, A4 narrative, **A5 ALL UI** | `OWNER_ASSIGNMENT_APPROVED` | A5 координация |
 | D-12 | **A5 chief** (техническая координация/общая интеграция); A1 владелец core; **A0 support + independent verification** | `OWNER_ASSIGNMENT_APPROVED` | A5/A1/A0 |
 | D-13 | Свободная песочница, Q01/Q02 onboarding; Q03–Q07 необязательны для базовой симуляции | `OWNER_INTENT_APPROVED / QUEST_DESIGN_CANDIDATE` | A4+A5 |
 | D-14 | Контент для широкой аудитории, добровольные соглашения; **закрытый** прототип, правовой gate до публикации | `OWNER_INTENT_APPROVED / EDITORIAL_DETAILS_DELEGATED` | A4+A5 |
-| D-15 | Unit/contract/E2E, real headless & Windows export, 60 FPS target only after measurement | `TEST_DESIGN_READY / NOT_RUN` | A1/A5/A0 |
+| D-15 | Unit/contract/E2E, real headless & Windows export, 60 FPS target only after measurement | `AUTO_CI_PASS_ON_PR50-53 / HUMAN_UX_AND_LOAD_STRESS_NOT_RUN` | A1/A5/A0 |
 | D-16 | 15–35 мин целевой первый цикл; предварительно обязательный внутренний smoke, внешние плейтесты не блокируют первый запуск | `OWNER_DURATION_APPROVED / UX_NOT_MEASURED` | A5/A0 |
-| D-17 | Один [консолидированный PR #7](https://github.com/AndreyCokol/My_shelter/pull/7), старые #1/#2/#5/#6 закрыты без merge; SHA после review | `CONSOLIDATED / REVIEW_PENDING` | A5+A1/владелец |
+| D-17 | [PR #7](https://github.com/AndreyCokol/My_shelter/pull/7) — документационный базис; [PR #50](https://github.com/AndreyCokol/My_shelter/pull/50) объединяет исходные #38/#39 поверх #31; далее #51→#52→#53; финальный SHA после review | `CODE_AND_DOCS_CANDIDATES / FREEZE_PENDING` | A5+A1/владелец |
 | D-18 | **ВЕСЬ** осколок LATER, ни P1, ни P2 не обязательны | `OWNER_APPROVED` | A4+A5 |
 | D-19 | Только частная демонстрация; распространение и все публичные релизные задачи out of scope | `OWNER_APPROVED` | Владелец |
 
@@ -65,8 +65,8 @@
 - [ ] Действительный review A1/A2/A3/A4/A5 по своим интерфейсам (реальные комментарии/ссылки; один исполнитель не выдаёт себя за 5 запущенных агентов).
 - [ ] Независимое review A0/A1 собственных UI интерфейсов A5 при наличии соответствующего исполнителя; если отсутствует — явный `REVIEW_NOT_PERFORMED`.
 - [ ] Технический конфиг baseline (tile/time/food) зарегистрирован A5/A1 в ADR или issue; числовые значения допускается дорабатывать после UX.
-- [x] Старые PR #1/#2/#5/#6 закрыты без merge, консолидированный PR #7 — единственный открытый кандидат.
-- [ ] PR #7 прошёл независимое документальное review A1–A5, все находки разрешены; SHA заморожен.
+- [x] Старые PR #1/#2/#5/#6 закрыты без merge; PR #7 — базис G0, а #50→#53 — последовательные **кодовые** кандидаты, не самостоятельные утверждения G0.
+- [ ] Единый кодовый стек #50→#53 и контракт v1.6 прошли **настоящие** независимые A1–A5/A0 review, все MAJOR findings разрешены; финальный SHA контрактов/реализации заморожен.
 - [ ] Владелец явно подтверждает **финальную редакцию по SHA**; Issue #4 переведён в `G0 APPROVED` только после этого.
 
 ### Конкретные review Issues — ещё не выполнены
@@ -93,3 +93,19 @@ A0 reviewer: NOT_REVIEWED; issue #13 created for independent review
 Owner freeze approval link: <actual Issue/PR comment, otherwise PENDING>
 Gate status: G0_BLOCKED until above are verified
 ```
+
+## 7. Актуальные факты CI и решений после интеграции 08.11.2026
+
+**Исторические формулировки G1a/NOT_RUN в разделах выше относятся к 05–06 ноября.** Код уже существует в PR-ветках, Godot 4.7.2 stable реально запускался в Linux и native Windows GitHub Actions; это не заменяет GUI на ПК владельца и не закрывает G0. Для контрактной проверки кандидат `05 v1.6-PROPOSED` находится в отдельном PR, а source baseline — стек [#50](https://github.com/AndreyCokol/My_shelter/pull/50) → [#51](https://github.com/AndreyCokol/My_shelter/pull/51) → [#52](https://github.com/AndreyCokol/My_shelter/pull/52) → [#53](https://github.com/AndreyCokol/My_shelter/pull/53).
+
+| Зафиксированный этап | Проверка | Чего ещё нет |
+|---|---|---|
+| #50 — объединённые Left Ctrl и G | Linux/Windows + 28 visual tests PASS, проверка radial→shelter до Q01 и modal/pause | A5/A1/A2/A0 review, ручной Windows UX |
+| #51 — сохранения при балансировке картофеля | Linux/Windows PASS, 7 regression checks (старые deadlines 180/120 → новый баланс 240/150) | полная миграция новых ruleset_version |
+| #52 — атака через стены | Linux/Windows PASS, физическая коллизия блокирует damage | покрытие всех материалов/основных типов боя, A2/A0 review |
+| #53 — fps/event improvements | Linux/Windows PASS, 50 дробных кадров и 100k post-commit уведомлений | profiling реальной игры на PC, безопасная compaction ledger |
+| Код/контракт v1.6 | единый `05` на ревью, включая gameplay schema v4 | формальные A1–A5, A0 review, freeze SHA, owner approval |
+
+**Особое правило:** нельзя «закрыть» A0-F05 случайным удалением `completed_actions`: arbitrary `action_id` требует сохранения доказательств idempotency. Изменение этого API потребует миграции, тестов точного replay и нового единственного договора. В тестовом контуре должна сохраняться самостоятельная оценка безопасности и работы без softlock.
+
+**G0 остаётся `BLOCKED`**. Следующая подпись владельца — только под уже проверенным **конкретным финальным SHA** с отдельными фактическими ревью, не новое обсуждение концепции OD-01..12.
