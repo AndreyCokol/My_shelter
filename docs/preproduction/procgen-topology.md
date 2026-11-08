@@ -1,8 +1,6 @@
-# NEW-02/05 — спецификация процедурных локаций
-Статус DRAFT.
-Алгоритм: построить связный graph rooms/corridors/stairs/entrances/streets → разместить footprint в grid → вставить реальные двери и paired portals → flood-fill по collision_grid и обязательным целям → наполнить ассетами без блокировки проходов → сохранить seed, profile, content_version, topology fingerprint и runtime overrides.
-API proposal: generate(seed, profile_id, content_version, attempt_index) → ok, level_graph, geometry, portal_registry, spawn_cells, fingerprint, errors.
-Каждый portal имеет counterpart_id, destination_level_id и безопасную destination_spawn_cell. Портал здания должен корректно соединять подъезд с улицей и обратно; квартира связана с подъездом. При неудаче ограниченное число повторов и диагностическая ошибка, не непроходимая карта.
-Масштаб улиц ×12, зданий/больниц ×4 относительно baseline, который ещё нужно формализовать. Четыре больницы по четыре отличных этажа = минимум 16; разные seeds без проверки fingerprint не гарантируют уникальность.
-Тесты PROC-01: детерминизм seed/version. PROC-02: 1000 seed, достижимость обязательных комнат. PROC-03: обратимость порталов. PROC-04: безопасный fail. PROC-05: сохранение и восстановление графа. Все тесты пока PLANNED.
-Владение: A2 город/больницы/квартиры; A3 убежище; A1 портал/seed/SceneRouter; A5 визуализация; A0 QA для A5.
+# Контракт аудита процедурных локаций — NEW-02/05
+**DRAFT; не второй генератор.** В PR #31 уже существуют procedural Layout и 26 игровых локаций. Сначала проверить код, seed, geometry, сохранение schema v4 и переходы.
+Проверки: topology-first (rooms/corridors/stairs/entrances/streets), связность всех обязательных комнат, floor/wall collision flood-fill, настоящие двери в геометрии, обратимые portal links, безопасный spawn. Для квартиры должен существовать путь квартира → подъезд → улица и назад. При невалидном graph — controlled failure/retry, не непроходимая сцена. Save должен восстановить тот же graph/portal registry и runtime overrides.
+Профили: 4 больницы по 4 отличимых этажа (16); улицы ×12, здания/больницы ×4 относительно зафиксированного baseline. Fingerprint геометрии и связности нужен, потому что разные seed не гарантируют разные планировки.
+PROC-01 deterministic seed/profile/content_version; PROC-02 достижимость на 1000 seed (план, не PASS); PROC-03 двусторонние порталы; PROC-04 безопасная ошибка; PROC-05 регрессия schema v4/save.
+A5 главный интегратор, A2 отвечает за наружные сцены, A3 — убежище, A1 — контракты переходов/сохранений, A0 — независимая проверка. Не менять совместно одну сцену.
