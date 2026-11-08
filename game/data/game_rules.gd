@@ -3,8 +3,8 @@ extends RefCounted
 # Original prototype balance. Candidate values; UX duration is not yet measured.
 static func build() -> Dictionary:
 	return {"version": "prototype-v1", "gameplay": true, "minutes_per_real_second": 1.0, "discovery_xp": 5,
-		"items": {"seed.basic": {"name": "Семена"}, "crop.potato": {"name": "Картофель"}, "tool.basic": {"name": "Походный нож"},
-			"material.salvage": {"name": "Утиль"}, "material.lamp_kit": {"name": "Комплект фонаря"}},
+		"items": {"seed.basic": {"name": "Семена", "edible": false}, "crop.potato": {"name": "Картофель", "edible": true}, "tool.basic": {"name": "Походный нож", "edible": false},
+			"material.salvage": {"name": "Утиль", "edible": false}, "material.lamp_kit": {"name": "Комплект фонаря", "edible": false}},
 		"containers": [{"id": "player", "capacity_units": 30}, {"id": "storage", "capacity_units": 120}],
 		"scenes": {"hospital": ["default"], "outside": ["default"], "shelter": ["default"], "louvre": ["default"]},
 		"offers": {"seed": {"type_id": "seed.basic", "quantity": 2, "price": 3}},
@@ -45,7 +45,19 @@ static func validate(rules: Dictionary) -> bool:
 			return false
 	if not rules.food.get("reserve_mode") in ["reserve", "consume"] or not rules.food.get("accepted_food_type_ids") is Array or rules.food.accepted_food_type_ids.is_empty():
 		return false
+	# The food whitelist cannot turn a weapon, raw material or a non-food item
+	# into a ration. The item catalog must explicitly certify it as edible.
+	# No implicit fallback by item name/type prefix: reject malformed configs.
+	var accepted := {}
 	for id in rules.food.accepted_food_type_ids:
-		if not rules.items.has(id):
+		if not id is String or id.is_empty() or accepted.has(id):
+			return false
+		accepted[id] = true
+		var definition = rules.items.get(id)
+		if not definition is Dictionary or definition.get("edible") != true or not definition.get("edible") is bool:
+			return false
+	for id in rules.items:
+		var definition = rules.items[id]
+		if definition is Dictionary and definition.has("edible") and not definition.edible is bool:
 			return false
 	return true
