@@ -125,6 +125,7 @@ func check_full_hd_interface(app) -> void:
 		await process_frame
 	await RenderingServer.frame_post_draw
 	var screenshot: Image = root.get_texture().get_image()
+	print("FULL HD DEBUG window=%s viewport_size=%s viewport_rect=%s image=%s screen=%s" % [str(DisplayServer.window_get_size()), str(root.size), str(root.get_visible_rect().size), str(screenshot.get_size()), str(DisplayServer.screen_get_size())])
 	check(screenshot.get_size() == Vector2i(1920, 1080),
 		"Full HD software renderer produces actual 1920x1080 pixels")
 	check(app.ui.get_viewport_rect().size == Vector2(640, 360),
