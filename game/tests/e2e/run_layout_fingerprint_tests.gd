@@ -84,6 +84,7 @@ func _initialize() -> void:
 			"seed %d provides 30 mutually reachable scenes with paired exits" % seed_value)
 
 		var hospital_geometries := {}
+		var hospital_origins := {}
 		var house_geometries := {}
 		var streets := {}
 		var valid_plans := true
@@ -95,7 +96,14 @@ func _initialize() -> void:
 					continue
 				var plan: Dictionary = nodes[id].floor_plan
 				valid_plans = valid_plans and Plans.valid(plan)
-				hospital_geometries[floor_fingerprint(plan)] = true
+					var fingerprint: String = floor_fingerprint(plan)
+				if hospital_origins.has(fingerprint):
+					print("HOSPITAL DUPLICATE seed=%d first=%s second=%s patterns=%s,%s" %
+						[seed_value, hospital_origins[fingerprint], id,
+							nodes[hospital_origins[fingerprint]].floor_plan.pattern, plan.pattern])
+				else:
+					hospital_origins[fingerprint] = id
+				hospital_geometries[fingerprint] = true
 			for floor_number in [1, 2]:
 				var id: String = Layout.house(district, floor_number)
 				if not nodes.has(id) or not nodes[id].has("floor_plan"):
@@ -110,6 +118,7 @@ func _initialize() -> void:
 			else:
 				streets[street_fingerprint(nodes[street_id])] = true
 		check(valid_plans, "seed %d has structurally valid hospital and apartment plans" % seed_value)
+		print("HOSPITAL UNIQUE COUNT seed=%d count=%d" % [seed_value, hospital_geometries.size()])
 		check(hospital_geometries.size() == 16,
 			"seed %d has 16 physically distinct hospital floors (not labels)" % seed_value)
 		check(house_geometries.size() == 8,
