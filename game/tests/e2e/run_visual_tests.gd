@@ -236,6 +236,7 @@ func capture_reference_candidate(app, reference_id: String) -> void:
 		await process_frame
 	await RenderingServer.frame_post_draw
 	var screenshot: Image = root.get_texture().get_image()
+	print("VIS REF DEBUG id=%s window=%s root=%s screenshot=%s screen=%s" % [reference_id, str(DisplayServer.window_get_size()), str(root.size), str(screenshot.get_size()), str(DisplayServer.screen_get_size())])
 	check(screenshot.get_size() == benchmark,
 		"VIS-01 %s actual Godot screenshot uses original 1672x941 pixels" % reference_id)
 	check(app.ui.get_viewport_rect().size == Vector2(640, 360),
