@@ -89,6 +89,15 @@ func _ready() -> void:
 		top.add_child(heart)
 		hud.position.x = 34
 	top.add_child(hud)
+	# Independent top-right button, so the original bottom navigation keeps its
+	# 640 px budget. This quick shelter action stays visible at all times.
+	shelter_nav_button = button(top, "Убежище", toggle_shelter)
+	shelter_nav_button.name = "ShelterQuickButton"
+	shelter_nav_button.position = Vector2(486, 2)
+	shelter_nav_button.size = Vector2(146, 26)
+	shelter_nav_button.focus_mode = Control.FOCUS_NONE
+	shelter_nav_button.icon = Art.icon("shelter")
+	shelter_nav_button.tooltip_text = "В убежище / вернуться к месту выхода [G]"
 	var nav := HBoxContainer.new()
 	nav.position = Vector2(15, 53)
 	nav.add_theme_constant_override("separation", 2)
@@ -100,10 +109,6 @@ func _ready() -> void:
 		nav_button.icon = Art.icon(entry[1])
 		nav_button.expand_icon = false
 		nav_button.tooltip_text = entry[0] + {"inventory": " [I]", "quests": " [Tab]", "menu": " [Esc]", "shop": ""}.get(entry[1], "")
-	shelter_nav_button = button(nav, "Убежище [G]", toggle_shelter)
-	shelter_nav_button.name = "ShelterQuickButton"
-	shelter_nav_button.focus_mode = Control.FOCUS_NONE
-	shelter_nav_button.icon = Art.icon("shelter")
 	notice = Label.new()
 	notice.position = Vector2(15, 345)
 	notice.size = Vector2(610, 15)
@@ -240,9 +245,10 @@ func update_hud() -> void:
 	if hud == null:
 		return
 	var state: Dictionary = app.snapshot()
-	var shelter_label: String = "Вернуться [G]" if state.scene.current_scene_id == "shelter" else "Убежище [G]"
+	var in_shelter: bool = state.scene.current_scene_id == "shelter"
+	var shelter_label: String = "Вернуться [G]" if in_shelter else "Убежище [G]"
 	if is_instance_valid(shelter_nav_button):
-		shelter_nav_button.text = shelter_label
+		shelter_nav_button.text = "Вернуться" if in_shelter else "Убежище"
 	if is_instance_valid(shelter_modal_button):
 		shelter_modal_button.text = shelter_label
 	var minute: int = int(state.game_time_minutes)
