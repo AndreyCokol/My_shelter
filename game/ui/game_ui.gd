@@ -8,6 +8,9 @@ const Construction = preload("res://game/systems/shelter/construction.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const Gameplay = preload("res://game/systems/gameplay/gameplay_commands.gd")
 const Art = preload("res://game/ui/asset_theme.gd")
+const ExplorationHUD = preload("res://game/ui/exploration_hud.gd")
+const RadialMenu = preload("res://game/ui/radial_menu.gd")
+const QUEST_TITLES = ["Победить противника", "Открыть убежище", "Посадить семена", "Собрать урожай", "Найти путников", "Получить согласие", "Заселить двух жителей"]
 
 const ITEM_ICONS = {
 	"seed.basic": preload("res://game/assets/project/inventory/seed.svg"),
@@ -22,8 +25,9 @@ var inventory_selection := ""
 var app
 var panel_id: String = ""
 var pause_token: int = 0
-var hud: Label
-var location: Label
+var hud: ExplorationHUD
+var radial: RadialMenu
+var radial_pause_token := 0
 var notice: Label
 var modal: ColorRect
 var body: VBoxContainer
@@ -32,6 +36,8 @@ var heading_icon: TextureRect
 var rest_target: int = 0
 var building_cell := "0"
 var _refresh_pending: bool = false
+var _expedition_route_key: Array = []
+var _expedition_next_exit := ""
 const NAMES = {"hospital": "Больница", "outside": "Город", "shelter": "Убежище", "louvre": "Стоянка"}
 const PANELS = {"welcome": "Моё пространственное убежище", "menu": "Пауза", "inventory": "Рюкзак и хранилище", "farm": "Грядки", "rest": "Безопасный отдых", "residents": "Путники", "quests": "Задания", "shop": "Системный магазин", "save": "Сохранение и восстановление", "new_confirm": "Начать заново?", "credits": "Об игре и авторах", "map": "Карта города", "workshop": "Строительство и мастерская", "jobs": "Работа жителей", "camp": "Объявления и торговля", "journal": "Журнал находок", "district_event": "Встреча в районе"}
 const STATUS = {"empty": "пусто", "planted": "нужен полив", "growing": "растёт", "ripe": "созрело", "spoiled": "испортилось", "unknown": "не знакомы", "contacted": "готов поговорить", "declined": "отказ", "AWAITING_SUPPLIES": "согласие есть, нужны припасы", "joined": "поселился", "inactive": "не отслеживается", "active": "в работе", "completed": "выполнено"}
@@ -59,49 +65,30 @@ func _ready() -> void:
 	theme.set_stylebox("pressed", "Button", hover)
 	Art.apply_buttons(theme)
 	self.theme = theme
-	var top := Panel.new()
-	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_bottom = 80
-	add_child(top)
-	var topstyle := StyleBoxFlat.new()
-	topstyle.bg_color = Color("142329")
-	top.add_theme_stylebox_override("panel", topstyle)
-	var top_art := Art.textured_style("panel_frame", 10, Color(0.65, 0.72, 0.75))
-	if top_art != null:
-		top.add_theme_stylebox_override("panel", top_art)
-	location = Label.new()
-	location.position = Vector2(15, 6)
-	location.add_theme_font_size_override("font_size", 17)
-	top.add_child(location)
-	hud = Label.new()
-	hud.position = Vector2(15, 31)
-	if Art.texture("heart") != null:
-		var heart := TextureRect.new()
-		heart.name = "HealthIcon"
-		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		heart.texture = Art.texture("heart")
-		heart.position = Vector2(15, 33)
-		heart.size = Vector2(14, 14)
-		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		top.add_child(heart)
-		hud.position.x = 34
-	top.add_child(hud)
-	var nav := HBoxContainer.new()
-	nav.position = Vector2(15, 53)
-	top.add_child(nav)
-	for entry in [["Рюкзак [I]", "inventory"], ["Задания [Tab]", "quests"], ["Магазин", "shop"], ["Меню [Esc]", "menu"]]:
-		var nav_button := button(nav, entry[0], open_panel.bind(entry[1]))
-		nav_button.focus_mode = Control.FOCUS_NONE
-		nav_button.icon = Art.icon(entry[1])
-		nav_button.expand_icon = false
+	hud = ExplorationHUD.new()
+	hud.name = "ExplorationHUD"
+	hud.app = app
+	hud.panel_requested.connect(open_panel)
+	hud.slot_requested.connect(open_quick_slot)
+	add_child(hud)
 	notice = Label.new()
-	notice.position = Vector2(15, 345)
-	notice.size = Vector2(610, 15)
+	add_child(notice)
+	notice.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	notice.offset_left = 8
+	notice.offset_right = -8
+	notice.offset_top = -58
+	notice.offset_bottom = -45
+	notice.mouse_filter = MOUSE_FILTER_IGNORE
 	notice.clip_text = true
 	notice.add_theme_font_size_override("font_size", 11)
-	notice.text = "WASD — движение · ЛКМ — удар · Space — уклонение · E — рядом с объектом"
-	add_child(notice)
+	notice.add_theme_color_override("font_outline_color", Color("14100d"))
+	notice.add_theme_constant_override("outline_size", 3)
+	notice.text = "WASD — движение · ЛКМ — удар · Space — уклонение · E — действие · Левый Ctrl — рюкзак по кругу"
+	radial = RadialMenu.new()
+	radial.name = "RadialMenu"
+	radial.chosen.connect(open_quick_slot)
+	radial.cancelled.connect(close_radial)
+	add_child(radial)
 	modal = ColorRect.new()
 	modal.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal.color = Color(0.02, 0.06, 0.08, 0.85)
@@ -177,9 +164,12 @@ func line(text: String) -> void:
 	body.add_child(label)
 
 func open_panel(id: String) -> void:
+	close_radial()
 	if pause_token == 0:
 		pause_token = app.session.pauses.acquire_pause("ui:" + id)
 	panel_id = id
+	hud.hide()
+	notice.hide()
 	modal.show()
 	render_panel()
 
@@ -192,6 +182,28 @@ func close_panel() -> void:
 	if focused != null:
 		focused.release_focus()
 	modal.hide()
+	hud.show()
+	notice.show()
+
+func toggle_radial() -> void:
+	if radial.visible:
+		close_radial()
+	elif panel_id.is_empty() and app.running():
+		radial_pause_token = app.session.pauses.acquire_pause("ui:radial")
+		radial.reveal(hud.items)
+
+func close_radial() -> void:
+	if radial_pause_token != 0:
+		app.session.pauses.release_pause(radial_pause_token)
+		radial_pause_token = 0
+	radial.hide()
+
+func open_quick_slot(index: int) -> void:
+	if index >= hud.items.size():
+		return
+	inventory_container = "player"
+	inventory_selection = hud.items[index].instance_id if index >= 0 else ""
+	open_panel("inventory")
 
 func run_command(kind: String, payload: Dictionary = {}) -> void:
 	# Release only this panel's token for the synchronous transaction; unrelated
@@ -218,8 +230,39 @@ func update_hud() -> void:
 	var minute: int = int(state.game_time_minutes)
 	var world = app.scene_router.current_world()
 	var title: String = world.location_label if is_instance_valid(world) and not world.location_label.is_empty() else NAMES.get(state.scene.current_scene_id, state.scene.current_scene_id)
-	location.text = title + "  /  День %d · %02d:%02d" % [minute / 1440 + 1, (minute / 60) % 24, minute % 60]
-	hud.text = "Здоровье %d  ·  Монеты %d  ·  Опыт героя %d  ·  Опыт убежища %d" % [app.hero.health, state.wallet.system_coins, state.player.xp, state.shelter.xp]
+	var place := title + "  /  День %d · %02d:%02d" % [minute / 1440 + 1, (minute / 60) % 24, minute % 60]
+	var items: Array[Dictionary] = []
+	var catalog: Dictionary = app.rules().items
+	for item in state.inventory.items:
+		if item.container_id == "player":
+			items.append({
+				"instance_id": item.instance_id, "quantity": item.quantity,
+				"label": catalog[item.type_id].name,
+				"icon": ITEM_ICONS.get(item.type_id, Art.texture("inventory")),
+			})
+	var objective := "Нет отслеживаемых заданий"
+	var next_exit := ""
+	var order: Dictionary = state.quests.get("expedition", {})
+	if not order.is_empty() and not order.claimed:
+		objective = "Поручение разведчиков"
+		if not order.target.is_empty():
+			next_exit = _expedition_exit(state, order.target)
+	else:
+		for index in range(state.quests.records.size()):
+			if state.quests.records[index].status == "active":
+				objective = QUEST_TITLES[index]
+				break
+	hud.update_state(state, items, place, objective, next_exit)
+
+func _expedition_exit(state: Dictionary, target: String) -> String:
+	var manifest: Dictionary = state.world_states.layout
+	var here: String = state.scene.current_scene_id
+	var key := [manifest.seed, manifest.generator_version, here, target]
+	if key != _expedition_route_key:
+		_expedition_route_key = key
+		var route := Layout.route(Layout.from_manifest(manifest), here, target)
+		_expedition_next_exit = route[1] if route.size() > 1 else ""
+	return _expedition_next_exit
 
 func _event(_fact: Dictionary) -> void:
 	update_hud()
@@ -247,7 +290,7 @@ func render_panel() -> void:
 		"welcome":
 			line("Офлайн-песочница · процедурный город")
 			line("Победите противника в больнице. Откройте убежище, вырастите урожай и помогите двум путникам обустроиться. После обучения игра свободная.")
-			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище после открытия.")
+			line("WASD/стрелки — движение; мышь — направление удара; ЛКМ — атака; Space — уклонение; E — взаимодействие; G — убежище после открытия. Левый Ctrl — быстрое меню рюкзака; 1–4 — открыть предмет в рюкзаке.")
 			if FileAccess.file_exists(app.save_location):
 				button(body, "Продолжить сохранённую игру", app.load_game)
 				button(body, "Новая игра…", open_panel.bind("new_confirm"))
@@ -262,6 +305,7 @@ func render_panel() -> void:
 			button(body, "Продолжить", close_panel)
 			button(body, "Карта города", open_panel.bind("map"))
 			button(body, "Журнал находок", open_panel.bind("journal"))
+			button(body, "Системный магазин", open_panel.bind("shop"))
 			button(body, "Сохранение / загрузка", open_panel.bind("save"))
 			button(body, "Новая игра…", open_panel.bind("new_confirm"))
 			button(body, "Об игре и авторах", open_panel.bind("credits"))
@@ -401,11 +445,10 @@ func render_panel() -> void:
 					else:
 						button(body, "Выделить еду и заселить", run_command.bind("game.recruit", {"resident_id": resident.id}))
 		"quests":
-			var titles := ["Победить противника", "Открыть убежище", "Посадить семена", "Собрать урожай", "Найти путников", "Получить согласие", "Заселить двух жителей"]
 			line("Q03–Q07 — необязательные подсказки. Хозяйство и вылазки работают без отслеживания.")
 			for i in range(state.quests.records.size()):
 				var quest: Dictionary = state.quests.records[i]
-				line("%s · %s — %s" % [quest.id, titles[i], STATUS[quest.status]])
+				line("%s · %s — %s" % [quest.id, QUEST_TITLES[i], STATUS[quest.status]])
 				if i >= 2 and quest.status != "completed":
 					button(body, "Отслеживать / скрыть", run_command.bind("game.quest_track", {"quest_id": quest.id}))
 		"shop":
@@ -703,5 +746,7 @@ func _retry_defeat() -> void:
 func _exit_tree() -> void:
 	if app != null and app.session != null:
 		app.session.events.unsubscribe_owner(self)
+		if radial_pause_token != 0:
+			app.session.pauses.release_pause(radial_pause_token)
 		if pause_token != 0:
 			app.session.pauses.release_pause(pause_token)

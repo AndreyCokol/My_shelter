@@ -5,10 +5,10 @@ var session = CoreSession.new()
 
 func _ready() -> void:
 	# Core-only bootstrap. World and UI are supplied by their module owners.
-	for action in ["move_up", "move_down", "move_left", "move_right", "interact", "attack", "dodge", "inventory", "system_menu", "pause", "shelter_skill"]:
+	for action in ["move_up", "move_down", "move_left", "move_right", "interact", "attack", "dodge", "inventory", "map", "journal", "workshop", "system_menu", "pause", "shelter_skill"]:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
-	var keys = {"move_up": KEY_W, "move_down": KEY_S, "move_left": KEY_A, "move_right": KEY_D, "interact": KEY_E, "dodge": KEY_SPACE, "inventory": KEY_I, "system_menu": KEY_TAB, "pause": KEY_ESCAPE, "shelter_skill": KEY_G}
+	var keys = {"move_up": KEY_W, "move_down": KEY_S, "move_left": KEY_A, "move_right": KEY_D, "interact": KEY_E, "dodge": KEY_SPACE, "inventory": KEY_I, "map": KEY_M, "journal": KEY_J, "workshop": KEY_K, "system_menu": KEY_TAB, "pause": KEY_ESCAPE, "shelter_skill": KEY_G}
 	for action in keys:
 		var event = InputEventKey.new()
 		event.physical_keycode = keys[action]
