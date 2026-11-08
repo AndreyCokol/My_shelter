@@ -54,7 +54,7 @@ static func validate(rules: Dictionary) -> bool:
 			return false
 		accepted[id] = true
 		var definition = rules.items.get(id)
-		if not definition is Dictionary or definition.get("edible") != true or not definition.get("edible") is bool:
+		if not definition is Dictionary or not definition.get("edible") is bool or not definition.edible:
 			return false
 	for id in rules.items:
 		var definition = rules.items[id]
