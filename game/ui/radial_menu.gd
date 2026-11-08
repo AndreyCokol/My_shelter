@@ -33,8 +33,12 @@ func reveal(carried: Array[Dictionary]) -> void:
 	queue_redraw()
 
 
+# PC design viewport 640x360: keep the wheel to the right of the
+# shelter construction grid rather than covering its cells and [E] action.
+# Reserve the upper-right for the minimap and the lower-right for navigation.
+# The wheel and its caption remain viewport-relative at 1280x720 / 1920x1080.
 func wheel_center() -> Vector2:
-	return Vector2(size.x * 0.5, size.y - RADIUS - 12).round()
+	return Vector2(size.x * 0.74, size.y * 0.64).round()
 
 
 func _gui_input(event: InputEvent) -> void:
