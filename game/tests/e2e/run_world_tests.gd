@@ -212,10 +212,10 @@ func test_unconditional_shelter(app) -> void:
 	check(app.snapshot().scene.current_scene_id == "hospital" and app.hero.position == original and app.ui.panel_id.is_empty() and not app.session.pauses.is_paused(), "G shortcut from paused menu returns to exact hospital exit position")
 	check(is_instance_valid(app.enemy()) and app.enemy().health == 67 and not app.snapshot().world_states.first_enemy_defeated, "retreat, save and reload preserve the opening enemy's damage and keep System locked")
 	check(is_instance_valid(app.enemy()) and app.enemy().runtime_snapshot() == saved_ai, "CT-82 G, physical shelter door and load preserve zombie position and pursuit timers")
-	var old_checkpoint := app.snapshot()
+	var old_checkpoint: Dictionary = app.snapshot()
 	old_checkpoint.world_states.erase("enemy_runtime")
 	check(Model.validate(old_checkpoint, app.rules()), "CT-82 old schema v4 checkpoint without enemy AI fields remains valid")
-	var tampered_ai := app.snapshot()
+	var tampered_ai: Dictionary = app.snapshot()
 	if tampered_ai.world_states.get("enemy_runtime", {}).has("hospital"):
 		tampered_ai.world_states.enemy_runtime.hospital.alert_remaining = -0.3
 		check(not Model.validate(tampered_ai, app.rules()), "CT-82 corrupted pursuit timer is rejected without loading")
