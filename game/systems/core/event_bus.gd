@@ -1,7 +1,13 @@
 extends RefCounted
 
+# Delivery dedup is only a bounded in-memory convenience. Persistent receipts in
+# CoreSession, not this cache, ensure one-time domain changes across reloads.
+const MAX_RECENT_EVENT_IDS := 4096
+
 var _subscriptions: Dictionary = {}
 var _seen: Dictionary = {}
+var _seen_order: Array[String] = []
+var _seen_offset: int = 0
 var _serial: int = 0
 var _dispatching: bool = false
 
@@ -42,6 +48,14 @@ func publish_after_commit(event: Dictionary) -> bool:
 	if _dispatching or not valid_event(event) or _seen.has(event.event_id):
 		return false
 	_seen[event.event_id] = true
+	_seen_order.append(event.event_id)
+	if _seen_order.size() - _seen_offset > MAX_RECENT_EVENT_IDS:
+		_seen.erase(_seen_order[_seen_offset])
+		_seen_offset += 1
+		# Periodic compaction bounds array memory without O(window) work per event.
+		if _seen_offset >= MAX_RECENT_EVENT_IDS:
+			_seen_order = _seen_order.slice(_seen_offset)
+			_seen_offset = 0
 	_dispatching = true
 	_prune()
 	# Fixed delivery list: new subscriptions start with the next event.
@@ -63,6 +77,8 @@ func publish_after_commit(event: Dictionary) -> bool:
 # State/receipts, not this in-memory set, guarantee domain idempotency.
 func reset_history() -> void:
 	_seen.clear()
+	_seen_order.clear()
+	_seen_offset = 0
 
 func _prune() -> void:
 	for token in _subscriptions.keys():

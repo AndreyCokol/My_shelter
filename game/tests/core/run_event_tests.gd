@@ -105,6 +105,17 @@ func _initialize() -> void:
 	removed.free()
 	added.free()
 	check(bus.subscription_count() == 0, "owner lifecycle leaves no live subscriptions")
+	# A0-F04: long sessions must not retain every delivered event ID forever.
+	var bounded = Bus.new()
+	for event_index in range(Bus.MAX_RECENT_EVENT_IDS + 2):
+		bounded.publish_after_commit(fact("bounded-" + str(event_index)))
+	check(bounded._seen.size() == Bus.MAX_RECENT_EVENT_IDS and bounded._seen_order.size() <= Bus.MAX_RECENT_EVENT_IDS * 2, "A0-F04 unique event memory stays within a bounded recent window")
+	check(not bounded._seen.has("bounded-0") and bounded._seen.has("bounded-" + str(Bus.MAX_RECENT_EVENT_IDS + 1)), "A0-F04 oldest event ID is evicted, most recent event still tracked")
+	check(not bounded.publish_after_commit(fact("bounded-" + str(Bus.MAX_RECENT_EVENT_IDS + 1))), "A0-F04 recent duplicate cannot be re-delivered")
+	# IDs older than the window may be seen again, but must not affect domain
+	# receipts: domain writes are guarded by persisted CoreSession action IDs.
+	bounded.reset_history()
+	check(bounded._seen.is_empty() and bounded._seen_order.is_empty() and bounded._seen_offset == 0, "A0-F04 loading clears both dedup lookup and ring window")
 	var campaign = Campaign.new(Fixtures.rules())
 	var session = campaign.coordinator
 	var store = Store.new("user://event-tests/" + str(Time.get_ticks_usec()) + ".json")
