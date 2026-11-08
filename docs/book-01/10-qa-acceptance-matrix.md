@@ -1,6 +1,6 @@
 # 10 — Матрица приёмки и вертикальной сверки
 
-**Статус:** G0 CANDIDATE · **Фактические runtime-проверки на базе PR #31 (07.11.2026):** 410 автоматических Godot-проверок Linux/Windows и ещё 19 визуальных проверок на Linux software renderer — PASS; ручные Windows GUI/UX 15–35 минут NOT_MEASURED. CT-48..52 — **новые тесты в PR убежища, не считать пройденными до их отдельного CI**. Таблица ниже задаёт критерии, а не автоматически утверждённую G0. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
+**Статус:** G0 CANDIDATE · **Фактические runtime-проверки:** на [PR #52](https://github.com/AndreyCokol/My_shelter/pull/52) commit `6399081e060f9282501c2ffaaf5f7f55d41ec6f4` пройдены [Linux](https://github.com/AndreyCokol/My_shelter/actions/runs/42494298184) и [Windows](https://github.com/AndreyCokol/My_shelter/actions/runs/42494298127) CI. Новые shelter/radial тесты впервые добавлены в цепочку PR #50; прошлые 410/19 относились к старому PR #31, а не последнему head. **Независимый кодовый review, реальный GUI и 15–35-минутный плейтест остаются NOT_RUN/NOT_MEASURED**. Таблица ниже задаёт критерии, а не автоматически утверждённую G0. A1 — core/testing, A2 — combat, A3 — farm, A4 — quests, **A5 — весь UI + E2E/Windows**, **A0 — независимый аудит и ревью PR A5**.
 
 ## Фикстуры G1a
 
