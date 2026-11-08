@@ -69,3 +69,20 @@
 **Переделывать, а не оставлять примитивную техническую подложку, если она визуально хуже эталона.** При этом UI скриншот ≠ действующий gameplay: все четыре эталона содержат объекты, не все из которых сейчас реализованы, и новые логические сущности должны создаваться через A1–A4, не рисоваться как «уже работающие».
 
 Приёмка каждого раздела только по цепочке `FR/VIS-ID → source SHA → скриншот Godot → оригинал SHA → pixel overlay/diff → regression CI Linux/Windows → independent A0 review → owner visual signoff`. Старые 63 визуальных проверки проверяют layout/рендер, **не соответствие новым R1–R4**. Этот документ разрешает художественный редизайн, **не подменяет** нормативную структуру [SRS](03-requirements.md) и [технического контракта](05-integration-contracts.md); G0 owner-approved SHA по-прежнему BLOCKED.
+
+## VIS-11 / ART-01 — 64×64 directional animated actor assets (candidate, not owner-approved)
+
+**Implementation on top of R1–R4 visual HUD integration:** game contains four original binary transparent PNG sheets, each **256×256 px**, consisting of sixteen **64×64** cells (four animation keyframes across columns, four camera-top-down facing directions in rows: down, left, up, right):
+- `game/assets/project/characters/survivor_move_4dir_64.png`
+- `game/assets/project/characters/survivor_attack_4dir_64.png`
+- `game/assets/project/characters/zombie_move_4dir_64.png`
+- `game/assets/project/characters/zombie_attack_4dir_64.png`
+
+These are **new original block-pixel sprites made for this prototype**, not direct copies of user reference screenshots, downloadable third-party sprites or copyrighted book illustrations. The atlas PNGs are separate authorable game assets rather than UI-only mockups. **Do not claim they meet the owner's per-pixel R1–R4 visual target without overlay and A5/owner approval.** The source images use RGBA/transparency, top-down head/shoulders/body silhouettes and deliberately coarser pixel clusters than the high-detail initial mockups.
+
+The shared `game/entities/characters/pixel_actor_frames.gd` imports these PNGs and constructs cached `SpriteFrames`, 12 animation names per actor (`idle_*`, `walk_*`, `attack_*`). `AnimatedSprite2D` is a live child of each actor with **nearest-neighbor texture sampling**. Direction is selected from real movement / attack facing: left/right/up/down. Attack frames do not loop, and actors can resume idle/walk. The art is displayed at 0.75 world scale so 64×64 source cells do not imply a 64-unit physical collider, which remains the authoritative combat/door constraint. HUD, enemy HP, attack range/LOS, G shelter escape and damage transactions are unchanged. Player dodge ring and swing arc remain auxiliary effects, not replacements for the character image.
+
+**CT-88 / passing test requirement:** all four imported source PNGs must load as exactly 256×256 with transparency; each `SpriteFrames` collection exposes 12 animations, 1 idle/4 walk/4 attack frames in each of 4 directions; sampled texture regions are exactly 64×64; new `AnimatedSprite2D` nodes exist on the instantiated Player/Enemy and use nearest filtering; real movement/attack selection works for survivor and zombie. These checks live in `game/tests/e2e/run_asset_tests.gd` and run in both Linux and Windows native CI. Existing physics, save recovery and the real 1672×941/1920×1080 screenshots must remain green at the same commit.
+
+**Not yet complete:** differentiated survivor/zombie death frames, external artist-authored final atlas, individual hit impact frames, 1:1 pixel-match review against owner's references, external visual licensing review, manual Windows PC gameplay and 30-minute FPS/RAM test. A0 must keep VIS-11 status `CODE_CANDIDATE / CI_PENDING / OWNER_VISUAL_NOT_ACCEPTED` until all required evidence exists.
+
