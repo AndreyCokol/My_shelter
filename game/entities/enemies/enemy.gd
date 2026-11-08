@@ -2,6 +2,10 @@ extends CharacterBody2D
 
 var app
 const MAX_HEALTH := 100
+const BODY_RADIUS := 10.0
+const CHASE_SPEED := 43.0
+const CHASE_STOP_DISTANCE := 23.0
+const WalkGrid = preload("res://game/systems/world/walk_grid.gd")
 var health: int = MAX_HEALTH
 var hit_cooldown: float = 0.0
 var reported: bool = false
@@ -11,12 +15,18 @@ var alert_remaining := 0.0
 var last_noise := Vector2.ZERO
 const VIEW_RANGE := 88.0
 const SEARCH_DURATION := 3.5
+var _chase_grid: AStarGrid2D
+var _grid_revision := -1
+var _chase_path := PackedVector2Array()
+var _chase_index := 0
+var _chase_goal := Vector2.ZERO
+var _chase_retry := 0.0
 
 func _ready() -> void:
 	z_index = 8
 	var collider := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
-	shape.radius = 10
+	shape.radius = BODY_RADIUS
 	collider.shape = shape
 	add_child(collider)
 
@@ -32,7 +42,7 @@ func _physics_process(delta: float) -> void:
 	var target = app.hero
 	var distance: float = global_position.distance_to(target.global_position)
 	if patrol.is_empty():
-		velocity = global_position.direction_to(target.global_position) * 43 if distance > 23 else Vector2.ZERO
+		update_chase(target, distance, delta)
 	else:
 		update_patrol(target, distance, delta)
 	move_and_slide()
@@ -40,6 +50,49 @@ func _physics_process(delta: float) -> void:
 		target.take_damage(15)
 		hit_cooldown = 1.0
 	queue_redraw()
+
+func update_chase(target: CharacterBody2D, distance: float, delta: float) -> void:
+	var goal := target.global_position
+	if distance <= CHASE_STOP_DISTANCE and has_clear_line_to(target):
+		_chase_path.clear()
+		velocity = Vector2.ZERO
+		return
+	_chase_retry = maxf(0.0, _chase_retry - delta)
+	var world = get_parent()
+	if _chase_grid != null and _grid_revision != world.collision_revision:
+		_chase_grid = null
+		_chase_path.clear()
+		_chase_retry = 0.0
+	if goal.distance_squared_to(_chase_goal) > 24.0 * 24.0:
+		_chase_path.clear()
+	if _chase_index >= _chase_path.size():
+		var direction := global_position.direction_to(goal)
+		var probe := minf(18.0, maxf(1.0, distance - CHASE_STOP_DISTANCE))
+		if not test_move(global_transform, direction * probe):
+			velocity = direction * CHASE_SPEED
+			return
+		if _chase_retry > 0.0 or not world.has_method("collision_rects"):
+			velocity = Vector2.ZERO
+			return
+		_plan_chase(world, goal)
+	while _chase_index < _chase_path.size() and position.distance_squared_to(_chase_path[_chase_index]) <= 2.0:
+		_chase_index += 1
+	velocity = Vector2.ZERO
+	if _chase_index < _chase_path.size():
+		velocity = global_position.direction_to(world.to_global(_chase_path[_chase_index])) * CHASE_SPEED
+
+func _plan_chase(world, goal: Vector2) -> void:
+	_chase_retry = 0.25
+	_chase_goal = goal
+	_chase_index = 0
+	if _chase_grid == null:
+		_grid_revision = world.collision_revision
+		_chase_grid = WalkGrid.build(world.floor_rect().grow(-15), world.collision_rects(), 12.0, BODY_RADIUS + 2.0)
+	var from := WalkGrid.nearest_open(_chase_grid, position, func(point: Vector2):
+		return not test_move(global_transform, world.to_global(point) - global_position))
+	var to := WalkGrid.nearest_open(_chase_grid, world.to_local(goal))
+	if _chase_grid.is_in_boundsv(from) and _chase_grid.is_in_boundsv(to):
+		_chase_path = _chase_grid.get_point_path(from, to)
 
 func hear_noise(origin: Vector2, radius: float) -> void:
 	if not patrol.is_empty() and health > 0 and global_position.distance_to(origin) <= radius:

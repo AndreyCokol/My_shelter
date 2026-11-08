@@ -5,6 +5,7 @@ extends SceneTree
 # a 10px inflated obstacle radius for the player's 9px collision circle.
 # This checks 2D path reachability; it does not simulate GUI keyboard movement.
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const WalkGrid = preload("res://game/systems/world/walk_grid.gd")
 const STEP := 12.0
 const CLEARANCE := 10.0
 var checks: int = 0
@@ -81,19 +82,7 @@ func walkable_profile(record: Dictionary, seed_value: int, scene_id: String) -> 
 		print("ROUTE BLOCKED spawn seed=%d scene=%s" % [seed_value, scene_id])
 		_cache[signature] = false
 		return false
-	var grid := AStarGrid2D.new()
-	grid.region = Rect2i(Vector2i.ZERO, Vector2i((floor.size / STEP).floor()) + Vector2i.ONE)
-	grid.cell_size = Vector2(STEP, STEP)
-	grid.offset = floor.position
-	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
-	grid.update()
-	for obstacle in obstacles:
-		var expanded: Rect2 = obstacle.grow(CLEARANCE)
-		var first: Vector2i = Vector2i(((expanded.position - floor.position) / STEP).ceil())
-		var last: Vector2i = Vector2i(((expanded.end - floor.position) / STEP).floor())
-		var affected := Rect2i(first, (last - first + Vector2i.ONE).max(Vector2i.ZERO)).intersection(grid.region)
-		if affected.has_area():
-			grid.fill_solid_region(affected, true)
+	var grid := WalkGrid.build(floor, obstacles, STEP, CLEARANCE)
 	var start := Vector2i(((record.spawn - floor.position) / STEP).round())
 	if not grid.region.has_point(start) or grid.is_point_solid(start):
 		print("ROUTE GRID BLOCKED spawn seed=%d scene=%s" % [seed_value, scene_id])
