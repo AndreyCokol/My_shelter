@@ -69,6 +69,34 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # Ephemeral owner-only artifact. NEVER merge this packaging change into
+      # main or republish art assets as a public release.
+      - name: Write exact game SHA and private preview notes
+        shell: pwsh
+        run: |
+          @'
+          My Shelter / Мое пространственное убежище
+          Windows 10/11 x64 PRIVATE TEST PROTOTYPE
+          Game source commit: a1ae8c0b68017ea4f4067a677a2d94029e1cac1d
+          Based on owner visual HUD R1-R4 and original top-down 64px actor atlases.
+          Adds CT-87 staged backup safety, CT-93 patrol/noise obstacle navigation,
+          CT-94 clock precision and accelerated 108000-frame simulation test.
+          Extract this ZIP and run MyShelter.exe.
+          Windows GUI 15-35 minute walkthrough and live 30-minute FPS still NOT RUN.
+          Pixel-perfect parity with owner four original references NOT APPROVED.
+          Redistribution requires legal rights and asset license review.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (-not (Test-Path build/windows/MyShelter.exe)) { throw 'Missing Windows executable' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Unexpectedly small Windows executable' }
+      - name: Hand off private Windows EXE for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-Visual64-SafeBackup-Patrol-Nov09
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
