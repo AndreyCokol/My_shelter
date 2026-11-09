@@ -69,6 +69,34 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # TEMPORARY personal handoff only: keep this packaging change OUT of main.
+      - name: Record exact integration SHA for owner preview
+        shell: pwsh
+        run: |
+          @'
+          My Shelter / Мое пространственное убежище
+          PRIVATE Windows x64 prototype, NOT public release
+          Game source commit: ac52522c17f0971ad429d41fe33e5700334a1068
+          Integrated: PR #130 + CORE PR #134 + VISUAL PR #135
+          Journal-free readonly HUD and rest preview; crash-safe backup,
+          patrol/noise AStar, four original 64x64 sprite atlases and
+          108000 accelerated clock ticks with full save/reload checks.
+          Extract all files and launch MyShelter.exe.
+          No manual Windows GUI playthrough or 30-minute rendered FPS yet.
+          R1-R4 pixel-perfect owner visual acceptance still NOT_RUN.
+          This ZIP is for private owner review only; not redistributed.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (-not (Test-Path build/windows/MyShelter.exe)) { throw 'Exported EXE missing' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Suspiciously small EXE' }
+      - name: Upload temporary personal integration test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-HUD-Core-Visual-20261109
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
