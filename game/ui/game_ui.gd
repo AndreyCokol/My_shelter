@@ -294,7 +294,7 @@ func _open_recovery_panel() -> void:
 func update_hud() -> void:
 	if hud == null:
 		return
-	var state: Dictionary = app.snapshot()
+	var state: Dictionary = app.snapshot(false)
 	var minute: int = int(state.game_time_minutes)
 	var world = app.scene_router.current_world()
 	var title: String = world.location_label if is_instance_valid(world) and not world.location_label.is_empty() else NAMES.get(state.scene.current_scene_id, state.scene.current_scene_id)
@@ -359,7 +359,7 @@ func render_panel() -> void:
 	heading.text = PANELS.get(panel_id, panel_id)
 	heading_icon.texture = Art.icon(panel_id)
 	heading_icon.visible = heading_icon.texture != null
-	var state: Dictionary = app.snapshot()
+	var state: Dictionary = app.snapshot(false)
 	match panel_id:
 		"welcome":
 			line("Офлайн-песочница · процедурный город")

@@ -26,28 +26,48 @@ func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 		return {"ok": false, "committed": false}
 	if not _stage_checkpoint(state):
 		return {"ok": false, "committed": false}
-	# Keep the last validated primary; never overwrite it with corrupt input.
-	if FileAccess.file_exists(path):
+	# Preserve both durable files on every failure before primary replacement.
+	# Copy the previous primary into a verified temporary backup, but DO NOT
+	# publish it as .bak until the new primary has actually committed.
+	var had_primary := FileAccess.file_exists(path)
+	var backup_temporary := absolute + ".bak.tmp"
+	if had_primary:
 		var previous := read_checkpoint()
 		if not previous.ok or not validator.call(previous.state):
 			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
-		# Keep the previous backup intact until its replacement has been verified.
-		var backup_temporary := absolute + ".bak.tmp"
-		if not _stage_backup(absolute, backup_temporary) or DirAccess.rename_absolute(backup_temporary, absolute + ".bak") != OK:
+		if not _stage_backup(absolute, backup_temporary):
 			if FileAccess.file_exists(backup_temporary):
 				DirAccess.remove_absolute(backup_temporary)
 			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
-	var error := DirAccess.rename_absolute(absolute + ".tmp", absolute)
+	var error := _replace_primary(absolute + ".tmp", absolute)
 	if error != OK:
 		DirAccess.remove_absolute(absolute + ".tmp")
+		if had_primary and FileAccess.file_exists(backup_temporary):
+			DirAccess.remove_absolute(backup_temporary)
 		return {"ok": false, "committed": false}
-	return {"ok": true, "committed": true, "recover": fault == "after_replace"}
+	# Primary commit is now durable. If backup promotion fails, reporting
+	# an uncommitted action would allow an already-persisted receipt/reward to
+	# be retried against stale in-memory state. Keep the older valid .bak and
+	# report success; the next successful save can refresh the backup.
+	var backup_updated := true
+	if had_primary:
+		backup_updated = _replace_backup(backup_temporary, absolute + ".bak") == OK
+		if not backup_updated and FileAccess.file_exists(backup_temporary):
+			DirAccess.remove_absolute(backup_temporary)
+	return {"ok": true, "committed": true, "recover": fault == "after_replace", "backup_updated": backup_updated}
 
 func _stage_backup(source: String, temporary: String) -> bool:
 	var expected := FileAccess.get_sha256(source)
 	return not expected.is_empty() and DirAccess.copy_absolute(source, temporary) == OK and FileAccess.get_sha256(temporary) == expected
+
+# Seams for deterministic filesystem error injection in isolated tests.
+func _replace_primary(temporary: String, target: String) -> int:
+	return DirAccess.rename_absolute(temporary, target)
+
+func _replace_backup(temporary: String, target: String) -> int:
+	return DirAccess.rename_absolute(temporary, target)
 
 # Invoked only after user-selected backup has passed complete session validation.
 func restore_checkpoint(state: Dictionary) -> bool:
