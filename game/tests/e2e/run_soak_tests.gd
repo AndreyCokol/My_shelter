@@ -76,8 +76,8 @@ func _initialize() -> void:
 	check(monotonic, "CT-94 calendar never runs backward across sampled runtime frames")
 	var snapshot: Dictionary = campaign.coordinator.get_snapshot()
 	check(Model.validate(snapshot, rules) and snapshot.game_time_minutes == initial.game_time_minutes + NOMINAL_REAL_SECONDS
-		and snapshot.clock_remainder >= 0.0 and snapshot.clock_remainder < 1.0,
-		"CT-94 30 minutes nominal real time advance exactly 1800 in-game minutes and remain valid")
+		and snapshot.clock_remainder == 0.0,
+		"CT-94 30-minute 60-FPS minute boundaries leave a canonical zero remainder")
 	check(snapshot.inventory == expected_inventory and snapshot.player == expected_player
 		and snapshot.completed_actions.size() == SYNTHETIC_RECEIPTS,
 		"CT-94 no surprise inventory/HP mutation or loss of 100 durable receipts")
