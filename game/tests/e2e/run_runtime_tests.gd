@@ -191,6 +191,7 @@ func run() -> void:
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 	await check_enemy_route()
+	await check_patrol_route()
 	await process_frame
 	print("RUNTIME TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
@@ -225,6 +226,59 @@ func check_enemy_route() -> void:
 	for frame in range(60):
 		await physics_frame
 	check(foe.position.x < 318 and target.health == 100, "replacing a wall invalidates the route and a sealed barrier still blocks melee")
+	world.free()
+
+# CT-93: a hospital PATROL (not only a simple chase zombie) must navigate
+# the same live walls when following waypoints or an observed sound.
+func check_patrol_route() -> void:
+	var world = preload("res://game/scenes/worlds/hospital.tscn").instantiate()
+	world.position = Vector2(40, -15) # Offset reveals local/world coordinate bugs.
+	root.add_child(world)
+	var barrier = world.add_wall(Rect2(318, 188, 10, 64))
+	var hero = preload("res://game/entities/player/player.gd").new()
+	var guard = preload("res://game/entities/enemies/enemy.gd").new()
+	var fixture := ChaseFixture.new()
+	fixture.hero = hero
+	hero.app = fixture
+	guard.app = fixture
+	hero.position = Vector2(110, 110) # Beyond the guard's LOS/noise radius.
+	guard.position = Vector2(280, 220)
+	guard.patrol = PackedVector2Array([Vector2(370, 220)])
+	world.add_child(hero)
+	hero.set_physics_process(false)
+	world.add_child(guard)
+	for frame in range(420):
+		await physics_frame
+	check(guard.position.distance_to(Vector2(370, 220)) < 26.0,
+		"CT-93 patrol zombie navigates an interior wall to its LOCAL waypoint with offset scene")
+	# Reset the same actor; the previously cached path must not override a new
+	# noise destination. With only 3.5 s search timeout, test measurable
+	# vertical pathing around the wall before it expires, not a forced kill.
+	guard.position = Vector2(280, 220)
+	guard.patrol = PackedVector2Array([Vector2(170, 220)])
+	guard.alert_remaining = guard.SEARCH_DURATION
+	guard.last_noise = world.to_global(Vector2(370, 220))
+	guard._chase_path.clear()
+	guard._chase_retry = 0.0
+	guard.velocity = Vector2.ZERO
+	var excursion := 0.0
+	for frame in range(165):
+		await physics_frame
+		excursion = maxf(excursion, absf(guard.position.y - 220.0))
+	check(excursion > 30.0,
+		"CT-93 alerted patrol takes a vertical detour toward noise instead of sticking to the wall")
+	barrier.queue_free()
+	world.add_wall(Rect2(318, 85, 10, 260))
+	guard.position = Vector2(300, 220)
+	guard.velocity = Vector2.ZERO
+	guard.alert_remaining = 0.0
+	guard.patrol = PackedVector2Array([Vector2(370, 220)])
+	guard._chase_path.clear()
+	guard._chase_retry = 0.0
+	for frame in range(160):
+		await physics_frame
+	check(guard.position.x < 318.0,
+		"CT-93 a sealed replacement wall remains impassable to patrol/alert navigation")
 	world.free()
 
 func check_enemy_melee() -> void:
