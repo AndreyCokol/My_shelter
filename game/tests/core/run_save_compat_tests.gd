@@ -127,6 +127,9 @@ func damaged_primary_recovery(config: Dictionary, path: String) -> void:
 	check(write_bytes(path, invalid), "isolated fixture replaces only primary with deliberately damaged bytes")
 	check(write_bytes(path + ".bak.tmp", "{INTERRUPTED_STAGE".to_utf8_buffer()),
 		"isolated .bak.tmp simulates an interrupted previous backup copy")
+	var parse_result: Dictionary = store.read_checkpoint()
+	check(not parse_result.ok and parse_result.code == "INVALID_STATE",
+		"malformed primary returns a structured INVALID_STATE without engine error")
 	var before = coordinator(config)
 	var untouched: Dictionary = before.get_snapshot()
 	var rejected: Dictionary = before.load_checkpoint(store)
