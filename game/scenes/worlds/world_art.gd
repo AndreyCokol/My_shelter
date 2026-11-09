@@ -210,7 +210,7 @@ static func shelter_rest(canvas: CanvasItem) -> void:
 		canvas.draw_rect(Rect2(x, 151, 2, 46), Color("e0c895"))
 	canvas.draw_rect(Rect2(389, 193, 22, 13), Color("473b2d"))
 	canvas.draw_rect(Rect2(393, 195, 14, 9), Color("9d7951"))
-	canvas.draw_string(ThemeDB.fallback_font, Vector2(370, 130), "Отдых [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("fff0cc"))
+	canvas.draw_string(ThemeDB.fallback_font, Vector2(371, 227), "Отдых [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("fff0cc"))
 
 
 static func shelter_farm(canvas: CanvasItem, plots: Array) -> void:
@@ -236,7 +236,7 @@ static func shelter_farm(canvas: CanvasItem, plots: Array) -> void:
 				canvas.draw_rect(Rect2(origin + Vector2(dx + 1, 18), Vector2(7, 5)), leaf)
 				if status == "ripe":
 					canvas.draw_rect(Rect2(origin + Vector2(dx - 1, 28), Vector2(5, 5)), Color("d9aa52"))
-	canvas.draw_string(ThemeDB.fallback_font, Vector2(181, 161), "Грядки [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f5e9c7"))
+	canvas.draw_string(ThemeDB.fallback_font, Vector2(181, 230), "Грядки [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f5e9c7"))
 
 
 static func shelter_structure(canvas: CanvasItem, kind: String, rect: Rect2) -> void:
