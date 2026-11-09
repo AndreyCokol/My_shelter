@@ -88,7 +88,16 @@ func _initialize() -> void:
 	var disk_bytes: int = FileAccess.get_file_as_bytes(path).size() if FileAccess.file_exists(path) else 0
 	var reopened = Campaign.new(rules).coordinator
 	var loaded: Dictionary = reopened.load_checkpoint(store)
-	check(loaded.get("ok", false) and reopened.get_snapshot() == snapshot,
+	var reloaded_state: Dictionary = reopened.get_snapshot()
+	if not loaded.get("ok", false) or reloaded_state != snapshot:
+		print("CT-94 LOAD DIAGNOSTIC result=", loaded, " equal=", reloaded_state == snapshot)
+		for key in snapshot:
+			if reloaded_state.get(key) != snapshot[key]:
+				print("CT-94 DIFFERING KEY=", key,
+					" source_type=", typeof(snapshot[key]), " restored_type=", typeof(reloaded_state.get(key)))
+				if key in ["clock_remainder", "game_time_minutes", "state_revision"]:
+					print("CT-94 DIFFERING VALUE=", snapshot[key], " restored=", reloaded_state.get(key))
+	check(loaded.get("ok", false) and reloaded_state == snapshot,
 		"CT-94 independent session restores 30-minute simulation and receipts exactly")
 	print("CT-94 SOAK PROFILE nominal_seconds=%d frames=%d final_game_minutes=%d elapsed_wall_ms=%.3f max_tick_ms=%.3f memory_initial_bytes=%d memory_peak_bytes=%d memory_delta_bytes=%d checkpoint_bytes=%d" %
 		[NOMINAL_REAL_SECONDS, end_frame, int(snapshot.game_time_minutes),
