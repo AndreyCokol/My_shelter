@@ -72,7 +72,7 @@ static func atmosphere(canvas: CanvasItem, kind: String, layout: Dictionary) -> 
 			var inside: Rect2 = room.rect.grow(-12)
 			if inside.size.x < 25 or inside.size.y < 25:
 				continue
-			var cold := plan.kind == "hospital"
+			var cold: bool = str(plan.kind) == "hospital"
 			var stain := Color(0.11, 0.18, 0.21, 0.32) if cold else Color(0.24, 0.18, 0.12, 0.28)
 			for i in range(4):
 				var point := Vector2(rng.randf_range(inside.position.x, inside.end.x),
