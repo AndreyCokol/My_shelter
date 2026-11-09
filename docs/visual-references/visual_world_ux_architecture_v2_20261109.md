@@ -2,7 +2,7 @@
 
 **Дата:** 2026-11-09 · **Роль:** VISUAL/WORLD/UX A5 + A2 (визуальные сцены); независимый A0 — reviewer · **Статус:** DESIGN_CANDIDATE / OWNER_NOT_ACCEPTED.  
 **Кодовая база для проектирования:** `a1ae8c0b68017ea4f4067a677a2d94029e1cac1d` из [PR #130](https://github.com/AndreyCokol/My_shelter/pull/130).  
-**Источники требований:** [VIS-LOCK-01](../book-01/20-visual-reference-lock-redesign.md), [манифест R1–R4](reference_manifest.json), [NX-01…21 / PR #132](https://github.com/AndreyCokol/My_shelter/pull/132), [визуальный статус](../book-01/24-visual-world-status.md) из независимой R1-ветки.  
+**Источники требований:** [VIS-LOCK-01](../book-01/20-visual-reference-lock-redesign.md), [манифест R1–R4](reference_manifest.json), [NX-01…21 / PR #132](https://github.com/AndreyCokol/My_shelter/pull/132), [визуальный статус R1 в отдельной ветке](https://github.com/AndreyCokol/My_shelter/blob/work/visual-world-r1-20261109/docs/book-01/24-visual-world-status.md) из независимой R1-ветки.  
 **Изменения:** только проектирование, без runtime, без новых PNG, без претензии на 1:1.
 
 ## 0. Проверенные исходные факты и границы
