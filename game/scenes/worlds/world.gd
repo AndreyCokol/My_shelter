@@ -121,7 +121,7 @@ func collision_rects() -> Array[Rect2]:
 func refresh_buildings() -> void:
 	if scene_id != "shelter" or layout.is_empty() or app == null:
 		return
-	var current: Dictionary = app.snapshot().shelter.get("buildings", {})
+	var current: Dictionary = app.snapshot(false).shelter.get("buildings", {})
 	if buildings == current:
 		return
 	for cell in building_bodies.keys():
@@ -261,38 +261,21 @@ func _draw() -> void:
 		var label: String = "Пустой ящик" if looted else hospital_cache.label
 		draw_string(ThemeDB.fallback_font, resource_point + Vector2(-62, -12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c1cbce"))
 	elif scene_id == "shelter":
-		draw_colored_polygon(PackedVector2Array([Vector2(360, 205), Vector2(405, 130), Vector2(450, 205)]), Color("bda16c"))
-		WorldArt.tile(self, "wood", Rect2(386, 168, 40, 38), WorldArt.WARM)
-		var plots: Array = app.snapshot().crops.plots if app != null else []
-		for i in range(plots.size()):
-			var status: String = plots[i].status
-			WorldArt.tile(self, "soil", Rect2(170 + i * 65, 175, 55, 50), WorldArt.WARM)
-			if status != "empty":
-				var leaf := Color("98c46c") if status != "spoiled" else Color("907560")
-				for dx in [12, 30, 44]:
-					draw_circle(Vector2(170 + i * 65 + dx, 198), 5 if status == "ripe" else 3, leaf)
-		draw_string(ThemeDB.fallback_font, Vector2(185, 162), "Грядки", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("dce5ce"))
+		# Overhead art remains attached to existing REST and FARM interactions.
+		# These helpers create NO entities and NO untracked collision objects.
+		WorldArt.shelter_rest(self)
+		var plots: Array = app.snapshot(false).crops.plots if app != null else []
+		WorldArt.shelter_farm(self, plots)
 		if not layout.is_empty():
 			for index in range(Construction.COLUMNS * Construction.ROWS):
 				var cell := str(index)
 				var rect := Construction.cell_rect(cell)
-				draw_rect(rect.grow(5), Color("8da774"), false)
-				match buildings.get(cell, ""):
-					"bench":
-						draw_rect(rect, Color("a66e45"))
-						draw_line(rect.position + Vector2(3, 5), rect.position + Vector2(20, 5), Color("e1b282"), 3)
-					"lamp":
-						draw_circle(rect.get_center(), 27, Color(1, 0.77, 0.33, 0.19))
-						draw_circle(rect.get_center(), 9, Color("f4c56f"))
-					"cabinet":
-						draw_rect(rect, Color("87664c"))
-						draw_line(rect.get_center() - Vector2(0, 8), rect.get_center() + Vector2(0, 8), Color("b59162"), 2)
-					"bed":
-						draw_rect(rect, Color("9c7b61"))
-						draw_rect(rect.grow(-3), Color("c2ac80"))
-						draw_rect(Rect2(rect.position + Vector2(3, 3), Vector2(7, 16)), Color("f0d4b0"))
-				draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 8), str(index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("eff0d6"))
-			draw_string(ThemeDB.fallback_font, Vector2(185, 245), "Стройплощадка [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dce5ce"))
+				draw_rect(rect.grow(5), Color("b0a573"), false)
+				var built_type := str(buildings.get(cell, ""))
+				if not built_type.is_empty():
+					WorldArt.shelter_structure(self, built_type, rect)
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 8), str(index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("fff1d0"))
+			draw_string(ThemeDB.fallback_font, Vector2(185, 245), "Стройплощадка [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("f4e7be"))
 	elif scene_id in ["outside", "house"]:
 		var exhausted: bool = scene_id == "house" and app != null and app.snapshot().world_states.locations.get(location_id, {}).get("looted", false)
 		var resource_label := "Пустой тайник" if exhausted else "Запасы семян"
