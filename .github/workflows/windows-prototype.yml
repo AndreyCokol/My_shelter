@@ -69,6 +69,31 @@ jobs:
           $assetlog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
           Write-Output $assetlog
           if ($LASTEXITCODE -ne 0 -or $assetlog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') { throw 'Exported asset resources missing' }
+      # PRIVATE QA: temporary artifact, 24-hour retention; NEVER merge this workflow into main.
+      - name: Stamp exact combined source SHA
+        shell: pwsh
+        run: |
+          @'
+          My Shelter / Мое пространственное убежище — PRIVATE QA Windows x64
+          Source game SHA: e76cfcfba0c643fe0658fde61a6b4499f34c7914
+          Integrates PR #148 CORE QA + PR #138 VISUAL R1 exactly in draft PR #150.
+          Includes crash-resilient backup, NPC/food 3-7-14-day regression tests,
+          journal-free HUD, and top-down warm shelter R1 candidate.
+          Extract and launch MyShelter.exe offline. This is not a public release.
+          1:1 owner R1-R4 pixel review, 15-35 min GUI, 30 min rendered FPS/RAM,
+          A0 independent review and G0/G4 signoff are NOT YET COMPLETED.
+          '@ | Set-Content -Path build/windows/README-preview.txt -Encoding UTF8
+          if (-not (Test-Path build/windows/MyShelter.exe)) { throw 'Missing Windows executable' }
+          if ((Get-Item build/windows/MyShelter.exe).Length -lt 1000000) { throw 'Invalid size of Windows executable' }
+      - name: Upload 1-day owner-only R1 integration build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyShelter-Windows-x64-R1-Farm-Save-QA-20261110
+          path: |
+            build/windows/MyShelter.exe
+            build/windows/README-preview.txt
+          if-no-files-found: error
+          retention-days: 1
       - name: Keep test logs (no public executable artifact)
         if: always()
         uses: actions/upload-artifact@v4
