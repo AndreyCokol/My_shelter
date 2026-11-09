@@ -14,7 +14,7 @@
 - Действующий визуальный [PR #138](https://github.com/AndreyCokol/My_shelter/pull/138) — художественный кандидат, с настоящими скриншотами и Linux/Windows PASS, **но не** проверенным совпадением с owner R1.
 - Отдельные [PR #134](https://github.com/AndreyCokol/My_shelter/pull/134) (CORE-only `GameApp`) и [PR #135](https://github.com/AndreyCokol/My_shelter/pull/135) (VIS-only HUD/tests) дополняют друг друга. На одном интеграционном SHA их проверка ещё должна быть выполнена.
 - Подлинный `my_shelter_visual_reference_pack_v1.zip` обнаружен в библиотеке ChatGPT, но из текущего окружения его **исходные байты недоступны**. Реальные SHA R1–R4 не проверены; `VIS_NOT_RUN / BLOCKED_SOURCE_UNREADABLE`. Не генерировать подмену исходников.
-- [Issue #137](https://github.com/AndreyCokol/My_shelter/issues/137) — **CORE-only** гипотеза риска порядка обновления backup при precommit rename; требует воспроизведения отдельно от VIS.
+- [Issue #137](https://github.com/AndreyCokol/My_shelter/issues/137) — риск backup precommit rename сначала выявлен по коду, затем закрывающий **CORE-кандидат** [PR #141](https://github.com/AndreyCokol/My_shelter/pull/141) интегрирован в [PR #148](https://github.com/AndreyCokol/My_shelter/pull/148) и прошёл CI с инжектированными отказами. Это не ручная проверка физического обрыва питания.
 
 ## 1. Новые визуальные выводы из кода и настоящего кадра
 
@@ -107,11 +107,11 @@ Descriptor **не становится** сохранённой gameplay state �
 | VUX-08 / VIS-A5+A0 | 13 модальных окон, прокрутка, focus/keyboard, hover и подсказки | Тесты keyboard+mouse, 3 sizes, no stuck pause, no text clipping, meaningful disabled states |
 | VUX-09 / VIS-A5→CORE | Сводный provenance + render/LOD cost evidence | SHA/source/license per asset, no unlicensed external imports; FPS/RAM/window soak делает CORE, не VIS |
 
-**Отдельный инженерный gate:** CORE-only [PR #134](https://github.com/AndreyCokol/My_shelter/pull/134) + VIS-only [PR #135](https://github.com/AndreyCokol/My_shelter/pull/135) запускаются на **одном интегрированном SHA**, затем повторяются Linux/Windows/docs. Визуальные PR по R1/R2/R3/R4 не должны вносить в чужой API файлы и не должны объединяться в `main` без проверяемой независимой приёмки.
+**Отдельный инженерный gate:** объединение CORE [PR #134](https://github.com/AndreyCokol/My_shelter/pull/134) + VIS [PR #135](https://github.com/AndreyCokol/My_shelter/pull/135) уже проверено в [PR #148](https://github.com/AndreyCokol/My_shelter/pull/148) с Linux/Windows/docs SUCCESS. Следующий gate — интегрировать художественные R1–R4 PR **поверх него** и заново повторить CI; не объединять `main` без независимой приёмки.
 
 ## 7. Приоритет исполнения без взаимных конфликтов
 
-1. **P0:** VUX-01 layout (наблюдаемая UI ошибка), CORE совместно проверяет #134+#135. Параллельно A0 добивается доступности оригиналов; любой отказ документируется.
+1. **P0:** VUX-01 layout (наблюдаемая UI ошибка), не переписывая уже зелёную комбинацию CORE+VIS #134+#135 в PR #148. Параллельно A0 добивается доступности оригиналов; любой отказ документируется.
 2. **P0:** VUX-02 source/fixture/audit — обязательный для утверждения 1:1, но не блокирует самостоятельную художественную разработку.
 3. **P0:** VUX-03 R1 фактические ферма/отдых/строительство/коллизии; затем R2 → R3 → R4 в отдельных PR, каждый со своим screenshot/provenance.
 4. **P1:** VUX-07 персонажи, VUX-08 углубление HUD/окон, VUX-09 эффекты/лицензии/производительность.
@@ -184,4 +184,14 @@ PR #148 включает обе части `snapshot(false)` из CORE [#134](ht
 | Final source audit | byte-identical owner original archive, SHA manifest; HUD+world pixel diff и маски | 4 original hashes, 4 fixed-fixture Godot PNG, overlays/heatmaps/region table, independent A0 and owner |
 
 **Порядок реализации:** сначала HUD geometry [#142](https://github.com/AndreyCokol/My_shelter/issues/142) + crop planted visual [#152](https://github.com/AndreyCokol/My_shelter/issues/152), затем R1 stateful polish, затем R2/R3/R4 на отдельной визуальной ветке и отдельный общий integrated SHA с PR #148. Это не объявление уже выполненного кода. Каждый визуальный PR остаётся draft до полного CI/аудита.
+
+
+
+## 14. Дополнительный UX/P1 bug: E одновременно доступна для двух зон
+
+**Статический факт по идентичному `World.interact()` в PR #130/#138/#148:** при `hero.position=(220,245)` расстояние до фермы из `(220,195)` равно **50**, меньше порога 58; одновременно эта точка содержится в `Rect2(167,239,245,91)` строительной зоны. Из-за порядка `if farm ... elif workshop ...` нажатие `E` откроет **farm**, хотя игрок стоит в границах workshop. Геймплейный тест именно этого case ещё не выполнялся. Также `WorldArt.shelter_rest`, `WorldArt.shelter_farm` и `World._draw` рисуют `[E]` всегда, а не только когда E активна для соответствующей цели.
+
+**[Issue #155](https://github.com/AndreyCokol/My_shelter/issues/155):** единый выбор `nearby_interaction` должен обслуживать одновременно visible hint и `World.interact()`, приоритет мастерской в физической зоне стройплощадки над пересечением с фермерским radius, `E` только возле текущей цели. Удалённые статические названия могут оставаться, но не ложная кнопка действия. Двери/порталы, `G` и `Left Ctrl` не менять. Пункты доказательств: координаты (220,195) → farm, (220,245) → workshop, (400,180) → rest; отдельный Godot E2E + реальный кадр, затем визуально-игровой regression на объединённом SHA. Статус `CONFIRMED_BY_CODE / LIVE_E2E_NOT_RUN`.
+
+**Рекомендованное правило для всех будущих 30 сцен:** рисовать активную `[E]` только на основании того же разрешённого interaction target, который отработает по клавише; статическая надпись зоны не тождественна кнопке. Подписи ложных контейнеров, декоративных дверей и недоступного лута запрещены.
 
