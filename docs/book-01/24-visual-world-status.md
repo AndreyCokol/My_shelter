@@ -31,8 +31,12 @@
 
 **Provenance:** новые элементы состоят из программных примитивов и уже имеющихся проектных `grass/path/flowers/soil` материалов. Новых сторонних PNG/шрифтов/лицензий и утверждений об их происхождении не добавлено. Лицензии существующих материалов должны быть проверены в отдельном NX-20.
 
-**Приёмка:** сначала Linux/Windows CI, реальные screenshot R1 на том же SHA, затем проверка 1024 grid masks + реальных путей и слоёв, наконец оригинал R1 SHA → overlay/MAE → A0 review → owner. На момент подготовки этого документа `CODE_CANDIDATE / TEST_NOT_RUN / PIXEL_REVIEW_NOT_RUN`. Ни одна новая деталь не означает принятую точность 1:1.
+**Приёмка:** сначала Linux/Windows CI, реальные screenshot R1 на том же SHA, затем проверка 1024 grid masks + реальных путей и слоёв, наконец оригинал R1 SHA → overlay/MAE → A0 review → owner. **Верификация на кодовом SHA `5600a300f9e159f516226272b0942858ccbabee6`:** Linux/Godot `42610813873` SUCCESS, Windows `42610813880` SUCCESS, docs `42610813869` SUCCESS. Linux: core 28/0, runtime 92/0, UI 24/0, asset 70/0, world 159/0, shelter access 6/0, visual 75/0; реальный R1 capture 1672×941 и 1920×1080 доступен в [CI artifact `asset-ui-rendered-views`](https://github.com/AndreyCokol/My_shelter/actions/runs/42610813873). Повторная проверка отмечает `CI_PASS / PIXEL_REVIEW_NOT_RUN / OWNER_ACCEPTED_NOT_RUN`. Ни одна новая деталь не означает принятую точность 1:1.
 
 ## Границы и дальнейшие CORE/API handoff
 
 CORE отвечает за `GameApp.preview_rest`, журнал/долговременный save, системную поставку EXE/ZIP, Windows GUI/FPS/RAM и финальное объединение. VIS изменяет только UI, artwork, сценический world и разрешённые visual/world тесты. Фиксировать новые stateful объекты «костёр/склад/мастерская» без CORE API нельзя. Сюжетный осколок — LATER, Q03–Q07 optional; схема saves v4 не изменяется.
+
+## Визуальный self-diff двух настоящих сборок (НЕ source 1:1)
+
+Из GitHub Actions downloaded raw Godot PNG двух SHA: PR #130 baseline `a1ae8c0b...` и R1 visual SHA `5600a300...`. Оба оригинальные захваты Godot 1672×941, сравнение без масштабирования/коррекции: **RGB MAE=2.069**, **4.99% пикселей изменено**. Это измеряет объём изменённой графики между двумя программными кандидатами, **не** сходство с R1 владельца. До распаковки и SHA проверки оригинального пользовательского ZIP никакие owner-reference MAE, heatmap, PIXEL_PASS или VIS-LOCK-01 acceptance недопустимы. Были отдельно смещены подписи `Грядки [E]` и `Отдых [E]` ниже HUD для читаемости, отрисовка подтверждена на реальном кадре.
