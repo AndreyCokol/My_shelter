@@ -250,7 +250,7 @@ func _restore_archives(archived: Dictionary) -> void:
 			push_error("Could not restore an archived save after reset failed")
 
 func preview_rest(target: int) -> Dictionary:
-	var candidate := snapshot()
+	var candidate := snapshot(false)
 	if candidate.scene.current_scene_id != "shelter" or target <= candidate.game_time_minutes:
 		return {"ok": false}
 	var result: Dictionary = campaign.calendar.advance(candidate, target, "rest")
@@ -260,7 +260,7 @@ func preview_rest(target: int) -> Dictionary:
 
 func next_harvest_minute() -> int:
 	var target: int = 9007199254740991
-	var state := snapshot()
+	var state := snapshot(false)
 	for plot in state.crops.plots:
 		if plot.status == "growing":
 			target = mini(target, int(plot.ripe_at))
