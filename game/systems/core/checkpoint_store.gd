@@ -32,7 +32,11 @@ func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 		if not previous.ok or not validator.call(previous.state):
 			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
-		if DirAccess.copy_absolute(absolute, absolute + ".bak") != OK:
+		# Keep the previous backup intact until its replacement has been verified.
+		var backup_temporary := absolute + ".bak.tmp"
+		if not _stage_backup(absolute, backup_temporary) or DirAccess.rename_absolute(backup_temporary, absolute + ".bak") != OK:
+			if FileAccess.file_exists(backup_temporary):
+				DirAccess.remove_absolute(backup_temporary)
 			DirAccess.remove_absolute(absolute + ".tmp")
 			return {"ok": false, "committed": false}
 	var error := DirAccess.rename_absolute(absolute + ".tmp", absolute)
@@ -40,6 +44,10 @@ func write_checkpoint(state: Dictionary, validator: Callable) -> Dictionary:
 		DirAccess.remove_absolute(absolute + ".tmp")
 		return {"ok": false, "committed": false}
 	return {"ok": true, "committed": true, "recover": fault == "after_replace"}
+
+func _stage_backup(source: String, temporary: String) -> bool:
+	var expected := FileAccess.get_sha256(source)
+	return not expected.is_empty() and DirAccess.copy_absolute(source, temporary) == OK and FileAccess.get_sha256(temporary) == expected
 
 # Invoked only after user-selected backup has passed complete session validation.
 func restore_checkpoint(state: Dictionary) -> bool:
