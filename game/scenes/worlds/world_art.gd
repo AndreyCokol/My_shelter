@@ -60,6 +60,64 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 	if layout.has("rooms"):
 		room_ground(canvas, kind, layout.rooms, variant)
 
+# A5 first implementation pass. Nonblocking environmental decals are
+# deterministic for the same saved layout and never alter collision/portals.
+static func atmosphere(canvas: CanvasItem, kind: String, layout: Dictionary) -> void:
+	var identity := str(layout.get("segment", "")) + ":" + str(layout.get("label", "")) + ":" + kind
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(abs(identity.hash())) + 1
+	if layout.has("floor_plan"):
+		var plan: Dictionary = layout.floor_plan
+		for room in plan.rooms.values():
+			var inside: Rect2 = room.rect.grow(-12)
+			if inside.size.x < 25 or inside.size.y < 25:
+				continue
+			var cold := plan.kind == "hospital"
+			var stain := Color(0.11, 0.18, 0.21, 0.32) if cold else Color(0.24, 0.18, 0.12, 0.28)
+			for i in range(4):
+				var point := Vector2(rng.randf_range(inside.position.x, inside.end.x),
+					rng.randf_range(inside.position.y, inside.end.y))
+				canvas.draw_line(point,
+					point + Vector2(float(rng.randi_range(5, 17)), rng.randf_range(-3.0, 3.0)),
+					stain, 1)
+			if cold and room.kind in ["lab", "surgery", "recovery", "ward"]:
+				var corner := Vector2(inside.position.x + 5, inside.end.y - 6)
+				canvas.draw_rect(Rect2(corner, Vector2(17, 2)), Color(0.33, 0.56, 0.58, 0.34))
+			elif not cold and room.kind in ["living", "bedroom", "studio"]:
+				var corner := inside.position + Vector2(7, 12)
+				canvas.draw_rect(Rect2(corner, Vector2(minf(37, inside.size.x - 9), 3)),
+					Color(0.43, 0.28, 0.19, 0.35))
+		return
+	if layout.has("roadways"):
+		for road in layout.roadways:
+			var pavement: Rect2 = road.grow(-24)
+			if pavement.size.x < 30 or pavement.size.y < 30:
+				continue
+			for i in range(12):
+				var point := Vector2(rng.randf_range(pavement.position.x, pavement.end.x),
+					rng.randf_range(pavement.position.y, pavement.end.y))
+				if i % 3 == 0:
+					canvas.draw_circle(point, rng.randf_range(5.0, 11.0),
+						Color(0.10, 0.18, 0.21, 0.39))
+					canvas.draw_line(point + Vector2(-4, 1), point + Vector2(4, 1),
+						Color(0.53, 0.65, 0.69, 0.23), 1)
+				else:
+					canvas.draw_line(point,
+						point + Vector2(float(rng.randi_range(5, 16)), float(rng.randi_range(-5, 5))),
+						Color(0.20, 0.22, 0.21, 0.52), 1)
+		return
+	if kind == "shelter":
+		var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
+		var inner := bounds.grow(-18)
+		for i in range(55):
+			var point := Vector2(rng.randf_range(inner.position.x, inner.end.x),
+				rng.randf_range(inner.position.y, inner.end.y))
+			var flower := Color(0.96, 0.85, 0.52, 0.57) if i % 3 == 0 else Color(0.76, 0.82, 0.62, 0.49)
+			canvas.draw_circle(point, 1.2, flower)
+			canvas.draw_line(point + Vector2(0, 1), point + Vector2(0, 3),
+				Color(0.26, 0.40, 0.23, 0.43), 1)
+
+
 static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 	for room in plan.rooms.values():
 		var surface := "parquet"
