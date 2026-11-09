@@ -25,6 +25,7 @@ const MAP_AREA = Rect2(8, 11, 80, 73)
 var app
 var items: Array[Dictionary] = []
 var location_text := ""
+var game_day: int = 1
 var objective := ""
 var tracked_exit := ""
 var health := 100
@@ -134,6 +135,7 @@ func _layout() -> void:
 func update_state(state: Dictionary, carried: Array[Dictionary], place: String, quest: String, exit_id: String) -> void:
 	items = carried
 	location_text = place
+	game_day = 1 + floori(float(state.get("game_time_minutes", 0)) / 1440.0)
 	objective = quest
 	tracked_exit = exit_id
 	health = app.hero.health
@@ -160,6 +162,11 @@ func update_state(state: Dictionary, carried: Array[Dictionary], place: String, 
 
 func _draw() -> void:
 	draw_texture_rect_region(SHEET, Rect2(6, 4, 202, 22), TITLE)
+	# Fixed-width top scene banner follows the approved desktop reference.
+	frame(self, Rect2(213, 4, 198, 22))
+	var scene_title := "Убежище — День %d" % game_day if location_text.to_lower().contains("убежище") else location_text
+	draw_string(ThemeDB.fallback_font, Vector2(221, 20), scene_title,
+		HORIZONTAL_ALIGNMENT_LEFT, 182, 11, INK)
 	frame(self, Rect2(7, 28, 48, 53))
 	draw_texture_rect_region(SHEET, Rect2(6, 27, 50, 40.5), PORTRAIT)
 	caption(self, Vector2(11, 76), "%d XP" % hero_xp, 9)

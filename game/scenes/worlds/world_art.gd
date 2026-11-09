@@ -60,6 +60,64 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 	if layout.has("rooms"):
 		room_ground(canvas, kind, layout.rooms, variant)
 
+# A5 first implementation pass. Nonblocking environmental decals are
+# deterministic for the same saved layout and never alter collision/portals.
+static func atmosphere(canvas: CanvasItem, kind: String, layout: Dictionary) -> void:
+	var identity := str(layout.get("segment", "")) + ":" + str(layout.get("label", "")) + ":" + kind
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(abs(identity.hash())) + 1
+	if layout.has("floor_plan"):
+		var plan: Dictionary = layout.floor_plan
+		for room in plan.rooms.values():
+			var inside: Rect2 = room.rect.grow(-12)
+			if inside.size.x < 25 or inside.size.y < 25:
+				continue
+			var cold: bool = str(plan.kind) == "hospital"
+			var stain := Color(0.11, 0.18, 0.21, 0.32) if cold else Color(0.24, 0.18, 0.12, 0.28)
+			for i in range(4):
+				var point := Vector2(rng.randf_range(inside.position.x, inside.end.x),
+					rng.randf_range(inside.position.y, inside.end.y))
+				canvas.draw_line(point,
+					point + Vector2(float(rng.randi_range(5, 17)), rng.randf_range(-3.0, 3.0)),
+					stain, 1)
+			if cold and room.kind in ["lab", "surgery", "recovery", "ward"]:
+				var corner := Vector2(inside.position.x + 5, inside.end.y - 6)
+				canvas.draw_rect(Rect2(corner, Vector2(17, 2)), Color(0.33, 0.56, 0.58, 0.34))
+			elif not cold and room.kind in ["living", "bedroom", "studio"]:
+				var corner := inside.position + Vector2(7, 12)
+				canvas.draw_rect(Rect2(corner, Vector2(minf(37, inside.size.x - 9), 3)),
+					Color(0.43, 0.28, 0.19, 0.35))
+		return
+	if layout.has("roadways"):
+		for road in layout.roadways:
+			var pavement: Rect2 = road.grow(-24)
+			if pavement.size.x < 30 or pavement.size.y < 30:
+				continue
+			for i in range(12):
+				var point := Vector2(rng.randf_range(pavement.position.x, pavement.end.x),
+					rng.randf_range(pavement.position.y, pavement.end.y))
+				if i % 3 == 0:
+					canvas.draw_circle(point, rng.randf_range(5.0, 11.0),
+						Color(0.10, 0.18, 0.21, 0.39))
+					canvas.draw_line(point + Vector2(-4, 1), point + Vector2(4, 1),
+						Color(0.53, 0.65, 0.69, 0.23), 1)
+				else:
+					canvas.draw_line(point,
+						point + Vector2(float(rng.randi_range(5, 16)), float(rng.randi_range(-5, 5))),
+						Color(0.20, 0.22, 0.21, 0.52), 1)
+		return
+	if kind == "shelter":
+		var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
+		var inner := bounds.grow(-18)
+		for i in range(55):
+			var point := Vector2(rng.randf_range(inner.position.x, inner.end.x),
+				rng.randf_range(inner.position.y, inner.end.y))
+			var flower := Color(0.96, 0.85, 0.52, 0.57) if i % 3 == 0 else Color(0.76, 0.82, 0.62, 0.49)
+			canvas.draw_circle(point, 1.2, flower)
+			canvas.draw_line(point + Vector2(0, 1), point + Vector2(0, 3),
+				Color(0.26, 0.40, 0.23, 0.43), 1)
+
+
 static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 	for room in plan.rooms.values():
 		var surface := "parquet"
@@ -75,13 +133,7 @@ static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 
 static func plan_details(canvas: CanvasItem, plan: Dictionary) -> void:
 	for item in plan.furniture:
-		var rect: Rect2 = item.rect
-		canvas.draw_rect(rect, Color("1f252a"))
-		if item.kind in ["bedroom", "ward", "recovery"]:
-			canvas.draw_rect(rect.grow(-2), Color("696870"))
-			canvas.draw_rect(Rect2(rect.position + Vector2(4, 4), Vector2(rect.size.x - 8, 8)), Color("afb3b1"))
-		else:
-			tile(canvas, "wood" if plan.kind == "house" else "concrete", rect.grow(-2), DIM)
+		furniture_detail(canvas, str(item.kind), item.rect, plan.kind == "hospital")
 	for door in plan.doors:
 		var point: Vector2 = door.position
 		var size := Vector2(door.width, 10) if door.horizontal else Vector2(10, door.width)
@@ -95,6 +147,63 @@ static func plan_details(canvas: CanvasItem, plan: Dictionary) -> void:
 		var rect: Rect2 = room.rect
 		var label: String = Plans.LABELS[room.kind]
 		canvas.draw_string(ThemeDB.fallback_font, rect.position + Vector2(9, 15), label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14, 10, Color("d9d7c5"))
+
+# Top-down prop silhouettes share the exact existing collider rectangles.
+# Do not draw tall perspective fronts: furniture belongs to a 90° camera.
+static func furniture_detail(canvas: CanvasItem, kind: String, rect: Rect2, medical: bool) -> void:
+	var body: Rect2 = rect.grow(-2)
+	canvas.draw_rect(rect, Color("151d21"))
+	canvas.draw_rect(body, Color("56636b") if medical else Color("765a43"))
+	canvas.draw_rect(Rect2(body.position, Vector2(body.size.x, 2)),
+		Color("a4afb0") if medical else Color("aa8359"))
+	match kind:
+		"ward", "recovery", "bedroom":
+			# Headboard, pale pillow and darker rumpled blanket are readable
+			# at 640x360 even before production sprite sheets are installed.
+			canvas.draw_rect(body.grow(-2), Color("73818a") if medical else Color("9c8270"))
+			canvas.draw_rect(Rect2(body.position + Vector2(3, 4),
+				Vector2(body.size.x - 6, 6)), Color("d9d7c6"))
+			canvas.draw_rect(Rect2(body.position + Vector2(3, 12),
+				Vector2(body.size.x - 6, maxf(3, body.size.y - 15))),
+				Color("657e84") if medical else Color("805b58"))
+			if medical:
+				canvas.draw_line(body.position + Vector2(2, 2),
+					body.position + Vector2(2, body.size.y - 2), Color("d4d8d1"), 1)
+		"bath":
+			canvas.draw_rect(body.grow(-2), Color("aab8b9"))
+			canvas.draw_rect(body.grow(-5), Color("364e56"))
+			canvas.draw_circle(body.position + Vector2(body.size.x - 8, 6), 2, Color("e5e1d1"))
+		"storage":
+			for x in range(3):
+				var shelf := Rect2(body.position + Vector2(3 + x * 9, 4), Vector2(6, 9))
+				canvas.draw_rect(shelf, Color("8c7b67") if medical else Color("ad8250"))
+				canvas.draw_rect(Rect2(shelf.position + Vector2(1, 1), Vector2(2, 3)),
+					Color("b5c8bb") if medical else Color("ddbc83"))
+			canvas.draw_line(body.position + Vector2(2, body.size.y - 4),
+				body.end - Vector2(2, 4), Color("d4b083"), 2)
+		"reception", "office":
+			canvas.draw_rect(body.grow(-3), Color("75858b") if medical else Color("9f7952"))
+			canvas.draw_rect(Rect2(body.position + Vector2(7, 4), Vector2(11, 7)),
+				Color("172a30"))
+			canvas.draw_rect(Rect2(body.position + Vector2(8, 5), Vector2(9, 5)),
+				Color("5a9b9d") if medical else Color("91a1a2"))
+			canvas.draw_rect(Rect2(body.position + Vector2(6, 14), Vector2(16, 2)),
+				Color("dfdbbc"))
+		"lab", "surgery", "triage", "prep":
+			canvas.draw_rect(body.grow(-3), Color("859c9d"))
+			canvas.draw_rect(Rect2(body.position + Vector2(5, 5), Vector2(13, 7)),
+				Color("c3d8d2"))
+			canvas.draw_rect(Rect2(body.position + Vector2(body.size.x - 9, 5),
+				Vector2(5, 5)), Color("4c8994"))
+		"living", "studio":
+			canvas.draw_rect(body.grow(-3), Color("98725f"))
+			canvas.draw_rect(Rect2(body.position + Vector2(3, 4),
+				Vector2(body.size.x - 6, 6)), Color("ad8c71"))
+			canvas.draw_rect(Rect2(body.position + Vector2(3, 11),
+				Vector2(body.size.x - 6, 4)), Color("58423d"))
+		_:
+			canvas.draw_rect(body.grow(-3), Color("829498") if medical else Color("ba9069"))
+
 
 static func room_ground(canvas: CanvasItem, kind: String, rooms: Array, variant: int) -> void:
 	var materials: Array = []
