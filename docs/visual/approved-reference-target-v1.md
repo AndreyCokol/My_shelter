@@ -47,7 +47,7 @@ The owner approved **four distinct 16:9 screenshots** in this ChatGPT project. T
 
 ## First in-engine change (this branch)
 
-- `WorldArt.atmosphere` adds deterministic nonblocking warm/cold decals (surface cracks, worn hospital/apartment floor traces, street water damage, small shelter flowers). Existing room geometry, procedural seeds, portals and saves remain unchanged.
+- `WorldArt.atmosphere` adds deterministic nonblocking warm/cold decals (surface cracks, worn hospital/apartment floor traces, street water damage, small shelter flowers). `WorldArt.furniture_detail` now draws different top-down prop silhouettes for beds/pillows, bathroom fixtures, storage shelving, medical work surfaces, reception desks and domestic sofas, preserving original collider rectangles. Existing room geometry, procedural seeds, portals and saves remain unchanged.
 - `ExplorationHUD` adds live top-center bronze location/day plaque. The day is computed from saved `game_time_minutes`, not copied from concept image. Text is bounded to prevent overlap at 640×360.
 - The real software-rendered visual test checks that the HUD receives current saved time and scene; existing 3-seed render and route tests remain active. Performance/visual parity must be verified on exact SHA.
 
