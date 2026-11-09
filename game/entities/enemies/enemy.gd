@@ -83,13 +83,26 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 func update_chase(target: CharacterBody2D, distance: float, delta: float) -> void:
-	var goal := target.global_position
 	if distance <= CHASE_STOP_DISTANCE and has_clear_line_to(target):
+		_chase_path.clear()
+		velocity = Vector2.ZERO
+		return
+	_steer_toward(target.global_position, CHASE_SPEED, CHASE_STOP_DISTANCE, delta)
+
+# One collision-aware steering contract for ordinary zombies AND the hospital
+# patrol/noise mode. Both share the current wall revision and safe AStar route;
+# direct movement is used when there is no actual physics obstruction.
+func _steer_toward(goal: Vector2, speed: float, stopping_distance: float, delta: float) -> void:
+	var distance: float = global_position.distance_to(goal)
+	if distance <= stopping_distance:
 		_chase_path.clear()
 		velocity = Vector2.ZERO
 		return
 	_chase_retry = maxf(0.0, _chase_retry - delta)
 	var world = get_parent()
+	if not world.has_method("collision_rects"):
+		velocity = global_position.direction_to(goal) * speed
+		return
 	if _chase_grid != null and _grid_revision != world.collision_revision:
 		_chase_grid = null
 		_chase_path.clear()
@@ -98,11 +111,11 @@ func update_chase(target: CharacterBody2D, distance: float, delta: float) -> voi
 		_chase_path.clear()
 	if _chase_index >= _chase_path.size():
 		var direction := global_position.direction_to(goal)
-		var probe := minf(18.0, maxf(1.0, distance - CHASE_STOP_DISTANCE))
+		var probe := minf(18.0, maxf(1.0, distance - stopping_distance))
 		if not test_move(global_transform, direction * probe):
-			velocity = direction * CHASE_SPEED
+			velocity = direction * speed
 			return
-		if _chase_retry > 0.0 or not world.has_method("collision_rects"):
+		if _chase_retry > 0.0:
 			velocity = Vector2.ZERO
 			return
 		_plan_chase(world, goal)
@@ -110,7 +123,7 @@ func update_chase(target: CharacterBody2D, distance: float, delta: float) -> voi
 		_chase_index += 1
 	velocity = Vector2.ZERO
 	if _chase_index < _chase_path.size():
-		velocity = global_position.direction_to(world.to_global(_chase_path[_chase_index])) * CHASE_SPEED
+		velocity = global_position.direction_to(world.to_global(_chase_path[_chase_index])) * speed
 
 func _plan_chase(world, goal: Vector2) -> void:
 	_chase_retry = 0.25
@@ -135,11 +148,18 @@ func update_patrol(target: CharacterBody2D, distance: float, delta: float) -> vo
 		hear_noise(target.global_position, VIEW_RANGE)
 	alert_remaining = maxf(0.0, alert_remaining - delta)
 	if alert_remaining > 0:
-		velocity = global_position.direction_to(last_noise) * 55 if global_position.distance_to(last_noise) > 22 else Vector2.ZERO
+		# Noise positions are global. Direct steering previously got stuck at
+		# hospital partition walls and could not reach the noise source.
+		_steer_toward(last_noise, 55.0, 22.0, delta)
 		return
-	if global_position.distance_to(patrol[patrol_index]) < 8:
+	# Patrol waypoints are local to the World node; convert before steering.
+	# This also fixes patrol direction when a scene is offset from the origin.
+	var world = get_parent()
+	var waypoint: Vector2 = world.to_global(patrol[patrol_index])
+	if global_position.distance_to(waypoint) < 8.0:
 		patrol_index = (patrol_index + 1) % patrol.size()
-	velocity = global_position.direction_to(patrol[patrol_index]) * 32
+		waypoint = world.to_global(patrol[patrol_index])
+	_steer_toward(waypoint, 32.0, 8.0, delta)
 
 func has_clear_line_to(target: CharacterBody2D) -> bool:
 	var query := PhysicsRayQueryParameters2D.create(global_position, target.global_position)
