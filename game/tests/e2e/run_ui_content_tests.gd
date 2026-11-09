@@ -4,6 +4,15 @@ extends SceneTree
 # Shop amounts/prices/time must come from the exact rules catalog.
 const UI = preload("res://game/ui/game_ui.gd")
 const Rules = preload("res://game/data/game_rules.gd")
+
+class SnapshotApp extends "res://game/app/game_app.gd":
+	var full_snapshot_reads := 0
+
+	func snapshot(include_receipts: bool = true) -> Dictionary:
+		if include_receipts:
+			full_snapshot_reads += 1
+		return super(include_receipts)
+
 var checks: int = 0
 var failures: int = 0
 
@@ -49,6 +58,7 @@ func run() -> void:
 	check("Вернуться" in UI.QUEST_TITLES[1] and "после первого боя" in UI.QUEST_TITLES[1] and not "Открыть убежище" in UI.QUEST_TITLES[1], "Q02 describes post-combat return, not locked shelter")
 
 	var app = preload("res://game/scenes/main/playable.tscn").instantiate()
+	app.set_script(SnapshotApp)
 	var save_path := "user://ui-content-tests/" + str(Time.get_ticks_usec()) + ".json"
 	app.save_location = save_path
 	root.add_child(app)
@@ -103,6 +113,17 @@ func run() -> void:
 		await process_frame
 		check(app.last_result.ok and app.snapshot().player.equipped_weapon_instance_id.is_empty(), "inventory can unequip without altering first-victory reward")
 		app.ui.close_panel()
+	var before_preview: Dictionary = app.session.get_snapshot()
+	app.full_snapshot_reads = 0
+	app.ui.update_hud()
+	check(app.full_snapshot_reads == 0, "live HUD refresh avoids copying durable action receipts")
+	app.ui.open_panel("rest")
+	app.ui.rest_target = int(before_preview.game_time_minutes) + 60
+	app.ui.render_panel()
+	check(app.full_snapshot_reads == 0, "rest panel and calendar preview avoid copying durable action receipts")
+	check(button_found(app.ui.body, "Подтвердить отдых"), "rest preview still offers to confirm the calculated rest")
+	check(app.session.get_snapshot() == before_preview, "rendering the rest preview leaves the live campaign and receipts untouched")
+	app.ui.close_panel()
 	app.free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak", ".rejected"]:
