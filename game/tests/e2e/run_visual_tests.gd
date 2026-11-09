@@ -28,6 +28,10 @@ func run() -> void:
 	check(not image.is_empty() and image.get_width() >= 640, "step13 real renderer produces viewport pixels")
 	image.save_png("/tmp/shelter-visual/welcome.png")
 	app.ui.close_panel()
+	check(app.ui.hud.game_day == 1 + floori(float(app.snapshot().game_time_minutes) / 1440.0),
+		"reference-v1 HUD banner day is derived from saved game minutes")
+	check(not app.ui.hud.location_text.is_empty(),
+		"reference-v1 top-center HUD receives the actual current location")
 	app.command("game.enemy_defeated") # Public UI facade must reject trusted-only command.
 	check(not app.snapshot().world_states.first_enemy_defeated, "step12 UI facade cannot issue trusted combat reward")
 	# Exercise real combat via actor, not a direct reward command.
@@ -45,6 +49,8 @@ func run() -> void:
 	hospital.interact()
 	check(app.snapshot().scene.current_scene_id == "hospital_0_2", "stairs are usable in the rendered interior")
 	app.transition("shelter")
+	check(app.ui.hud.location_text.to_lower().contains("убежище"),
+		"reference-v1 warm shelter scene uses its own center HUD label")
 	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "populate inventory with real gameplay items")
 	await process_frame
 	await RenderingServer.frame_post_draw
