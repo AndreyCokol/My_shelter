@@ -178,3 +178,25 @@
 
 **Вне границ:** толпа из нескольких зомби и приоритеты навигации при физическом взаимодействии NPC, ручное исследование всех процедурных маршрутов и 30-минутный пользовательский FPS/RAM.
 
+
+## CT-94 / PERF-03 — ускоренный 30-минутный эквивалент календаря, память и сохранения (2026-11-09)
+
+Добавлен независимый Godot-тест `game/tests/e2e/run_soak_tests.gd`, исполняемый **обеими Linux/Windows CI**. Он запускает живую `CampaignSession.tick` 108 000 раз с `delta = 1/60` — это **1800 секунд / 30 минут номинального игрового времени при 60 FPS**, но происходит **ускоренно без 30 минут реального ожидания и без графического интерфейса**. Начальная ревизия содержит 100 искусственных устойчивых receipts, другие операции не выполняются. Отслеживаются возвраты `tick`, монотонность игрового времени, valid Model, целостность HP/инвентаря/action IDs, высокое потребление статической памяти, максимальная стоимость кадра, фактическое wall-clock время и **реальный checkpoint disk save+independent reload**.
+
+**DoD:** `SOAK TESTS: 8 checks, 0 failures` + профиль `CT-94 SOAK PROFILE nominal_seconds=1800 frames=108000 ... memory_peak_bytes=... max_tick_ms=... checkpoint_bytes=...` в каждой ОС, вместе с прежними `CT-87=38`, `CT-88=70`, `CT-93=3`, `VISUAL=75`. Проверяется целостность, но *нет* искусственного порога по времени или RAM: результаты GitHub CI нельзя выдавать за реальные FPS/утечки памяти на ПК пользователя.
+
+**Всё ещё требуется:** настоящий **30-минутный Windows GUI-соак** с рендерингом, вводом, боем, 3+ переходами и профилями кадра/FPS/RAM, плюс ручной 15–35-минутный плейтест. Синтетический тест лишь сужает риски календаря и файлового состояния, не заменяет эти релизные gates.
+
+
+## Завершённая автоматическая приёмка CT-87 / CT-93 / CT-94 (2026-11-09)
+
+**Source SHA, прошедший проверки:** `2cc031a42a282e011449cd520d4ed2f3060bb01d`. История включает [PR #126](https://github.com/AndreyCokol/My_shelter/pull/126) (устойчивость `.bak`), [PR #128](https://github.com/AndreyCokol/My_shelter/pull/128) (патруль и шум через AStar), [PR #129](https://github.com/AndreyCokol/My_shelter/pull/129) (108k-кадровый эквивалент + canonical `clock_remainder` при завершении минуты). Игровая визуальная база и четыре оригинальных PNG 64×64 взяты из [PR #125](https://github.com/AndreyCokol/My_shelter/pull/125).
+
+- [Linux Godot CI run 42563718877](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718877): **SUCCESS** — `CHECKPOINT CRASH TESTS: 38 checks, 0 failures`; `RUNTIME TESTS: 92 checks, 0 failures` (CT-93 patrol+noise+sealed wall); `ASSET TESTS: 70 checks, 0 failures`; `VISUAL TESTS: 75 checks, 0 failures`; `SOAK TESTS: 8 checks, 0 failures`.
+- [Native Windows CI run 42563718874](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718874): **SUCCESS**, те же 38/92/70/8 suites, Win x64 export/offline smoke и `EXPORTED ASSETS: 18 Kibyra textures verified PASS`.
+- [G0 documentation run 42563718873](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718873): **SUCCESS**.
+- Нагрузочный эквивалент: **108 000 реальных вызовов `CampaignSession.tick` в обеих ОС**, `final_game_minutes=1800`, все 100 синтетических receipts восстановлены побайтово-логически; файл 16 945 байт. На Linux `elapsed_wall_ms=3408.447, max_tick_ms=1.975, memory_delta_bytes=1 059 356`, на Windows `3731.262, 3.338, 1 059 356`. Это технические метрики CI runner, **не FPS реальной игры**.
+- В первой итерации CT-94 выявил воспроизводимое расхождение `clock_remainder ≈ 2.8e-12` в точных сравнениях JSON roundtrip. Исправление `CampaignSession.tick` канонизирует до `0.0` остаток, меньший `1e-9`, **только на завершении целой минуты**, не теряя дробных тиков. Последующая точная проверка `reopened.get_snapshot() == snapshot` прошла на обеих ОС.
+
+**Вердикт:** `CT-87=CI_PASS / CT-93=CI_PASS / CT-94=CI_PASS / SOURCE_SHA_PINNED / ALL_PREVIOUS_CI_PASS`. Не закрыты `ACTUAL_WINDOWS_30_MIN_GUI/FPS/RAM`, `MANUAL_15–35MIN_PLAYTHROUGH`, `ORIGINAL_R1–R4_PIXEL_MATCH`, `OWNER_G0_G4_APPROVAL`, а также физическое отключение питания в момент записи. Переход из draft в main требует отдельного решения владельца.
+
