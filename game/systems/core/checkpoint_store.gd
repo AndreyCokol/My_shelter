@@ -13,7 +13,13 @@ func read_checkpoint(source: String = "") -> Dictionary:
 	var target := path if source.is_empty() else source
 	if not FileAccess.file_exists(target):
 		return {"ok": false, "code": "NOT_FOUND"}
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(target))
+	# Invalid JSON is an expected recovery case: use the error-returning
+	# parser instead of parse_string(), which logs a Godot ERROR for damaged
+	# player files even though this function correctly rejects the data.
+	var parser := JSON.new()
+	if parser.parse(FileAccess.get_file_as_string(target)) != OK:
+		return {"ok": false, "code": "INVALID_STATE"}
+	var parsed = parser.data
 	if not parsed is Dictionary:
 		return {"ok": false, "code": "INVALID_STATE"}
 	return {"ok": true, "state": JsonNumbers.normalize_numbers(parsed)}
