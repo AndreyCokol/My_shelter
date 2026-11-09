@@ -158,3 +158,45 @@
 
 **Критерий:** код компилируется; Linux/Windows CI, существующие тесты сохранения, зомби, 51 графическая проверка, 1024 строительства и 28 crash-checks продолжают PASS; производительность фиксируется отдельно без обещания FPS. **30 минут реальной игры и RAM profiling по-прежнему NOT_RUN.**
 
+
+## P0: защита существующего .bak при прерванном копировании (2026-11-09)
+
+**Подтверждённый дефект и фикс:** в старом `CheckpointStore.write_checkpoint` копирование основного сохранения сразу в `.bak` могло безвозвратно обрезать **предыдущее исправное резервное сохранение** при частичной записи (`RLIMIT_FSIZE`, SIGXFSZ и аналогичные сбои I/O). Интегрирован исправленный и ранее проверенный код из [PR #121](https://github.com/AndreyCokol/My_shelter/pull/121) поверх текущей визуальной/игровой ветки [PR #125](https://github.com/AndreyCokol/My_shelter/pull/125).
+
+Новый алгоритм: до замены `.bak` создаётся `.bak.tmp`; SHA-256 содержимого до/после копирования сверяется и лишь тогда временный файл переименовывается в `.bak`. При сбое `.bak.tmp` и временный главный checkpoint удаляются; прежние проверенные файлы сохраняются. Никакие живые игровые ресурсы и награды при отказе не публикуются. В `run_checkpoint_crash_tests.gd` добавлен отдельный subprocess kill во время неполной `.bak.tmp`, побайтовая проверка неизменности двух durable файлов, повторный успешный save и защита от повторного получения уникальной награды.
+
+**CT-87 теперь:** требуется `CHECKPOINT CRASH TESTS: 38 checks, 0 failures` **на Linux и Windows именно на объединённом commit SHA** вместе с прежними world/combat/UI/atlas тестами. Реальный сбой питания и физический flush диска в CI не имитируются: не трактовать зелёный subprocess kill как доказательство power-loss safety на любой файловой системе. Статус `CODE_INTEGRATED / CI_PENDING / MANUAL_WINDOWS_NOT_RUN` до проверки.
+
+
+## CT-93 / AI-03 — патрульные зомби обходят стены и ищут источник шума (2026-11-09)
+
+Уже исправленный `Enemy.update_chase` обходил реальные стены для **обычного зомби** (`patrol.is_empty()`), но больничный `update_patrol` продолжал идти по прямой к `last_noise` и `patrol[patrol_index]`, что физически приводило к застреванию у перегородки. Дополнительно патрульные точки были локальными координатами `World`, а сравнение с `global_position` давало ошибочный маршрут при ненулевом смещении сцены.
+
+**Реализация:** общий метод `Enemy._steer_toward(goal_global, speed, stop_distance, delta)` переиспользует старый `WalkGrid/AStarGrid2D`, реальные физические `World.collision_rects()` и сброс маршрута по `collision_revision` для обычной погони, патрульных точек и источника шума. `update_patrol` конвертирует локальные waypoint координаты через `world.to_global`; сохраняется прежний timeout тревоги 3,5 с, скорость 32/55 и коллизии. Schema-v4 состояние HP/позиции/alert/noise и 64×64 PNG анимации не меняются.
+
+**Регрессия:** `run_runtime_tests.gd::check_patrol_route` монтирует реальную больницу со смещением `(40,-15)`, проверяет обход короткой стены к патрульной точке, обход к источнику шума до истечения тревоги и остановку у сплошной перегородки после её замены. **Статус:** `SOURCE_FIX_CANDIDATE / CI_PENDING / WINDOWS_GUI_NOT_RUN` до успешного Linux/Windows CI.
+
+**Вне границ:** толпа из нескольких зомби и приоритеты навигации при физическом взаимодействии NPC, ручное исследование всех процедурных маршрутов и 30-минутный пользовательский FPS/RAM.
+
+
+## CT-94 / PERF-03 — ускоренный 30-минутный эквивалент календаря, память и сохранения (2026-11-09)
+
+Добавлен независимый Godot-тест `game/tests/e2e/run_soak_tests.gd`, исполняемый **обеими Linux/Windows CI**. Он запускает живую `CampaignSession.tick` 108 000 раз с `delta = 1/60` — это **1800 секунд / 30 минут номинального игрового времени при 60 FPS**, но происходит **ускоренно без 30 минут реального ожидания и без графического интерфейса**. Начальная ревизия содержит 100 искусственных устойчивых receipts, другие операции не выполняются. Отслеживаются возвраты `tick`, монотонность игрового времени, valid Model, целостность HP/инвентаря/action IDs, высокое потребление статической памяти, максимальная стоимость кадра, фактическое wall-clock время и **реальный checkpoint disk save+independent reload**.
+
+**DoD:** `SOAK TESTS: 8 checks, 0 failures` + профиль `CT-94 SOAK PROFILE nominal_seconds=1800 frames=108000 ... memory_peak_bytes=... max_tick_ms=... checkpoint_bytes=...` в каждой ОС, вместе с прежними `CT-87=38`, `CT-88=70`, `CT-93=3`, `VISUAL=75`. Проверяется целостность, но *нет* искусственного порога по времени или RAM: результаты GitHub CI нельзя выдавать за реальные FPS/утечки памяти на ПК пользователя.
+
+**Всё ещё требуется:** настоящий **30-минутный Windows GUI-соак** с рендерингом, вводом, боем, 3+ переходами и профилями кадра/FPS/RAM, плюс ручной 15–35-минутный плейтест. Синтетический тест лишь сужает риски календаря и файлового состояния, не заменяет эти релизные gates.
+
+
+## Завершённая автоматическая приёмка CT-87 / CT-93 / CT-94 (2026-11-09)
+
+**Source SHA, прошедший проверки:** `2cc031a42a282e011449cd520d4ed2f3060bb01d`. История включает [PR #126](https://github.com/AndreyCokol/My_shelter/pull/126) (устойчивость `.bak`), [PR #128](https://github.com/AndreyCokol/My_shelter/pull/128) (патруль и шум через AStar), [PR #129](https://github.com/AndreyCokol/My_shelter/pull/129) (108k-кадровый эквивалент + canonical `clock_remainder` при завершении минуты). Игровая визуальная база и четыре оригинальных PNG 64×64 взяты из [PR #125](https://github.com/AndreyCokol/My_shelter/pull/125).
+
+- [Linux Godot CI run 42563718877](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718877): **SUCCESS** — `CHECKPOINT CRASH TESTS: 38 checks, 0 failures`; `RUNTIME TESTS: 92 checks, 0 failures` (CT-93 patrol+noise+sealed wall); `ASSET TESTS: 70 checks, 0 failures`; `VISUAL TESTS: 75 checks, 0 failures`; `SOAK TESTS: 8 checks, 0 failures`.
+- [Native Windows CI run 42563718874](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718874): **SUCCESS**, те же 38/92/70/8 suites, Win x64 export/offline smoke и `EXPORTED ASSETS: 18 Kibyra textures verified PASS`.
+- [G0 documentation run 42563718873](https://github.com/AndreyCokol/My_shelter/actions/runs/42563718873): **SUCCESS**.
+- Нагрузочный эквивалент: **108 000 реальных вызовов `CampaignSession.tick` в обеих ОС**, `final_game_minutes=1800`, все 100 синтетических receipts восстановлены побайтово-логически; файл 16 945 байт. На Linux `elapsed_wall_ms=3408.447, max_tick_ms=1.975, memory_delta_bytes=1 059 356`, на Windows `3731.262, 3.338, 1 059 356`. Это технические метрики CI runner, **не FPS реальной игры**.
+- В первой итерации CT-94 выявил воспроизводимое расхождение `clock_remainder ≈ 2.8e-12` в точных сравнениях JSON roundtrip. Исправление `CampaignSession.tick` канонизирует до `0.0` остаток, меньший `1e-9`, **только на завершении целой минуты**, не теряя дробных тиков. Последующая точная проверка `reopened.get_snapshot() == snapshot` прошла на обеих ОС.
+
+**Вердикт:** `CT-87=CI_PASS / CT-93=CI_PASS / CT-94=CI_PASS / SOURCE_SHA_PINNED / ALL_PREVIOUS_CI_PASS`. Не закрыты `ACTUAL_WINDOWS_30_MIN_GUI/FPS/RAM`, `MANUAL_15–35MIN_PLAYTHROUGH`, `ORIGINAL_R1–R4_PIXEL_MATCH`, `OWNER_G0_G4_APPROVAL`, а также физическое отключение питания в момент записи. Переход из draft в main требует отдельного решения владельца.
+

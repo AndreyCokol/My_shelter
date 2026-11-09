@@ -52,7 +52,14 @@ func tick(delta: float) -> bool:
 		var result: Dictionary = calendar.advance(state, int(state.game_time_minutes) + minutes, "tick")
 		if not result.ok:
 			return false
-		state.clock_remainder = 0.0 if result.data.interrupted else maxf(0.0, accumulated - minutes)
+		# The 1e-9 boundary tolerance above can produce tiny positive
+		# remainders (e.g. 2.8e-12) after 108000 nominal 60-FPS ticks.
+		# These are below the scheduler's own precision, yet JSON reload
+		# rounds the last bits and breaks strict checkpoint equality.
+		# Canonicalize only at whole-minute commit, not during fractional
+		# ticks, so valid subminute progression stays untouched.
+		var remainder: float = 0.0 if result.data.interrupted else maxf(0.0, accumulated - minutes)
+		state.clock_remainder = 0.0 if remainder < 0.000000001 else remainder
 		drafts.assign(result.events)
 		return true, func(_before, _after): return drafts)
 
