@@ -51,7 +51,9 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 			stamp(canvas, "puddle", Rect2(167 + 38 * variant, 166, 56, 56), COLD)
 		"shelter":
 			tile(canvas, "grass", bounds, WARM)
+			# Walkable texture paths only: no new colliders or false interaction zones.
 			tile(canvas, "path", Rect2(20, 142, 600, 36), WARM)
+			tile(canvas, "path", Rect2(103, 175, 36, 106), WARM)
 			tile(canvas, "flowers", Rect2(448, 211, 157, 116), WARM)
 		_:
 			tile(canvas, "asphalt_broken", bounds, COLD)
@@ -192,3 +194,71 @@ static func exit_fixture(canvas: CanvasItem, portal: Dictionary, floor: Rect2, s
 		var label := Vector2(x, position.y - 30)
 		canvas.draw_rect(Rect2(label + Vector2(-4, -12), Vector2(width + 8, 17)), Color("202828"))
 		canvas.draw_string(font, label, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f7e8bb"))
+
+
+# R1 shelter: all three helpers render EXISTING, live functional zones.
+# They create no gameplay objects or colliders; World owns E/reachability.
+# Source art: original project world textures + vector primitives (no imports).
+static func shelter_rest(canvas: CanvasItem) -> void:
+	# Top-down tent roof centred on the existing rest interaction (400, 180).
+	var roof := Rect2(364, 141, 72, 68)
+	canvas.draw_rect(roof.grow(3), Color("695a3c"))
+	canvas.draw_rect(roof, Color("c9af80"))
+	canvas.draw_rect(roof.grow(-4), Color("aa916b"))
+	canvas.draw_line(Vector2(400, 145), Vector2(400, 204), Color("7a6040"), 2)
+	for x in [371, 428]:
+		canvas.draw_rect(Rect2(x, 151, 2, 46), Color("e0c895"))
+	canvas.draw_rect(Rect2(389, 193, 22, 13), Color("473b2d"))
+	canvas.draw_rect(Rect2(393, 195, 14, 9), Color("9d7951"))
+	canvas.draw_string(ThemeDB.fallback_font, Vector2(371, 227), "Отдых [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("fff0cc"))
+
+
+static func shelter_farm(canvas: CanvasItem, plots: Array) -> void:
+	# Plots and status positions are exactly those used by the running farm UI.
+	# The state is read-only; empty, growing, ripe and spoiled are not confused.
+	for i in range(plots.size()):
+		var origin := Vector2(170 + i * 65, 175)
+		var bed := Rect2(origin, Vector2(55, 50))
+		tile(canvas, "soil", bed, WARM)
+		canvas.draw_rect(bed, Color("93724a"), false, 2.0)
+		for y in [187, 200, 213]:
+			canvas.draw_line(Vector2(origin.x + 5, y), Vector2(origin.x + 50, y), Color("5d4632"), 1)
+		var status: String = str(plots[i].get("status", "empty"))
+		if status in ["growing", "ripe", "spoiled"]:
+			var leaf := Color("7b9e4f")
+			if status == "ripe":
+				leaf = Color("c9c46a")
+			elif status == "spoiled":
+				leaf = Color("8b7351")
+			for dx in [12, 28, 44]:
+				canvas.draw_rect(Rect2(origin + Vector2(dx - 1, 17), Vector2(3, 17)), Color("536a3b"))
+				canvas.draw_rect(Rect2(origin + Vector2(dx - 6, 14), Vector2(8, 5)), leaf)
+				canvas.draw_rect(Rect2(origin + Vector2(dx + 1, 18), Vector2(7, 5)), leaf)
+				if status == "ripe":
+					canvas.draw_rect(Rect2(origin + Vector2(dx - 1, 28), Vector2(5, 5)), Color("d9aa52"))
+	canvas.draw_string(ThemeDB.fallback_font, Vector2(181, 230), "Грядки [E]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("f5e9c7"))
+
+
+static func shelter_structure(canvas: CanvasItem, kind: String, rect: Rect2) -> void:
+	# The corresponding StaticBody2D is still Construction.cell_rect(cell).
+	# Never draw a structure outside its real 24x22 physical footprint.
+	match kind:
+		"bench":
+			canvas.draw_rect(rect, Color("5d4633"))
+			canvas.draw_rect(rect.grow(-2), Color("a7774c"))
+			for y in [6, 12, 18]:
+				canvas.draw_line(rect.position + Vector2(3, y), rect.position + Vector2(21, y), Color("d4a06e"), 1)
+		"lamp":
+			canvas.draw_circle(rect.get_center(), 22, Color(1.0, 0.78, 0.38, 0.14))
+			canvas.draw_rect(rect.grow(-4), Color("4c4438"))
+			canvas.draw_rect(rect.grow(-8), Color("ffe2a1"))
+		"cabinet":
+			canvas.draw_rect(rect, Color("5f4331"))
+			canvas.draw_rect(rect.grow(-2), Color("9f744b"))
+			canvas.draw_line(rect.get_center() + Vector2(0, -8), rect.get_center() + Vector2(0, 8), Color("4d382b"), 2)
+			canvas.draw_rect(Rect2(rect.get_center() + Vector2(2, -1), Vector2(2, 3)), Color("e8d19c"))
+		"bed":
+			canvas.draw_rect(rect, Color("6b503a"))
+			canvas.draw_rect(rect.grow(-2), Color("d3bb91"))
+			canvas.draw_rect(Rect2(rect.position + Vector2(4, 4), Vector2(7, 14)), Color("f0e2c1"))
+			canvas.draw_line(rect.position + Vector2(14, 4), rect.position + Vector2(14, 18), Color("af9977"), 1)
