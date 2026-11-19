@@ -13,46 +13,46 @@ func _ready() -> void:
 func _build() -> void:
 	var backdrop := PanelContainer.new()
 	backdrop.name = "ModeHelpPanel"
-	backdrop.position = Vector2(18, 18)
-	backdrop.custom_minimum_size = Vector2(390, 116)
+	backdrop.position = Vector2(12, 12)
+	backdrop.custom_minimum_size = Vector2(265, 94)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("16252c")
 	style.border_color = Color("9db2b1")
-	style.border_width_left = 3
+	style.border_width_left = 2
 	style.corner_radius_top_right = 6
 	style.corner_radius_bottom_right = 6
 	backdrop.add_theme_stylebox_override("panel", style)
 	add_child(backdrop)
 
 	var padding := MarginContainer.new()
-	padding.add_theme_constant_override("margin_left", 18)
-	padding.add_theme_constant_override("margin_top", 12)
-	padding.add_theme_constant_override("margin_right", 18)
-	padding.add_theme_constant_override("margin_bottom", 12)
+	padding.add_theme_constant_override("margin_left", 12)
+	padding.add_theme_constant_override("margin_top", 7)
+	padding.add_theme_constant_override("margin_right", 12)
+	padding.add_theme_constant_override("margin_bottom", 7)
 	backdrop.add_child(padding)
 
 	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 6)
+	stack.add_theme_constant_override("separation", 4)
 	padding.add_child(stack)
 
 	var caption := Label.new()
 	caption.name = "Caption"
-	caption.text = "A2 / A5   ДВЕ КАМЕРЫ · ОДИН МИР"
-	caption.add_theme_font_size_override("font_size", 13)
+	caption.text = "A2 / A5  ·  ПРОВЕРКА ДВУХ КАМЕР"
+	caption.add_theme_font_size_override("font_size", 10)
 	caption.add_theme_color_override("font_color", Color("a1b6b3"))
 	stack.add_child(caption)
 
 	mode_label = Label.new()
 	mode_label.name = "Mode"
-	mode_label.add_theme_font_size_override("font_size", 20)
+	mode_label.add_theme_font_size_override("font_size", 16)
 	mode_label.add_theme_color_override("font_color", Color("e4e8df"))
 	stack.add_child(mode_label)
 
 	help_label = Label.new()
 	help_label.name = "Controls"
 	help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help_label.add_theme_font_size_override("font_size", 12)
+	help_label.add_theme_font_size_override("font_size", 10)
 	help_label.add_theme_color_override("font_color", Color("b9c6c4"))
 	stack.add_child(help_label)
 
@@ -71,6 +71,6 @@ func _build() -> void:
 func show_view(first_person: bool) -> void:
 	if not is_instance_valid(mode_label):
 		return
-	mode_label.text = "ПЕРВОЕ ЛИЦО" if first_person else "ВИД СВЕРХУ · 90°"
-	help_label.text = "WASD · движение    Caps Lock · камера    Мышь · обзор    Esc · курсор    ЛКМ · проверка стены" if first_person else "WASD / стрелки · движение    Caps Lock · первое лицо    ЛКМ · проверка стены"
+	mode_label.text = "ПЕРВОЕ ЛИЦО" if first_person else "СВЕРХУ · 90°"
+	help_label.text = "WASD · шаг   Мышь · обзор\nCaps Lock · сверху   Esc · курсор" if first_person else "WASD / стрелки · движение\nCaps Lock · первое лицо"
 	crosshair.visible = first_person
