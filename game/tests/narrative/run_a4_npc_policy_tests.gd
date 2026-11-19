@@ -53,8 +53,9 @@ func run() -> void:
 	check(not no_housing.ok and no_housing.code == "NEEDS_HOUSING"
 		and no_housing.record == accepted.record, "housing shortage does not erase consent")
 	var joined: Dictionary = NPC.plan_recruit(accepted.record, true, true)
-	check(joined.ok and joined.record.status == "joined" and joined.record.consent,
-		"recruitment is only tentatively planned after explicit consent and supplies")
+	check(joined.ok and joined.record.status == "joined" and joined.record.consent
+		and joined.record.role == "resident",
+		"recruitment updates status and shelter resident role together")
 	check(not NPC.plan_recruit(joined.record, true, true).ok,
 		"recruiting same joined NPC twice is rejected")
 	check(not NPC.plan_consent(joined.record, false).ok,
@@ -71,6 +72,7 @@ func run() -> void:
 		"scripted nonrecruitable NPC cannot bypass protected role")
 	var second: Dictionary = fixture("traveller-02")
 	second.status = "joined"
+	second.role = "resident"
 	second.consent = true
 	var first: Dictionary = joined.record.duplicate(true)
 	var party: Array = [second, first]
@@ -94,6 +96,14 @@ func run() -> void:
 	unavailable.available_for_expedition = false
 	check(NPC.plan_group_expedition([first, unavailable], true, true, 2).code == "UNAVAILABLE_PARTICIPANT",
 		"unavailable resident cannot be forced into group")
+	var ghost: Dictionary = fixture("ghost")
+	ghost.role = "resident"
+	check(not NPC.valid_npc(ghost), "shelter-resident role without joined status invalid")
+	var illicit: Dictionary = fixture("illicit")
+	illicit.role = "non_recruitable"
+	illicit.status = "joined"
+	illicit.consent = true
+	check(not NPC.valid_npc(illicit), "nonrecruitable contact cannot be serialized as joined resident")
 	check(not NPC.valid_npc({"id":"a"}), "incomplete NPC data fails closed")
 	var bad: Dictionary = fixture("bad")
 	bad.status = "joined"
