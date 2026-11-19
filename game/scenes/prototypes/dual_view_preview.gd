@@ -133,6 +133,20 @@ func _physics_process(_delta: float) -> void:
 	hero.velocity = Space.world_motion(axis, look_yaw, first_person_enabled) * WALK_SPEED
 	hero.move_and_slide()
 
+# Spatial probe is deliberately independent of the camera mode.
+# A production hit would still need A1/Combat receipt and interaction API.
+func probe_forward(distance_metres: float = 6.0) -> Dictionary:
+	if not is_instance_valid(hero) or not is_finite(distance_metres) or distance_metres <= 0.0:
+		return {"ok": false, "code": "INVALID_ARGUMENT"}
+	var origin := Space.fps_origin(hero.position)
+	var facing := Space.world_motion(Vector2(0, -1), look_yaw, true).normalized()
+	var request := PhysicsRayQueryParameters3D.create(origin, origin + facing * distance_metres)
+	request.exclude = [hero.get_rid()]
+	var collision := get_world_3d().direct_space_state.intersect_ray(request)
+	if collision.is_empty():
+		return {"ok": true, "hit": false}
+	return {"ok": true, "hit": true, "collider": collision.collider, "position": collision.position}
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_CAPSLOCK:
@@ -141,6 +155,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ESCAPE and first_person_enabled:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		# This is a LOS/interaction demonstration, not actual combat.
+		var result := probe_forward()
+		if result.ok and result.get("hit", false):
+			print("A2-08 prototype LOS hit: ", result.collider.name)
+		get_viewport().set_input_as_handled()
 	elif first_person_enabled and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		look_yaw -= event.relative.x * 0.002
 		look_pitch = clampf(look_pitch - event.relative.y * 0.002, -1.2, 1.2)
