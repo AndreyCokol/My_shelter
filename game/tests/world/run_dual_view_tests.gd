@@ -26,6 +26,9 @@ func _run() -> void:
 		check(is_equal_approx(world.y, 2.25), "world elevation is independent from legacy second coordinate %s" % point)
 	check(not Space.legacy_to_3d(Vector2(INF, 0)).is_finite(), "reject nonfinite legacy position")
 	check(not Space.world_to_legacy(Vector3(NAN, 1, 2)).is_finite(), "reject nonfinite 3D position")
+	var actor_raised := Vector3(3.25, 7.5, -2.0)
+	check(is_equal_approx(Space.topdown_origin(actor_raised, 10.0).y, 17.5), "overhead camera follows elevated floors")
+	check(is_equal_approx(Space.fps_origin(actor_raised).y, actor_raised.y + Space.EYE_OFFSET_FROM_BODY_CENTER_METRES), "FPS eye follows actor elevation, not static world altitude")
 
 	var rectangle := Rect2(64, 32, 128, 48)
 	var wall: Dictionary = Space.box_from_legacy_rect(rectangle, 3.0)
