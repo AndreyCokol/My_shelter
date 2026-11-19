@@ -27,12 +27,17 @@ static func completion_ready(quest_id: String, facts) -> Dictionary:
 		return {"ok": false, "code": "INVALID_ARGUMENT"}
 	var key_by_quest: Dictionary = {
 		"Q01": "first_enemy_defeated",
-		"Q02": "shelter_tutorial_visited",
 		"Q03": "planted",
 		"Q04": "harvested",
 		"Q05": "contacted",
 		"Q06": "consented"
 	}
+	if quest_id == "Q02":
+		if not facts.get("first_enemy_defeated") is bool or not facts.get("shelter_tutorial_visited") is bool:
+			return {"ok": false, "code": "INVALID_ARGUMENT"}
+		# Post-victory Q02 earns tutorial progress only.
+		# Shelter itself is available to the player before Q01 or Q02.
+		return {"ok": true, "ready": facts.first_enemy_defeated and facts.shelter_tutorial_visited}
 	if quest_id == "Q07":
 		var ids = facts.get("joined_resident_ids")
 		var required = facts.get("required_joined_count")
