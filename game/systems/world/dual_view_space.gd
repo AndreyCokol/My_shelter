@@ -4,7 +4,7 @@ extends RefCounted
 ## 2D X,Y become 3D X,Z. All 3D distances are in metres.
 const PIXELS_PER_METRE := 32.0
 const WALL_HEIGHT_METRES := 2.4
-const EYE_HEIGHT_METRES := 1.6
+const EYE_OFFSET_FROM_BODY_CENTER_METRES := 0.7
 
 static func valid_legacy_point(point: Vector2) -> bool:
 	return point.is_finite()
@@ -36,12 +36,12 @@ static func topdown_rotation() -> Vector3:
 static func topdown_origin(actor_position: Vector3, altitude: float = 22.0) -> Vector3:
 	if not actor_position.is_finite() or not is_finite(altitude) or altitude <= 0.0:
 		return Vector3(INF, INF, INF)
-	return Vector3(actor_position.x, altitude, actor_position.z)
+	return Vector3(actor_position.x, actor_position.y + altitude, actor_position.z)
 
 static func fps_origin(actor_position: Vector3) -> Vector3:
 	if not actor_position.is_finite():
 		return Vector3(INF, INF, INF)
-	return Vector3(actor_position.x, EYE_HEIGHT_METRES, actor_position.z)
+	return Vector3(actor_position.x, actor_position.y + EYE_OFFSET_FROM_BODY_CENTER_METRES, actor_position.z)
 
 static func yaw_for_legacy_facing(facing: Vector2) -> float:
 	if not facing.is_finite() or facing.length_squared() <= 0.000001:
