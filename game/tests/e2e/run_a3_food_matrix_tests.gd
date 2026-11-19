@@ -223,6 +223,85 @@ func horizon(seed_value: int, days: int, path: String) -> void:
         "completed horizon " + str(days) + " on seed " + str(seed_value))
     cleanup(path)
 
+
+# Narrow command-level resource recovery from zero starter food/seeds.
+# This intentionally tests the existing domain command, NOT world navigation/GUI.
+func recovery_from_empty(seed_value: int, path: String) -> void:
+    var rules: Dictionary = rules_for(seed_value, "reserve", 2)
+    cleanup(path)
+    if not Rules.validate(rules) or not Campaign.valid_rules(rules):
+        check(false, "resource recovery rules invalid")
+        return
+    var state: Dictionary = Campaign.new(rules).coordinator.get_snapshot()
+    state.scene.current_scene_id = "outside"
+    state.scene.entry_point_id = "default"
+    state.world_states.first_enemy_defeated = true
+    state.story_flags.append("system_unlocked")
+    state.claimed_reward_ids.append("system")
+    var empty: bool = Logic.quantity(state, "crop.potato") == 0 and Logic.quantity(state, "seed.basic") == 0
+    if not empty or not Model.validate(state, rules):
+        check(false, "resource recovery empty starter fixture")
+        return
+    var store = Store.new(path)
+    if not store.write_checkpoint(state, Model.validate.bind(rules)).get("committed", false):
+        check(false, "save empty recovery fixture")
+        return
+    var campaign = Campaign.new(rules)
+    if not campaign.coordinator.load_checkpoint(store).get("ok", false):
+        check(false, "load empty recovery fixture")
+        cleanup(path)
+        return
+    var session = campaign.coordinator
+    var first: Dictionary = request(session, "game.resource_collect")
+    if not session.execute(first, store).get("ok", false):
+        check(false, "initial renewable external seed pickup")
+        cleanup(path)
+        return
+    var once: Dictionary = session.get_snapshot()
+    check(Logic.quantity(once, "seed.basic") == rules.resource_quantity
+        and session.execute(first, store).get("code") == "ALREADY_APPLIED"
+        and session.get_snapshot() == once, "first pickup creates only one seed reward")
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}).get("ok", false):
+        check(false, "return to shelter with recovered seeds")
+        cleanup(path)
+        return
+    if not execute(session, store, "clock.rest", {"target_minute": rules.resource_respawn_minutes}).get("ok", false):
+        check(false, "wait for external seed regeneration")
+        cleanup(path)
+        return
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "outside", "entry_point_id": "default"}).get("ok", false):
+        check(false, "return from shelter to seed source")
+        cleanup(path)
+        return
+    var second: Dictionary = execute(session, store, "game.resource_collect")
+    if not second.get("ok", false):
+        check(false, "regenerated seed source can be collected")
+        cleanup(path)
+        return
+    check(Logic.quantity(session.get_snapshot(), "seed.basic") == 2 * rules.resource_quantity,
+        "external source recovers after its configured cooldown")
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}).get("ok", false):
+        check(false, "take seeds into shelter")
+        cleanup(path)
+        return
+    if not execute(session, store, "game.plant", {"plot_id": "plot_1"}).get("ok", false) or not execute(session, store, "game.water", {"plot_id": "plot_1"}).get("ok", false):
+        check(false, "plant from externally recovered seed")
+        cleanup(path)
+        return
+    var ripe_at: int = int(session.get_snapshot().game_time_minutes) + int(rules.crop.grow_minutes)
+    if not execute(session, store, "clock.rest", {"target_minute": ripe_at}).get("ok", false):
+        check(false, "ripening time after recovery")
+        cleanup(path)
+        return
+    var harvested: Dictionary = execute(session, store, "game.harvest", {"plot_id": "plot_1"})
+    var after: Dictionary = session.get_snapshot()
+    check(harvested.get("ok", false) and Logic.quantity(after, "crop.potato") == rules.crop.yield_units
+        and Model.validate(after, rules), "zero-stock player restores edible harvest without purchase/quest")
+    var reopened = Campaign.new(rules)
+    check(reopened.coordinator.load_checkpoint(store).get("ok", false)
+        and reopened.coordinator.get_snapshot() == after, "seed recovery and food survive reload")
+    cleanup(path)
+
 func run() -> void:
     var zero := rules_for(54, "reserve", 0)
     var negative := rules_for(54, "reserve", -1)
@@ -242,6 +321,8 @@ func run() -> void:
             for days in HORIZONS:
                 horizon(seed_value, days,
                     folder.path_join("long-%d-%d.json" % [seed_value, days]))
+        for seed_value in SEEDS:
+            recovery_from_empty(seed_value, folder.path_join("recovery-%d.json" % seed_value))
         DirAccess.remove_absolute(absolute)
     print("A3 FOOD MATRIX TESTS: %d checks, %d failures" % [checks, failures])
     quit(0 if failures == 0 else 1)
