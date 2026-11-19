@@ -8,6 +8,9 @@ on:
       - 'game/scenes/prototypes/dual_view_preview.tscn'
       - 'game/tests/world/run_dual_view_tests.gd'
       - 'tools/run_a5_dual_view_qa.py'
+      - 'tools/run_a5_dual_view_visual_qa.py'
+      - 'game/scenes/prototypes/dual_view_preview_ui.gd'
+      - 'game/tests/world/run_dual_view_visual_tests.gd'
       - '.github/workflows/a5-dual-view-qa.yml'
   push:
     branches: ['agent/a2/dual-view-3d-poc-*']
@@ -38,6 +41,20 @@ jobs:
         run: python3 tools/install_ui_assets.py --download-ui
       - name: Run actual A2-08 Godot standalone test
         run: python3 tools/run_a5_dual_view_qa.py
+      - name: Install Xvfb for software-rendered desktop captures
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+      - name: Render and verify actual PC preview frames
+        run: python3 tools/run_a5_dual_view_visual_qa.py
+      - name: Keep true 1280x720 topdown and FPS frames
+        uses: actions/upload-artifact@v4
+        with:
+          name: a5-dual-view-rendered-pc-frames
+          path: /tmp/shelter-dual-view/*.png
+          if-no-files-found: error
 
   dual-view-windows:
     runs-on: windows-latest
