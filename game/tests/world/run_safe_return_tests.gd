@@ -61,5 +61,28 @@ func _run() -> void:
 			check(candidate.ok and inside(node.bounds.grow(-15), candidate.position) and clear(candidate.position, node.obstacles), "seed %d scene %s permits collision-free spawn" % [seed_value, scene_id])
 			check(candidate == SafeReturn.nearest_walkable(node.bounds, node.obstacles, node.spawn), "seed %d scene %s repeats identical result" % [seed_value, scene_id])
 
+
+	# Reproducible property checks: a success must never be inside a blocker
+	# or outside the valid actor-margin. Failure must be explicit, never a
+	# silently invalid position. This test deliberately uses a fixed RNG.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261119
+	for case_id in range(250):
+		var random_blockers: Array = []
+		for j in range(rng.randi_range(0, 24)):
+			random_blockers.append(Rect2(
+				rng.randi_range(-30, 280), rng.randi_range(-30, 180),
+				rng.randi_range(5, 75), rng.randi_range(5, 55)))
+		var wanted := Vector2(rng.randi_range(-100, 400), rng.randi_range(-100, 280))
+		var random_area := Rect2(0, 0, 300, 200)
+		var planned := SafeReturn.nearest_walkable(random_area, random_blockers, wanted)
+		var repeat := SafeReturn.nearest_walkable(random_area, random_blockers, wanted)
+		var valid := planned == repeat
+		if planned.ok:
+			valid = valid and inside(random_area.grow(-15), planned.position) and clear(planned.position, random_blockers)
+		else:
+			valid = valid and planned.code in ["NO_SAFE_POINT", "SEARCH_LIMIT"]
+		check(valid, "random geometry %d is deterministic and safe or rejects explicitly" % case_id)
+
 	print("A2 SAFE RETURN TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
