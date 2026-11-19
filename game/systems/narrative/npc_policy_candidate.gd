@@ -21,6 +21,13 @@ static func valid_npc(npc) -> bool:
 		return false
 	if npc.status in ["unknown", "contacted", "declined"] and npc.consent:
 		return false
+	# An active shelter resident is a role, not another unjoined candidate.
+	if npc.role == "resident" and npc.status != "joined":
+		return false
+	if npc.role == "non_recruitable" and (npc.status == "joined" or npc.status == "AWAITING_SUPPLIES"):
+		return false
+	if npc.faction_leader and npc.status in ["AWAITING_SUPPLIES", "joined"]:
+		return false
 	return true
 
 static func response(ok: bool, code: String, record: Dictionary = {}) -> Dictionary:
@@ -77,6 +84,7 @@ static func plan_recruit(npc, food_ready: bool, housing_ready: bool) -> Dictiona
 		return response(false, "NEEDS_HOUSING", npc)
 	var next: Dictionary = npc.duplicate(true)
 	next.status = "joined"
+	next.role = "resident"
 	# This tentative output is NOT durable. A1 must atomically reserve/consume food
 	# and commit this state with an exact historical receipt.
 	return response(true, "RECRUIT_READY", next)
