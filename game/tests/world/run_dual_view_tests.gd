@@ -73,6 +73,17 @@ func _run() -> void:
 		query.exclude = [hero.get_rid()]
 		var hit := scene.get_world_3d().direct_space_state.intersect_ray(query)
 		check(not hit.is_empty() and hit.collider is StaticBody3D, "actual 3D physics wall blocks raycast in shared world")
+		# Identical 3D collision object must be reported in both camera modes.
+		hero.position = Space.legacy_to_3d(Vector2(105, 115), 0.9)
+		scene.set("look_yaw", -PI * 0.5)
+		await physics_frame
+		var top_hit: Dictionary = scene.call("probe_forward", 8.0)
+		check(top_hit.ok and top_hit.get("hit", false) and top_hit.collider is StaticBody3D, "overhead mode probes a real wall")
+		scene.call("set_first_person", true)
+		var fps_hit: Dictionary = scene.call("probe_forward", 8.0)
+		check(fps_hit.ok and fps_hit.get("hit", false) and fps_hit.collider == top_hit.get("collider"), "FPS mode uses same world object, not a copied collision map")
+		check(not scene.call("probe_forward", 0.0).ok, "invalid LOS reach is rejected without mutating actor")
+		scene.call("set_first_person", false)
 
 	scene.queue_free()
 	await process_frame
