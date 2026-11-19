@@ -39,10 +39,17 @@ func run() -> void:
 		"first victory still governs the System tutorial")
 	check(Quest.completion_ready("Q01", {"first_enemy_defeated": true}).ready,
 		"first victory completes Q01 readiness")
-	check(Quest.completion_ready("Q02", {"shelter_tutorial_visited": true}).ready,
-		"Q02 narrative tutorial can be visited without a fight")
-	check(not Quest.completion_ready("Q02", {"shelter_tutorial_visited": false}).ready,
-		"not visiting tutorial never blocks physical shelter capability")
+	check(not Quest.completion_ready("Q02", {"first_enemy_defeated": false,
+		"shelter_tutorial_visited": true}).ready,
+		"visiting shelter early does not award post-victory Q02")
+	check(Quest.completion_ready("Q02", {"first_enemy_defeated": true,
+		"shelter_tutorial_visited": true}).ready,
+		"after first victory the tutorial can be credited")
+	check(not Quest.completion_ready("Q02", {"first_enemy_defeated": true,
+		"shelter_tutorial_visited": false}).ready,
+		"post-victory visit is required for tutorial but never for shelter access")
+	check(not Quest.completion_ready("Q02", {"shelter_tutorial_visited": true}).ok,
+		"Q02 facts must contain both explicit history flags")
 	check(Quest.completion_ready("Q03", {"planted": true}).ready,
 		"completed farm action is visible to optional quest")
 	check(Quest.completion_ready("Q04", {"harvested": true}).ready,
