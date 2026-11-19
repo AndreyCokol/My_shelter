@@ -49,6 +49,16 @@ func _run() -> void:
 					"seed %d region (%d,%d) stream fingerprints separated" % [seed_value, x, y])
 
 	var origin := Region.manifest(1, 0, 0)
+	var invalid_gate := origin.duplicate(true)
+	invalid_gate.gates.erase("east")
+	check(not Region.valid_manifest(invalid_gate) and not Region.seams_match(invalid_gate, Region.manifest(1, 1, 0), "east"), "missing gate rejected without index error")
+	var invalid_neighbor := origin.duplicate(true)
+	invalid_neighbor.neighbors.west = 123
+	check(not Region.valid_manifest(invalid_neighbor), "non-string neighbor rejected")
+	var invalid_seed := origin.duplicate(true)
+	invalid_seed.seed = -1
+	check(not Region.valid_manifest(invalid_seed), "invalid source seed rejected")
+	check(Region.valid_manifest(origin), "well-shaped complete region manifest passes validation")
 	check(not Region.seams_match(origin, Region.manifest(2, 1, 0), "east"), "world seed mismatch is rejected")
 	check(not Region.seams_match(origin, origin, "south") and not Region.seams_match(origin, origin, "diagonal"), "invalid adjacency does not pass")
 
