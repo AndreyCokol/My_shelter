@@ -58,6 +58,14 @@ func _run() -> void:
 	var overhead: Camera3D = scene.get("overhead")
 	var fps: Camera3D = scene.get("first_person")
 	check(is_instance_valid(hero) and is_instance_valid(overhead) and is_instance_valid(fps), "preview allocates one shared actor and two Camera3D instances")
+	var hud: CanvasLayer = scene.get_node_or_null("A5PreviewHUD")
+	check(is_instance_valid(hud), "A5 mode UI is present in prototype only")
+	if is_instance_valid(hud):
+		var mode_label: Label = hud.get("mode_label")
+		var crosshair: Label = hud.get("crosshair")
+		check(is_instance_valid(mode_label) and "90°" in mode_label.text, "default PC view explicitly identifies topdown 90 degrees")
+		check(is_instance_valid(crosshair) and not crosshair.visible, "FPS reticle hidden in topdown view")
+
 	if is_instance_valid(hero) and is_instance_valid(overhead) and is_instance_valid(fps):
 		var before := hero.position
 		var current_hero_nodes := scene.find_children("*", "CharacterBody3D", true, false)
@@ -65,8 +73,12 @@ func _run() -> void:
 		check(overhead.projection == Camera3D.PROJECTION_ORTHOGONAL and fps.projection == Camera3D.PROJECTION_PERSPECTIVE, "each camera has correct projection")
 		scene.call("set_first_person", true)
 		check(fps.current and not overhead.current and hero.position == before, "switch FPS without teleporting or duplicating hero")
+		if is_instance_valid(hud):
+			check("ПЕРВОЕ ЛИЦО" in hud.get("mode_label").text and hud.get("crosshair").visible, "A5 HUD follows FPS camera mode without touching shared actor")
 		scene.call("set_first_person", false)
 		check(overhead.current and not fps.current and scene.find_children("*", "CharacterBody3D", true, false).size() == 1, "switch back to strictly overhead view without duplication")
+		if is_instance_valid(hud):
+			check("90°" in hud.get("mode_label").text and not hud.get("crosshair").visible, "A5 HUD resets after returning to topdown")
 
 		# Real 3D collision query: one existing preview wall must block LOS.
 		await physics_frame
