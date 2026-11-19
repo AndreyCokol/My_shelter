@@ -26,6 +26,7 @@ func _build() -> void:
 	add_child(backdrop)
 
 	var padding := MarginContainer.new()
+	padding.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	padding.add_theme_constant_override("margin_left", 12)
 	padding.add_theme_constant_override("margin_top", 7)
 	padding.add_theme_constant_override("margin_right", 12)
@@ -33,10 +34,12 @@ func _build() -> void:
 	backdrop.add_child(padding)
 
 	var stack := VBoxContainer.new()
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stack.add_theme_constant_override("separation", 4)
 	padding.add_child(stack)
 
 	var caption := Label.new()
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	caption.name = "Caption"
 	caption.text = "A2 / A5  ·  ПРОВЕРКА ДВУХ КАМЕР"
 	caption.add_theme_font_size_override("font_size", 10)
@@ -44,12 +47,14 @@ func _build() -> void:
 	stack.add_child(caption)
 
 	mode_label = Label.new()
+	mode_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mode_label.name = "Mode"
 	mode_label.add_theme_font_size_override("font_size", 16)
 	mode_label.add_theme_color_override("font_color", Color("e4e8df"))
 	stack.add_child(mode_label)
 
 	help_label = Label.new()
+	help_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	help_label.name = "Controls"
 	help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help_label.add_theme_font_size_override("font_size", 10)
