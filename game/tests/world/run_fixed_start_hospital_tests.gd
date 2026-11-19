@@ -38,10 +38,11 @@ func _run() -> void:
 	var first := Fixed.plan_for_floor(1)
 	first.rooms.erase("corridor")
 	check(Plans.valid(Fixed.plan_for_floor(1)), "mutating a caller copy cannot corrupt a cached starter plan")
+	var third_floor_reference: Dictionary = Fixed.plan_for_floor(3)
 	for seed_value in [0, 1, 42, 127, Layout.MAX_SEED]:
 		var nodes := Layout.build(seed_value)
 		check(nodes.has(Fixed.start_scene_id()) and nodes.has("hospital_0_4"), "seed %d has existing third and fourth floor identifiers" % seed_value)
-		check(Fixed.plan_for_floor(3) == Fixed.plan_for_floor(3), "starter layout is independent of seed %d" % seed_value)
+		check(Fixed.plan_for_floor(3) == third_floor_reference, "starter layout remains unchanged after generating world seed %d" % seed_value)
 
 	print("A2 FIXED HOSPITAL PROTOTYPE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
