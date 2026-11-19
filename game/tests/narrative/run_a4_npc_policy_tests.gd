@@ -99,6 +99,10 @@ func run() -> void:
 	var ghost: Dictionary = fixture("ghost")
 	ghost.role = "resident"
 	check(not NPC.valid_npc(ghost), "shelter-resident role without joined status invalid")
+	var unconverted: Dictionary = fixture("unconverted")
+	unconverted.status = "joined"
+	unconverted.consent = true
+	check(not NPC.valid_npc(unconverted), "joined status must carry resident role")
 	var illicit: Dictionary = fixture("illicit")
 	illicit.role = "non_recruitable"
 	illicit.status = "joined"
