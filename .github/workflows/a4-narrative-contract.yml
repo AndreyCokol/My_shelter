@@ -40,7 +40,10 @@ jobs:
           "$GODOT" --headless --path . --script game/tests/narrative/run_a4_quest_gate_tests.gd > a4-quest.log 2>&1
           cat a4-quest.log
           grep -Eq 'A4 QUEST GATE TESTS: [1-9][0-9]* checks, 0 failures' a4-quest.log
-          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log; then exit 1; fi
+          "$GODOT" --headless --path . --script game/tests/narrative/run_a4_dialogue_catalog_tests.gd > a4-dialogue.log 2>&1
+          cat a4-dialogue.log
+          grep -Eq 'A4 DIALOGUE CATALOG TESTS: [1-9][0-9]* checks, 0 failures' a4-dialogue.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log a4-dialogue.log; then exit 1; fi
   windows-a4:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -62,7 +65,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Godot import failed' }
           $scripts = @(
             @{file='game/tests/narrative/run_a4_npc_policy_tests.gd'; marker='A4 NPC POLICY'},
-            @{file='game/tests/narrative/run_a4_quest_gate_tests.gd'; marker='A4 QUEST GATE'}
+            @{file='game/tests/narrative/run_a4_quest_gate_tests.gd'; marker='A4 QUEST GATE'},
+            @{file='game/tests/narrative/run_a4_dialogue_catalog_tests.gd'; marker='A4 DIALOGUE CATALOG'}
           )
           foreach ($suite in $scripts) {
             $output = (& $env:GODOT --headless --path . --script $suite.file 2>&1 | Out-String)
