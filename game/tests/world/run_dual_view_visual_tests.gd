@@ -24,8 +24,8 @@ func frame_colours(frame: Image) -> Dictionary:
 	# Sampling actual 3D pixels protects against a blank/black frame.
 	# HUD-only screenshots do not satisfy the 3D rendering evidence gate:
 	# check samples from the central portion and lower half.
-	for y in range(HEIGHT / 5, HEIGHT, 50):
-		for x in range(WIDTH / 5, WIDTH * 4 / 5, 65):
+	for y in range(int(HEIGHT / 5), HEIGHT, 50):
+		for x in range(int(WIDTH / 5), int(WIDTH * 4 / 5), 65):
 			var color := frame.get_pixel(x, y)
 			found[color.to_html()] = true
 	return found
@@ -62,9 +62,11 @@ func _run() -> void:
 	var fps_image := await capture("first_person_1280x720")
 	if not overhead_image.is_empty() and not fps_image.is_empty() and overhead_image.get_size() == fps_image.get_size():
 		var differences := 0
-		for y in range(HEIGHT / 5, HEIGHT * 4 / 5, 80):
-			for x in range(WIDTH / 5, WIDTH * 4 / 5, 80):
-				if overhead_image.get_pixel(x, y).distance_to(fps_image.get_pixel(x, y)) > 0.03:
+		for y in range(int(HEIGHT / 5), int(HEIGHT * 4 / 5), 80):
+			for x in range(int(WIDTH / 5), int(WIDTH * 4 / 5), 80):
+				var a := overhead_image.get_pixel(x, y)
+				var b := fps_image.get_pixel(x, y)
+				if absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b) > 0.05:
 					differences += 1
 		check(differences >= 8, "two real cameras produce visibly different frames, not duplicated images")
 
