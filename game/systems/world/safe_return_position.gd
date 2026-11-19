@@ -66,7 +66,7 @@ static func nearest_walkable(bounds: Rect2, blockers: Array, desired: Vector2, a
 				var probe_key := "%.3f:%.3f" % [clipped.x, clipped.y]
 				if not visited.has(probe_key) and queue.size() < MAX_VISITED * 4:
 					queue.append(clipped)
-	return _error("NO_SAFE_POINT")
+	return _error("SEARCH_LIMIT" if checked >= MAX_VISITED else "NO_SAFE_POINT")
 
 static func _blockers_at(point: Vector2, forbidden: Array[Rect2]) -> Array[Rect2]:
 	var found: Array[Rect2] = []
