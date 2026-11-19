@@ -61,6 +61,10 @@ func _run() -> void:
 	var hud: CanvasLayer = scene.get_node_or_null("A5PreviewHUD")
 	check(is_instance_valid(hud), "A5 mode UI is present in prototype only")
 	if is_instance_valid(hud):
+		var hud_controls: Array = hud.find_children("*", "Control", true, false)
+		check(not hud_controls.is_empty() and hud_controls.all(func(control): return control.mouse_filter == Control.MOUSE_FILTER_IGNORE),
+			"all A5 preview HUD controls pass mouse input through to gameplay")
+	if is_instance_valid(hud):
 		var mode_label: Label = hud.get("mode_label")
 		var crosshair: Label = hud.get("crosshair")
 		check(is_instance_valid(mode_label) and "90°" in mode_label.text, "default PC view explicitly identifies topdown 90 degrees")
