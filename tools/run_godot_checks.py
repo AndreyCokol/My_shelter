@@ -18,6 +18,7 @@ commands = [
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_inventory_integrity_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_item_taxonomy_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_progression_policy_tests.gd'],
+    ['--headless', '--path', '.', '--script', 'game/tests/core/run_mass_accounting_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_campaign_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_router_tests.gd'],
     ['--headless', '--path', '.', '--script', 'game/tests/core/run_event_tests.gd'],
@@ -61,7 +62,7 @@ for args in commands:
     if args == ['--version'] and not run.stdout.strip().startswith('4.7.2.stable.'):
         print('FAIL: expected Godot 4.7.2 stable')
         sys.exit(1)
-    if '--script' in args and not re.search(r'(CORE|CHECKPOINT CRASH|SAVE FAILURE|SAVE COMPAT|INVENTORY INTEGRITY|ITEM TAXONOMY|PROGRESSION POLICY|CAMPAIGN|ROUTER|EVENT|CALENDAR|PERFORMANCE|RECEIPT|RULESET|SAVE PROFILE|SOAK|GAMEPLAY|FOOD CATALOG|RESIDENT WORK FOOD|CAMPAIGN LONGTERM|EDGE|RUNTIME|COMBAT|UI CONTENT|ASSET|WORLD|SHELTER ACCESS|LAYOUT) TESTS: [1-9][0-9]* checks, 0 failures', run.stdout):
+    if '--script' in args and not re.search(r'(CORE|CHECKPOINT CRASH|SAVE FAILURE|SAVE COMPAT|INVENTORY INTEGRITY|ITEM TAXONOMY|PROGRESSION POLICY|MASS ACCOUNTING|CAMPAIGN|ROUTER|EVENT|CALENDAR|PERFORMANCE|RECEIPT|RULESET|SAVE PROFILE|SOAK|GAMEPLAY|FOOD CATALOG|RESIDENT WORK FOOD|CAMPAIGN LONGTERM|EDGE|RUNTIME|COMBAT|UI CONTENT|ASSET|WORLD|SHELTER ACCESS|LAYOUT) TESTS: [1-9][0-9]* checks, 0 failures', run.stdout):
         print('FAIL: missing successful test completion marker')
         sys.exit(1)
     if run.returncode or any(marker in run.stdout for marker in ('SCRIPT ERROR:', 'ERROR:', 'WARNING: ObjectDB instances leaked')):
