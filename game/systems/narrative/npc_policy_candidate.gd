@@ -24,6 +24,8 @@ static func valid_npc(npc) -> bool:
 	# An active shelter resident is a role, not another unjoined candidate.
 	if npc.role == "resident" and npc.status != "joined":
 		return false
+	if npc.status == "joined" and npc.role != "resident":
+		return false
 	if npc.role == "non_recruitable" and (npc.status == "joined" or npc.status == "AWAITING_SUPPLIES"):
 		return false
 	if npc.faction_leader and npc.status in ["AWAITING_SUPPLIES", "joined"]:
