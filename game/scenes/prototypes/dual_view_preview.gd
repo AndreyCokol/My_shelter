@@ -7,6 +7,7 @@ extends Node3D
 ## Mouse: look around in FPS. Escape: release mouse capture.
 ## No gameplay/save/UI ownership changes or real combat are claimed.
 const Space = preload("res://game/systems/world/dual_view_space.gd")
+const PreviewHUD = preload("res://game/scenes/prototypes/dual_view_preview_ui.gd")
 
 const PREVIEW_BOUNDS := Rect2(0, 0, 640, 360)
 const PREVIEW_WALLS := [
@@ -20,19 +21,47 @@ var hero: CharacterBody3D
 var overhead: Camera3D
 var first_person: Camera3D
 var hero_visual: MeshInstance3D
+var hud: CanvasLayer
 var first_person_enabled := false
 var look_yaw := 0.0
 var look_pitch := 0.0
 
 func _ready() -> void:
+	_make_environment()
 	_make_floor()
 	for wall in PREVIEW_WALLS:
 		_make_wall(wall)
 	_make_hero()
 	_make_cameras()
+	_make_preview_ui()
 	set_first_person(false)
 	set_process(true)
 	set_physics_process(true)
+
+func _make_environment() -> void:
+	# A5 proof scene: cold outdoor ambient with a readable directional key.
+	var skybox := WorldEnvironment.new()
+	skybox.name = "ColdWorldEnvironment"
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color("273840")
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color("a6b4b1")
+	environment.ambient_light_energy = 0.85
+	skybox.environment = environment
+	add_child(skybox)
+
+	var sun := DirectionalLight3D.new()
+	sun.name = "DemoSkyLight"
+	sun.rotation_degrees = Vector3(-60, -35, 0)
+	sun.light_color = Color("e8e1cc")
+	sun.light_energy = 1.2
+	add_child(sun)
+
+func _make_preview_ui() -> void:
+	hud = PreviewHUD.new()
+	hud.name = "A5PreviewHUD"
+	add_child(hud)
 
 func _make_floor() -> void:
 	var surface := Space.box_from_legacy_rect(PREVIEW_BOUNDS, 0.2)
@@ -109,6 +138,8 @@ func set_first_person(enabled: bool) -> void:
 		first_person.current = enabled
 	if is_instance_valid(hero_visual):
 		hero_visual.visible = not enabled
+	if is_instance_valid(hud):
+		hud.call("show_view", enabled)
 	if not Engine.is_editor_hint():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if enabled else Input.MOUSE_MODE_VISIBLE
 
