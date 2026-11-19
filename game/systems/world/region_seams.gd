@@ -76,8 +76,29 @@ static func gate_apron(side: String, gate: Vector2) -> Rect2:
 			return Rect2(gate.x - GATE_HALF_WIDTH, REGION_SIZE.y - GATE_DEPTH, 2.0 * GATE_HALF_WIDTH, GATE_DEPTH)
 	return Rect2()
 
+static func valid_manifest(data: Dictionary) -> bool:
+	if not data.get("x") is int or not data.get("y") is int or not data.get("seed") is int:
+		return false
+	if data.get("seed") < 0 or data.get("seed") > MAX_WORLD_SEED or data.get("version") != VERSION:
+		return false
+	if data.get("id") != region_id(data.x, data.y):
+		return false
+	if not data.get("gates") is Dictionary or not data.get("neighbors") is Dictionary or not data.get("streams") is Dictionary:
+		return false
+	for side in ["west", "east", "north", "south"]:
+		var position = data.gates.get(side)
+		if not position is Vector2 or not position.is_finite():
+			return false
+		var neighbor = data.neighbors.get(side)
+		if not neighbor is String or neighbor.is_empty():
+			return false
+	for stream_name in ["geometry", "loot", "enemies", "events"]:
+		if not data.streams.get(stream_name) is int:
+			return false
+	return true
+
 static func seams_match(a: Dictionary, b: Dictionary, direction: String) -> bool:
-	if a.is_empty() or b.is_empty() or a.seed != b.seed or a.version != b.version:
+	if not valid_manifest(a) or not valid_manifest(b) or a.seed != b.seed or a.version != b.version:
 		return false
 	match direction:
 		"east":
