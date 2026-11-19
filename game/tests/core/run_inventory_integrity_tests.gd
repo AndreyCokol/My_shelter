@@ -59,8 +59,8 @@ func run() -> void:
 		return
 	var path: String = "user://a1-inventory-integrity-%d-%d.json" % [OS.get_process_id(), Time.get_ticks_usec()]
 	var store = Store.new(path)
-	var parcel := session.execute(request(session, "a1-parcel", "inventory.claim_parcel", {"parcel_id": "starter"}), store)
-	var reward := session.execute(request(session, "a1-reward", "progression.claim_reward", {"reward_id": "first"}), store)
+	var parcel: Dictionary = session.execute(request(session, "a1-parcel", "inventory.claim_parcel", {"parcel_id": "starter"}), store)
+	var reward: Dictionary = session.execute(request(session, "a1-reward", "progression.claim_reward", {"reward_id": "first"}), store)
 	var expected := {"seed.basic": 3, "tool.basic": 1}
 	check(parcel.ok and reward.ok and valid(session, config, expected), "two grants conserve four item units")
 	var source: Dictionary = first_in(session.get_snapshot(), "player")
