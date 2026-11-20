@@ -5,6 +5,7 @@ on:
     paths:
       - 'game/systems/world/fixed_start_hospital.gd'
       - 'game/tests/world/run_fixed_start_hospital_tests.gd'
+      - 'game/tests/world/run_fixed_hospital_physics_tests.gd'
       - 'tools/run_a2_fixed_hospital_qa.py'
       - '.github/workflows/a2-fixed-hospital-qa.yml'
   push:
