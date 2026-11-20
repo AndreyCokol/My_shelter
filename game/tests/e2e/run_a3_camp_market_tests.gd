@@ -128,9 +128,12 @@ func three_day_market(seed_value: int, path: String) -> void:
         var input_before: int = Gameplay.quantity(start, str(faction.request))
         var output_before: int = Gameplay.quantity(start, str(faction.goods))
         var payload: Dictionary = {"day": day, "faction": faction_id}
+        # Negative dates violate typed command normalization (INVALID_ARGUMENT).
+        # Nonnegative prior days are typed correctly but stale (UNAVAILABLE).
+        var expected_stale_code: String = "INVALID_ARGUMENT" if day == 0 else "UNAVAILABLE"
         check(execute(session, store, "game.fulfill_contract",
-            {"day": day - 1, "faction": faction_id}).get("code") == "UNAVAILABLE"
-            and session.get_snapshot() == start, "expired or wrong-day offer cannot debit stock")
+            {"day": day - 1, "faction": faction_id}).get("code") == expected_stale_code
+            and session.get_snapshot() == start, "invalid/stale-day offer cannot debit stock")
         check(execute(session, store, "game.fulfill_contract",
             {"day": day, "faction": "not_a_faction"}).get("code") == "INVALID_ARGUMENT"
             and session.get_snapshot() == start, "unknown faction cannot create payment")
