@@ -67,7 +67,7 @@ func _run() -> void:
 	var before_hero_id := hero.get_instance_id()
 	check(scene.get("layout_snapshot").scene_id == "hospital_0_3", "real starter third-floor prototype staged")
 	check(topdown.current and topdown.projection == Camera3D.PROJECTION_ORTHOGONAL, "3D layout retains strict orthographic topdown")
-	var first_count := scene.get("layout_snapshot").wall_count
+	var first_count: int = int(scene.get("layout_snapshot").wall_count)
 	var physical: Array = scene.get_children().filter(func(node): return node.is_in_group("a5_layout_preview_geometry"))
 	check(physical.size() == first_count + 1, "actual 3D physics objects match v5 obstacle count plus floor")
 	scene.call("set_first_person", true)
