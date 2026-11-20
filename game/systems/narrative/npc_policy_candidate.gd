@@ -62,7 +62,9 @@ static func plan_consent(npc, accept: bool) -> Dictionary:
 		return response(false, "INVALID_ARGUMENT")
 	if npc.faction_leader or npc.role == "non_recruitable":
 		return response(false, "NOT_RECRUITABLE")
-	if npc.status == "unknown":
+	if npc.status == "unknown" or npc.status == "declined":
+		# A fresh contact must be permitted before reconsidering an explicit refusal.
+		# For declined candidates plan_contact checks personal OR faction reputation.
 		return response(false, "REQUIRES_CONTACT")
 	if npc.status == "joined":
 		return response(false, "ALREADY_RECRUITED")
