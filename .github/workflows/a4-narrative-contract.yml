@@ -49,7 +49,13 @@ jobs:
           fi
           cat a4-live.log
           grep -Eq 'A4 LIVE STORY TESTS: [1-9][0-9]* checks, 0 failures' a4-live.log
-          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log a4-dialogue.log a4-live.log; then exit 1; fi
+          if ! "$GODOT" --headless --path . --script game/tests/narrative/run_a4_npc_memory_tests.gd > a4-memory.log 2>&1; then
+            cat a4-memory.log
+            exit 1
+          fi
+          cat a4-memory.log
+          grep -Eq 'A4 NPC MEMORY TESTS: [1-9][0-9]* checks, 0 failures' a4-memory.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log a4-dialogue.log a4-live.log a4-memory.log; then exit 1; fi
   windows-a4:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -73,7 +79,8 @@ jobs:
             @{file='game/tests/narrative/run_a4_npc_policy_tests.gd'; marker='A4 NPC POLICY'},
             @{file='game/tests/narrative/run_a4_quest_gate_tests.gd'; marker='A4 QUEST GATE'},
             @{file='game/tests/narrative/run_a4_dialogue_catalog_tests.gd'; marker='A4 DIALOGUE CATALOG'},
-            @{file='game/tests/narrative/run_a4_live_story_tests.gd'; marker='A4 LIVE STORY'}
+            @{file='game/tests/narrative/run_a4_live_story_tests.gd'; marker='A4 LIVE STORY'},
+            @{file='game/tests/narrative/run_a4_npc_memory_tests.gd'; marker='A4 NPC MEMORY'}
           )
           foreach ($suite in $scripts) {
             $output = (& $env:GODOT --headless --path . --script $suite.file 2>&1 | Out-String)
