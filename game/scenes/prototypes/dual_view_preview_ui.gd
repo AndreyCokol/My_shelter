@@ -14,7 +14,7 @@ func _build() -> void:
 	var backdrop := PanelContainer.new()
 	backdrop.name = "ModeHelpPanel"
 	backdrop.position = Vector2(12, 12)
-	backdrop.custom_minimum_size = Vector2(265, 94)
+	backdrop.custom_minimum_size = Vector2(188, 80)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("16252c")
@@ -27,9 +27,9 @@ func _build() -> void:
 
 	var padding := MarginContainer.new()
 	padding.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	padding.add_theme_constant_override("margin_left", 12)
+	padding.add_theme_constant_override("margin_left", 8)
 	padding.add_theme_constant_override("margin_top", 7)
-	padding.add_theme_constant_override("margin_right", 12)
+	padding.add_theme_constant_override("margin_right", 8)
 	padding.add_theme_constant_override("margin_bottom", 7)
 	backdrop.add_child(padding)
 
@@ -41,15 +41,15 @@ func _build() -> void:
 	var caption := Label.new()
 	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	caption.name = "Caption"
-	caption.text = "A2 / A5  ·  ПРОВЕРКА ДВУХ КАМЕР"
-	caption.add_theme_font_size_override("font_size", 10)
+	caption.text = "A5 · ДВЕ КАМЕРЫ"
+	caption.add_theme_font_size_override("font_size", 9)
 	caption.add_theme_color_override("font_color", Color("a1b6b3"))
 	stack.add_child(caption)
 
 	mode_label = Label.new()
 	mode_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mode_label.name = "Mode"
-	mode_label.add_theme_font_size_override("font_size", 16)
+	mode_label.add_theme_font_size_override("font_size", 15)
 	mode_label.add_theme_color_override("font_color", Color("e4e8df"))
 	stack.add_child(mode_label)
 
@@ -57,7 +57,7 @@ func _build() -> void:
 	help_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	help_label.name = "Controls"
 	help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help_label.add_theme_font_size_override("font_size", 10)
+	help_label.add_theme_font_size_override("font_size", 9)
 	help_label.add_theme_color_override("font_color", Color("b9c6c4"))
 	stack.add_child(help_label)
 
@@ -77,5 +77,5 @@ func show_view(first_person: bool) -> void:
 	if not is_instance_valid(mode_label):
 		return
 	mode_label.text = "ПЕРВОЕ ЛИЦО" if first_person else "СВЕРХУ · 90°"
-	help_label.text = "WASD · шаг   Мышь · обзор\nCaps Lock · сверху   Esc · курсор" if first_person else "WASD / стрелки · движение\nCaps Lock · первое лицо"
+	help_label.text = "WASD · ходьба  Мышь · обзор\nCaps Lock · сверху  Esc · курсор" if first_person else "WASD / стрелки · ходьба\nCaps Lock · первое лицо"
 	crosshair.visible = first_person
