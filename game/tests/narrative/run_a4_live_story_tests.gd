@@ -199,6 +199,46 @@ func waiting_then_join(rules: Dictionary, path: String) -> void:
 		"replay preserves exact reserved food allocations without duplicating stacks")
 	cleanup(path)
 
+func consume_mode_replay(base_rules: Dictionary, path: String) -> void:
+	# Alternate, synthetic policy; no game-balancing proposal.
+	var rules: Dictionary = base_rules.duplicate(true)
+	rules.food.reserve_mode = "consume"
+	rules.food.units_per_resident = 3
+	check(Campaign.valid_rules(rules), "synthetic three-unit consume-ration policy validates")
+	var setup: Dictionary = begin(rules, path)
+	var session = setup.session
+	var store = setup.store
+	grow_two(session, store, rules)
+	check(act(session, store, "scene.transition", {"destination_scene_id": "louvre", "entry_point_id": "default"}).ok,
+		"consume-mode NPC contact area available")
+	for id in ["resident_1", "resident_2"]:
+		check(act(session, store, "game.contact", {"resident_id": id}).ok,
+			"consume-mode contact " + id)
+		check(act(session, store, "game.consent", {"resident_id": id, "accept": true}).ok,
+			"consume-mode consent " + id)
+		var join := request(session, "game.recruit", {"resident_id": id})
+		check(session.execute(join, store).ok and resident(session.get_snapshot(), id).status == "joined",
+			"consume-mode recruit " + id)
+		var after: Dictionary = session.get_snapshot()
+		check(session.execute(join, store).code == "ALREADY_APPLIED"
+			and session.get_snapshot() == after,
+			"consume-mode receipt cannot charge extra food for " + id)
+	var potato_units: int = 0
+	for item in session.get_snapshot().inventory.items:
+		if item.type_id == "crop.potato":
+			potato_units += int(item.quantity)
+	check(potato_units == 0 and session.get_snapshot().inventory.reservations.is_empty(),
+		"consume policy spends six food once and does not create phantom reservations")
+	var saved: Dictionary = session.get_snapshot()
+	check(Model.validate(saved, rules), "two consumed food receipts form a valid real save")
+	var reloaded = Campaign.new(rules)
+	check(reloaded.coordinator.load_checkpoint(store).ok and reloaded.coordinator.get_snapshot() == saved,
+		"consume-mode joined NPCs and historical food receipts survive reload")
+	check(act(reloaded.coordinator, store, "game.recruit", {"resident_id": "resident_1"}).code == "INVALID_STATE"
+		and reloaded.coordinator.get_snapshot().inventory.reservations.is_empty(),
+		"new action cannot recharge consumed ration after restart")
+	cleanup(path)
+
 func run() -> void:
 	var rules: Dictionary = Rules.build()
 	check(Campaign.valid_rules(rules), "current P0 food rules validate")
@@ -208,6 +248,7 @@ func run() -> void:
 		"dedicated isolated test save directory exists")
 	free_sandbox(rules, prefix.path_join("free.json"))
 	waiting_then_join(rules, prefix.path_join("waiting.json"))
+	consume_mode_replay(rules, prefix.path_join("consume.json"))
 	DirAccess.remove_absolute(base)
 	print("A4 LIVE STORY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
