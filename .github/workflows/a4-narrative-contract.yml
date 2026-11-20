@@ -43,7 +43,10 @@ jobs:
           "$GODOT" --headless --path . --script game/tests/narrative/run_a4_dialogue_catalog_tests.gd > a4-dialogue.log 2>&1
           cat a4-dialogue.log
           grep -Eq 'A4 DIALOGUE CATALOG TESTS: [1-9][0-9]* checks, 0 failures' a4-dialogue.log
-          "$GODOT" --headless --path . --script game/tests/narrative/run_a4_live_story_tests.gd > a4-live.log 2>&1
+          if ! "$GODOT" --headless --path . --script game/tests/narrative/run_a4_live_story_tests.gd > a4-live.log 2>&1; then
+            cat a4-live.log
+            exit 1
+          fi
           cat a4-live.log
           grep -Eq 'A4 LIVE STORY TESTS: [1-9][0-9]* checks, 0 failures' a4-live.log
           if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log a4-dialogue.log a4-live.log; then exit 1; fi
