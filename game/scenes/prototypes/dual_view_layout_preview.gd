@@ -34,7 +34,7 @@ func _install_layout(scene_id: String) -> void:
 	layout_snapshot = candidate
 	hero.position = candidate.hero_position
 	hero.velocity = Vector3.ZERO
-	look_yaw = 0.0
+	look_yaw = -PI * 0.5  # Face east along the hospital corridor, not into the near north wall.
 	look_pitch = 0.0
 	_update_cameras()
 	set_first_person(false)
@@ -51,7 +51,7 @@ func cycle_layout() -> void:
 func set_first_person(enabled: bool) -> void:
 	super.set_first_person(enabled)
 	if is_instance_valid(hud):
-		hud.get("help_label").text += "\nF6 · больница / улица (только демонстрация)"
+		hud.get("help_label").text += "\nF6 · больница / улица"
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F6:
