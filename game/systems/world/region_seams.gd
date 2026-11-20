@@ -7,6 +7,10 @@ extends RefCounted
 
 const VERSION := 1
 const MAX_WORLD_SEED := 2147483647
+# Bound signed coordinates so neighbor +/-1 cannot overflow, and mapping to
+# legacy pixel positions stays within the exact integer range of float64.
+# This is a representational safety bound, not a claim of truly infinite IDs.
+const MAX_REGION_COORD := 1000000000
 const REGION_SIZE := Vector2(2400, 780)
 const GATE_HALF_WIDTH := 32.0
 const GATE_DEPTH := 80.0
@@ -16,13 +20,16 @@ const HORIZONTAL_GATE_X := [600.0, 1200.0, 1800.0]
 static func region_id(x: int, y: int) -> String:
 	return "region:%d:%d" % [x, y]
 
+static func _valid_coords(x: int, y: int) -> bool:
+	return x >= -MAX_REGION_COORD and x <= MAX_REGION_COORD and y >= -MAX_REGION_COORD and y <= MAX_REGION_COORD
+
 static func parse_region_id(value: String) -> Dictionary:
 	var parts := value.split(":")
 	if parts.size() != 3 or parts[0] != "region" or not parts[1].is_valid_int() or not parts[2].is_valid_int():
 		return {"ok": false, "code": "INVALID_REGION_ID"}
 	var x := int(parts[1])
 	var y := int(parts[2])
-	if value != region_id(x, y):
+	if not _valid_coords(x, y) or value != region_id(x, y):
 		return {"ok": false, "code": "INVALID_REGION_ID"}
 	return {"ok": true, "x": x, "y": y}
 
@@ -41,7 +48,7 @@ static func _h_gate(seed: int, col_x: int, boundary_y: int) -> float:
 	return HORIZONTAL_GATE_X[_hash(seed, "horizontal-edge", col_x, boundary_y) % HORIZONTAL_GATE_X.size()]
 
 static func manifest(seed: int, x: int, y: int) -> Dictionary:
-	if seed < 0 or seed > MAX_WORLD_SEED:
+	if seed < 0 or seed > MAX_WORLD_SEED or not _valid_coords(x, y):
 		return {}
 	var gates := {
 		"west": Vector2(0, _v_gate(seed, x, y)),
@@ -79,7 +86,7 @@ static func gate_apron(side: String, gate: Vector2) -> Rect2:
 static func valid_manifest(data: Dictionary) -> bool:
 	if not data.get("x") is int or not data.get("y") is int or not data.get("seed") is int:
 		return false
-	if data.get("seed") < 0 or data.get("seed") > MAX_WORLD_SEED or data.get("version") != VERSION:
+	if data.get("seed") < 0 or data.get("seed") > MAX_WORLD_SEED or data.get("version") != VERSION or not _valid_coords(data.x, data.y):
 		return false
 	if data.get("id") != region_id(data.x, data.y):
 		return false
@@ -97,16 +104,26 @@ static func valid_manifest(data: Dictionary) -> bool:
 			return false
 	return true
 
+# Shape-validation is intentionally weaker than an authoritative manifest.
+# A peer cannot forge gates, neighbors or RNG streams, even if it edits both
+# ends to match: each field must be derived from its own seed and coordinates.
+static func valid_canonical_manifest(data: Dictionary) -> bool:
+	if not valid_manifest(data):
+		return false
+	var canonical: Dictionary = manifest(int(data.seed), int(data.x), int(data.y))
+	return not canonical.is_empty() and data.gates == canonical.gates \
+		and data.neighbors == canonical.neighbors and data.streams == canonical.streams
+
 static func seams_match(a: Dictionary, b: Dictionary, direction: String) -> bool:
-	if not valid_manifest(a) or not valid_manifest(b) or a.seed != b.seed or a.version != b.version:
+	if not valid_canonical_manifest(a) or not valid_canonical_manifest(b) or a.seed != b.seed or a.version != b.version:
 		return false
 	match direction:
 		"east":
-			return a.neighbors.east == b.id and a.gates.east == b.gates.west + Vector2(REGION_SIZE.x, 0)
+			return b.x == a.x + 1 and b.y == a.y and a.neighbors.east == b.id and b.neighbors.west == a.id and a.gates.east == b.gates.west + Vector2(REGION_SIZE.x, 0)
 		"west":
-			return a.neighbors.west == b.id and a.gates.west == b.gates.east - Vector2(REGION_SIZE.x, 0)
+			return b.x == a.x - 1 and b.y == a.y and a.neighbors.west == b.id and b.neighbors.east == a.id and a.gates.west == b.gates.east - Vector2(REGION_SIZE.x, 0)
 		"north":
-			return a.neighbors.north == b.id and a.gates.north == b.gates.south - Vector2(0, REGION_SIZE.y)
+			return b.y == a.y - 1 and b.x == a.x and a.neighbors.north == b.id and b.neighbors.south == a.id and a.gates.north == b.gates.south - Vector2(0, REGION_SIZE.y)
 		"south":
-			return a.neighbors.south == b.id and a.gates.south == b.gates.north + Vector2(0, REGION_SIZE.y)
+			return b.y == a.y + 1 and b.x == a.x and a.neighbors.south == b.id and b.neighbors.north == a.id and a.gates.south == b.gates.north + Vector2(0, REGION_SIZE.y)
 	return false
