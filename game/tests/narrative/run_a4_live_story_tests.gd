@@ -173,9 +173,15 @@ func waiting_then_join(rules: Dictionary, path: String) -> void:
 		"second NPC consents independently")
 	check(act(session, store, "game.recruit", {"resident_id": "resident_2"}).ok,
 		"second NPC enters shelter after actual food check")
-	check(session.get_snapshot().inventory.reservations.size() == 2
+	var held: Dictionary = {}
+	for reservation in session.get_snapshot().inventory.reservations:
+		var owner: String = reservation.resident_id
+		held[owner] = int(held.get(owner, 0)) + int(reservation.quantity)
+	check(held.size() == 2
+		and held.get("resident_1", 0) == rules.food.units_per_resident
+		and held.get("resident_2", 0) == rules.food.units_per_resident
 		and quest(session.get_snapshot(), "Q07") == "inactive",
-		"both residents joined without force-tracking Q07")
+		"both residents have correct ration totals independent of fragmented item stacks")
 	for id in ["Q05", "Q06", "Q07"]:
 		check(act(session, store, "game.quest_track", {"quest_id": id}).ok
 			and quest(session.get_snapshot(), id) == "completed",
@@ -189,8 +195,8 @@ func waiting_then_join(rules: Dictionary, path: String) -> void:
 		"first recruitment retains same action receipt across restart")
 	check(act(reload.coordinator, store, "game.recruit", {"resident_id": "resident_1"}).code == "INVALID_STATE",
 		"new action ID cannot recruit joined NPC twice")
-	check(reload.coordinator.get_snapshot().inventory.reservations.size() == 2,
-		"replay does not multiply reserved food")
+	check(reload.coordinator.get_snapshot().inventory.reservations == final_state.inventory.reservations,
+		"replay preserves exact reserved food allocations without duplicating stacks")
 	cleanup(path)
 
 func run() -> void:
