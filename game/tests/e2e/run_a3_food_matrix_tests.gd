@@ -153,17 +153,18 @@ func transfer_two_food(session, store) -> bool:
                 "to_id": "storage", "quantity": 2}).get("ok", false)
     return false
 
-func horizon(seed_value: int, days: int, path: String) -> void:
-    var rules: Dictionary = rules_for(seed_value, "reserve", 2)
+func horizon(seed_value: int, days: int, mode: String, units: int, path: String) -> void:
+    var rules: Dictionary = rules_for(seed_value, mode, units)
     var fixture: Dictionary = setup(rules, path)
     if not fixture.get("ok", false):
         return
     var campaign = fixture.campaign
     var session = campaign.coordinator
     var store = fixture.store
-    if not join_one(session, store, "reserve", 2):
+    if not join_one(session, store, mode, units):
         cleanup(path)
         return
+    var initial_food: int = 6 if mode == "reserve" else 6 - units
     for day in range(days):
         var start: Dictionary = session.get_snapshot()
         if start.game_time_minutes != DAY_MINUTES * day or not Model.validate(start, rules):
@@ -202,7 +203,7 @@ func horizon(seed_value: int, days: int, path: String) -> void:
             break
         var end: Dictionary = session.get_snapshot()
         check(Model.validate(end, rules) and end.game_time_minutes == DAY_MINUTES * (day + 1)
-            and raw_food(end) == 6 + 2 * (day + 1)
+            and raw_food(end) == initial_food + 2 * (day + 1)
             and stored_food(end) == 2 * (day + 1), "day resource accounting")
         var save_action: Dictionary = request(session, "session.save")
         if not session.execute(save_action, store).get("ok", false):
@@ -220,7 +221,7 @@ func horizon(seed_value: int, days: int, path: String) -> void:
         session = reopened.coordinator
     var final_state: Dictionary = session.get_snapshot()
     check(final_state.game_time_minutes == days * DAY_MINUTES and Model.validate(final_state, rules),
-        "completed horizon " + str(days) + " on seed " + str(seed_value))
+        "completed horizon " + str(days) + " on seed " + str(seed_value) + " / " + mode + " / food " + str(units))
     cleanup(path)
 
 
@@ -395,9 +396,11 @@ func run() -> void:
                     smoke_mode(seed_value, mode, units,
                         folder.path_join("smoke-%d-%s-%d.json" % [seed_value, mode, units]))
         for seed_value in SEEDS:
-            for days in HORIZONS:
-                horizon(seed_value, days,
-                    folder.path_join("long-%d-%d.json" % [seed_value, days]))
+            for mode in FOOD_MODES:
+                for units in FOOD_UNITS:
+                    for days in HORIZONS:
+                        horizon(seed_value, days, mode, units,
+                            folder.path_join("long-%d-%s-%d-%d.json" % [seed_value, mode, units, days]))
         for seed_value in SEEDS:
             recovery_from_empty(seed_value, folder.path_join("recovery-%d.json" % seed_value))
         for seed_value in SEEDS:
