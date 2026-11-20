@@ -9,7 +9,9 @@ const Mass = preload("res://game/contracts/mass_accounting_candidate.gd")
 static func fail(code: String) -> Dictionary:
 	return {"ok": false, "code": code}
 
-static func prepare(request, snapshot_items, capacities, mass_catalog, reserved_by_instance = {}) -> Dictionary:
+# Reservation totals are MANDATORY and supplied by the trusted A1/A3
+# snapshot adapter. Silent omission would treat committed NPC food as free.
+static func prepare(request, snapshot_items, capacities, mass_catalog, reserved_by_instance) -> Dictionary:
 	var normalized: Dictionary = Batch.normalize(request)
 	if not normalized.ok:
 		return fail(normalized.code)
