@@ -2,6 +2,7 @@ extends SceneTree
 
 # A1 technical candidate tests, not mass balance or live multi-item transfer.
 const Preflight = preload("res://game/contracts/batch_mass_preflight_candidate.gd")
+const Mass = preload("res://game/contracts/mass_accounting_candidate.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -150,7 +151,7 @@ func run() -> void:
 	check(Preflight.prepare(request, corrupted, c, w).code == "INVALID_ITEM",
 		"snapshot duplicate instance IDs rejected before planning")
 	corrupted = items()
-	corrupted[2].quantity = Preflight.Mass.MAX_EXACT_JSON_INT
+	corrupted[2].quantity = Mass.MAX_EXACT_JSON_INT
 	check(Preflight.prepare(request, corrupted, c, w).code == "MASS_OVERFLOW",
 		"invalid JSON-safe mass arithmetic rejected without mutation")
 	check(Preflight.prepare(request, {}, c, w).code == "INVALID_ARGUMENT",
