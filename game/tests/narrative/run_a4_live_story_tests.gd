@@ -6,6 +6,7 @@ const Campaign = preload("res://game/systems/core/campaign_session.gd")
 const Rules = preload("res://game/data/game_rules.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Model = preload("res://game/state/campaign_model.gd")
+const Layout = preload("res://game/systems/world/world_layout.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -239,6 +240,48 @@ func consume_mode_replay(base_rules: Dictionary, path: String) -> void:
 		"new action cannot recharge consumed ration after restart")
 	cleanup(path)
 
+func schema4_contact_and_reload(base_rules: Dictionary, path: String) -> void:
+	# Cross-check the currently deployed world-seeded schema4, not merely
+	# the older four-scene schema3 test world.
+	var rules: Dictionary = base_rules.duplicate(true)
+	rules.world_seed = 54
+	rules.scenes = Layout.entries()
+	check(Campaign.valid_rules(rules), "world-seeded schema4 real rules validate")
+	var setup: Dictionary = begin(rules, path)
+	var session = setup.session
+	var store = setup.store
+	check(session.get_snapshot().schema_version == 4
+		and session.get_snapshot().world_states.layout.seed == 54,
+		"NPC quest test actually runs in production-style schema4 world")
+	check(act(session, store, "scene.transition", {"destination_scene_id": "hospital", "entry_point_id": "default"}).ok,
+		"world-seeded shelter return follows saved hospital identity")
+	check(act(session, store, "scene.transition", {"destination_scene_id": "outside", "entry_point_id": "default"}).ok,
+		"schema4 hospital links physically to first street")
+	check(act(session, store, "scene.transition", {"destination_scene_id": "louvre", "entry_point_id": "default"}).ok,
+		"schema4 real street links to NPC contact area")
+	check(act(session, store, "game.contact", {"resident_id": "resident_1"}).ok,
+		"schema4 NPC can be contacted after actual routed travel")
+	check(act(session, store, "game.consent", {"resident_id": "resident_1", "accept": true}).ok,
+		"schema4 contact stores informed-consent state")
+	var before: Dictionary = session.get_snapshot()
+	check(act(session, store, "game.recruit", {"resident_id": "resident_1"}).code == "INSUFFICIENT_RESOURCES"
+		and session.get_snapshot() == before,
+		"schema4 food shortage cannot partially recruit NPC")
+	var loaded = Campaign.new(rules)
+	check(loaded.coordinator.load_checkpoint(store).ok and loaded.coordinator.get_snapshot() == before,
+		"schema4 generated-world identity, consent and revisions survive reload")
+	check(resident(loaded.coordinator.get_snapshot(), "resident_1").status == "AWAITING_SUPPLIES"
+		and quest(loaded.coordinator.get_snapshot(), "Q07") == "inactive",
+		"schema4 preserves accepted-but-waiting NPC and optional Q07")
+	check(act(loaded.coordinator, store, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}).ok,
+		"schema4 NPC visit never disables immediate shelter escape")
+	var reloaded = Campaign.new(rules)
+	check(reloaded.coordinator.load_checkpoint(store).ok
+		and reloaded.coordinator.get_snapshot().scene.current_scene_id == "shelter"
+		and resident(reloaded.coordinator.get_snapshot(), "resident_1").status == "AWAITING_SUPPLIES",
+		"schema4 shelter save roundtrip preserves NPC consent history")
+	cleanup(path)
+
 func run() -> void:
 	var rules: Dictionary = Rules.build()
 	check(Campaign.valid_rules(rules), "current P0 food rules validate")
@@ -249,6 +292,7 @@ func run() -> void:
 	free_sandbox(rules, prefix.path_join("free.json"))
 	waiting_then_join(rules, prefix.path_join("waiting.json"))
 	consume_mode_replay(rules, prefix.path_join("consume.json"))
+	schema4_contact_and_reload(rules, prefix.path_join("schema4.json"))
 	DirAccess.remove_absolute(base)
 	print("A4 LIVE STORY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
