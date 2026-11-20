@@ -7,6 +7,8 @@ on:
       - 'game/scenes/prototypes/dual_view_layout_preview.*'
       - 'game/tests/world/run_dual_view_layout_bridge_tests.gd'
       - 'tools/run_a5_layout_bridge_qa.py'
+      - 'game/tests/world/run_dual_view_layout_visual_tests.gd'
+      - 'tools/run_a5_layout_bridge_visual_qa.py'
       - '.github/workflows/a5-layout-bridge-qa.yml'
   push:
     branches:
@@ -40,6 +42,20 @@ jobs:
         run: python3 tools/run_a5_dual_view_qa.py
       - name: Verify legacy real layouts in one 3D scene
         run: python3 tools/run_a5_layout_bridge_qa.py
+      - name: Ensure Xvfb is available for real 3D screenshots
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+      - name: Render real v5 hospital and city using both 3D camera modes
+        run: python3 tools/run_a5_layout_bridge_visual_qa.py
+      - name: Upload reproducible native Godot layout frames
+        uses: actions/upload-artifact@v4
+        with:
+          name: a5-v5-hospital-city-dual-view-frames
+          path: /tmp/shelter-a5-real-layout/*.png
+          if-no-files-found: error
 
   layout-windows:
     runs-on: windows-latest
