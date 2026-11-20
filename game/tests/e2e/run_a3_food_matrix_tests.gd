@@ -302,6 +302,83 @@ func recovery_from_empty(seed_value: int, path: String) -> void:
         and reopened.coordinator.get_snapshot() == after, "seed recovery and food survive reload")
     cleanup(path)
 
+
+# A3 command-level start from the REAL seeded campaign, not an unlocked fixture.
+# This cannot substitute for physical hero navigation or interactive GUI proof.
+func first_food_from_new_campaign(seed_value: int, path: String) -> void:
+    var rules: Dictionary = rules_for(seed_value, "reserve", 2)
+    cleanup(path)
+    if not Rules.validate(rules) or not Campaign.valid_rules(rules):
+        check(false, "new-game scenario rules invalid")
+        return
+    var campaign = Campaign.new(rules)
+    var session = campaign.coordinator
+    var initial: Dictionary = session.get_snapshot()
+    check(Model.validate(initial, rules)
+        and initial.scene.current_scene_id == "hospital"
+        and not initial.world_states.first_enemy_defeated
+        and Logic.quantity(initial, "seed.basic") == 0
+        and Logic.quantity(initial, "crop.potato") == 0,
+        "new game begins in hospital with locked System and no starter food/seed")
+    var store = Store.new(path)
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}).get("ok", false):
+        check(false, "new-game early shelter escape")
+        cleanup(path)
+        return
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "hospital", "entry_point_id": "default"}).get("ok", false):
+        check(false, "new-game return from shelter to initial hospital")
+        cleanup(path)
+        return
+    var kill: Dictionary = request(session, "game.enemy_defeated")
+    var defeated: Dictionary = session.execute(kill, store)
+    if not defeated.get("ok", false):
+        check(false, "new-game first defeated enemy unlocks System")
+        cleanup(path)
+        return
+    var once: Dictionary = session.get_snapshot()
+    check(once.world_states.first_enemy_defeated
+        and session.execute(kill, store).get("code") == "ALREADY_APPLIED"
+        and session.get_snapshot() == once,
+        "new-game System unlock is durable and grants once")
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "outside", "entry_point_id": "default"}).get("ok", false):
+        check(false, "new-game exit into outside region")
+        cleanup(path)
+        return
+    if not execute(session, store, "game.resource_collect").get("ok", false):
+        check(false, "new-game gathers renewable seeds from real domain command")
+        cleanup(path)
+        return
+    check(Logic.quantity(session.get_snapshot(), "seed.basic") == rules.resource_quantity
+        and Logic.quantity(session.get_snapshot(), "crop.potato") == 0,
+        "new-game resource pickup requires no parcel, quests or purchases")
+    if not execute(session, store, "scene.transition", {"destination_scene_id": "shelter", "entry_point_id": "default"}).get("ok", false):
+        check(false, "new-game returns to shelter with collected seed")
+        cleanup(path)
+        return
+    if not execute(session, store, "game.plant", {"plot_id": "plot_1"}).get("ok", false) or not execute(session, store, "game.water", {"plot_id": "plot_1"}).get("ok", false):
+        check(false, "new-game begins growing first food")
+        cleanup(path)
+        return
+    var ripe_at: int = int(session.get_snapshot().game_time_minutes) + int(rules.crop.grow_minutes)
+    if not execute(session, store, "clock.rest", {"target_minute": ripe_at}).get("ok", false):
+        check(false, "new-game shelter rest advances crop")
+        cleanup(path)
+        return
+    if not execute(session, store, "game.harvest", {"plot_id": "plot_1"}).get("ok", false):
+        check(false, "new-game produces first harvest")
+        cleanup(path)
+        return
+    var result: Dictionary = session.get_snapshot()
+    check(Model.validate(result, rules)
+        and Logic.quantity(result, "crop.potato") == rules.crop.yield_units
+        and result.inventory.items.any(func(item): return item.type_id == "seed.basic"),
+        "new-game first food obtained without starter parcel")
+    var reopened = Campaign.new(rules)
+    check(reopened.coordinator.load_checkpoint(store).get("ok", false)
+        and reopened.coordinator.get_snapshot() == result,
+        "new-game food and System unlock survive checkpoint reload")
+    cleanup(path)
+
 func run() -> void:
     var zero := rules_for(54, "reserve", 0)
     var negative := rules_for(54, "reserve", -1)
@@ -323,6 +400,8 @@ func run() -> void:
                     folder.path_join("long-%d-%d.json" % [seed_value, days]))
         for seed_value in SEEDS:
             recovery_from_empty(seed_value, folder.path_join("recovery-%d.json" % seed_value))
+        for seed_value in SEEDS:
+            first_food_from_new_campaign(seed_value, folder.path_join("new-game-%d.json" % seed_value))
         DirAccess.remove_absolute(absolute)
     print("A3 FOOD MATRIX TESTS: %d checks, %d failures" % [checks, failures])
     quit(0 if failures == 0 else 1)
