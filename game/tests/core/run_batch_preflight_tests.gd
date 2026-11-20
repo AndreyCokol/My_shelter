@@ -39,6 +39,11 @@ func transfer() -> Dictionary:
 		{"instance_id": "cloth-1", "quantity": 1}
 	]}
 
+# Unit-test convenience only: production preflight requires an explicit
+# trusted reservation aggregate; this wrapper supplies an empty TEST fixture.
+func prepare(request, snapshot_items, capacities, mass_catalog, reserved_by_instance = {}) -> Dictionary:
+	return Preflight.prepare(request, snapshot_items, capacities, mass_catalog, reserved_by_instance)
+
 func run() -> void:
 	var source: Array = items()
 	var original: Array = source.duplicate(true)
@@ -46,7 +51,7 @@ func run() -> void:
 	var original_request: Dictionary = request.duplicate(true)
 	var c: Array = caps()
 	var w: Dictionary = weights()
-	var prepared: Dictionary = Preflight.prepare(request, source, c, w)
+	var prepared: Dictionary = prepare(request, source, c, w)
 	check(prepared.ok, "two complete instance stacks pass capacity preflight")
 	if not prepared.ok:
 		print("BATCH PREFLIGHT TESTS: %d checks, %d failures" % [checks, failures])
@@ -64,11 +69,11 @@ func run() -> void:
 		"all selected instances move together while the unselected item remains")
 	check(source == original and request == original_request and c == caps() and w == weights(),
 		"planning never modifies request, catalog, capacities or live snapshot")
-	var again: Dictionary = Preflight.prepare(request, source, c, w)
+	var again: Dictionary = prepare(request, source, c, w)
 	check(again == prepared, "same inputs produce byte-identical deterministic preview")
 	var reversed: Dictionary = transfer()
 	reversed.entries.reverse()
-	var swapped: Dictionary = Preflight.prepare(reversed, source, c, w)
+	var swapped: Dictionary = prepare(reversed, source, c, w)
 	check(swapped.ok and swapped.payload == prepared.payload
 		and swapped.preview_items == prepared.preview_items,
 		"click selection order cannot change semantic batch or state preview")
@@ -77,89 +82,91 @@ func run() -> void:
 
 	var narrow: Array = caps()
 	narrow[1].capacity_mass_units = 20
-	var reject: Dictionary = Preflight.prepare(request, source, narrow, w)
+	var reject: Dictionary = prepare(request, source, narrow, w)
 	check(reject.code == "CAPACITY_EXCEEDED" and not reject.has("preview_items"),
 		"one-unit destination overflow rejects the entire multi-object batch")
 	check(source == original, "failed staged capacity check has no partial state")
 	var initial_bad: Array = caps()
 	initial_bad[1].capacity_mass_units = 5
-	check(Preflight.prepare(request, source, initial_bad, w).code == "CAPACITY_EXCEEDED",
+	check(prepare(request, source, initial_bad, w).code == "CAPACITY_EXCEEDED",
 		"invalid original inventory cannot be silently repaired by an outgoing move")
 	var bad: Dictionary = transfer()
 	bad.entries[0].quantity = 1
-	check(Preflight.prepare(bad, source, c, w).code == "PARTIAL_INSTANCE_UNSUPPORTED",
+	check(prepare(bad, source, c, w).code == "PARTIAL_INSTANCE_UNSUPPORTED",
 		"whole-instance candidate never invents split IDs")
 	bad = transfer()
 	bad.entries[0].quantity = 3
-	check(Preflight.prepare(bad, source, c, w).code == "INSUFFICIENT_RESOURCES",
+	check(prepare(bad, source, c, w).code == "INSUFFICIENT_RESOURCES",
 		"quantity larger than trusted stack rejected")
 	bad = transfer()
 	bad.entries.append({"instance_id": "unseen", "quantity": 1})
-	check(Preflight.prepare(bad, source, c, w).code == "NOT_FOUND",
+	check(prepare(bad, source, c, w).code == "NOT_FOUND",
 		"missing later instance cancels entire prepared batch")
 	bad = transfer()
 	bad.entries[0].instance_id = "medicine-1"
 	bad.entries[0].quantity = 3
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_SOURCE",
+	check(prepare(bad, source, c, w).code == "INVALID_SOURCE",
 		"source container is validated for every selected instance")
 	bad = transfer()
 	bad.entries.append(bad.entries[0].duplicate(true))
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
+	check(prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
 		"duplicate selected instance rejected before lookup")
 	bad = transfer()
 	bad.client_mass = 0
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
+	check(prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
 		"untrusted UI mass cannot bypass catalog mass")
 	bad = transfer()
 	bad.from_id = "not-a-container"
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_CONTAINER",
+	check(prepare(bad, source, c, w).code == "INVALID_CONTAINER",
 		"unknown source container cannot be substituted")
 	bad = transfer()
 	bad.to_id = "not-a-container"
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_CONTAINER",
+	check(prepare(bad, source, c, w).code == "INVALID_CONTAINER",
 		"unknown destination container cannot be created implicitly")
 	bad = transfer()
 	bad.to_id = "player"
-	check(Preflight.prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
+	check(prepare(bad, source, c, w).code == "INVALID_ARGUMENT",
 		"same source/destination is invalid")
-	check(Preflight.prepare(request, source, c, w, {"steel-1": 1}).code == "INSUFFICIENT_RESOURCES",
+	check(prepare(request, source, c, w, {"steel-1": 1}).code == "INSUFFICIENT_RESOURCES",
 		"reserved stack cannot be transferred as a whole")
-	check(Preflight.prepare(request, source, c, w, {"medicine-1": 1}).ok,
+	check(prepare(request, source, c, w, {"medicine-1": 1}).ok,
 		"unselected reserved stack remains untouched")
-	check(Preflight.prepare(request, source, c, w, {"ghost": 1}).code == "INVALID_RESERVATION",
+	check(prepare(request, source, c, w, {"ghost": 1}).code == "INVALID_RESERVATION",
 		"unknown reservation owner rejected rather than ignored")
-	check(Preflight.prepare(request, source, c, w, {"steel-1": 3}).code == "INVALID_RESERVATION",
+	check(prepare(request, source, c, w, {"steel-1": 3}).code == "INVALID_RESERVATION",
 		"reservation cannot exceed trusted stack count")
-	check(Preflight.prepare(request, source, c, w, {"steel-1": -1}).code == "INVALID_RESERVATION",
+	check(prepare(request, source, c, w, {"steel-1": -1}).code == "INVALID_RESERVATION",
 		"negative reservation rejected")
-	check(Preflight.prepare(request, source, c, w, {"steel-1": 1.0}).code == "INVALID_RESERVATION",
+	check(prepare(request, source, c, w, {"steel-1": 1.0}).code == "INVALID_RESERVATION",
 		"float reserved quantity rejected")
-	check(Preflight.prepare(request, source, c, w, {}).ok, "empty trusted reservation set accepted")
+	check(prepare(request, source, c, w, {}).ok, "empty trusted reservation set accepted")
 	var unknown_weights: Dictionary = {"steel": 7, "cloth": 1}
-	check(Preflight.prepare(request, source, c, unknown_weights).code == "MISSING_MASS",
+	check(prepare(request, source, c, unknown_weights).code == "MISSING_MASS",
 		"all original objects need trusted mass, including unmoved items")
 	var fake_weights: Dictionary = weights()
 	fake_weights.steel = 0
-	check(Preflight.prepare(request, source, c, fake_weights).code == "MISSING_MASS",
+	check(prepare(request, source, c, fake_weights).code == "MISSING_MASS",
 		"zero catalog mass cannot sneak an item into an allegedly free transfer")
 	var duplicate_caps: Array = caps()
 	duplicate_caps.append({"id": "player", "capacity_mass_units": 999})
-	check(Preflight.prepare(request, source, duplicate_caps, w).code == "INVALID_CONTAINER",
+	check(prepare(request, source, duplicate_caps, w).code == "INVALID_CONTAINER",
 		"duplicate container declarations rejected")
 	var corrupted: Array = items()
 	corrupted[1].instance_id = "steel-1"
-	check(Preflight.prepare(request, corrupted, c, w).code == "INVALID_ITEM",
+	check(prepare(request, corrupted, c, w).code == "INVALID_ITEM",
 		"snapshot duplicate instance IDs rejected before planning")
 	corrupted = items()
 	corrupted[2].quantity = Mass.MAX_EXACT_JSON_INT
-	check(Preflight.prepare(request, corrupted, c, w).code == "MASS_OVERFLOW",
+	check(prepare(request, corrupted, c, w).code == "MASS_OVERFLOW",
 		"invalid JSON-safe mass arithmetic rejected without mutation")
-	check(Preflight.prepare(request, {}, c, w).code == "INVALID_ARGUMENT",
+	check(prepare(request, {}, c, w).code == "INVALID_ARGUMENT",
 		"snapshot must be a true item-array")
-	check(Preflight.prepare([], source, c, w).code == "INVALID_ARGUMENT",
+	check(prepare([], source, c, w).code == "INVALID_ARGUMENT",
 		"batch request must be a typed dictionary")
-	check(Preflight.prepare(request, source, c, w, []).code == "INVALID_ARGUMENT",
+	check(prepare(request, source, c, w, []).code == "INVALID_ARGUMENT",
 		"reservations must be a typed dictionary")
+	check(prepare(request, source, c, w, null).code == "INVALID_ARGUMENT",
+		"missing trusted reservation snapshot is never treated as empty")
 	check(source == original, "negative testing never changes source state")
 	print("BATCH PREFLIGHT TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
