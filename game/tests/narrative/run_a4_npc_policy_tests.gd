@@ -34,6 +34,8 @@ func run() -> void:
 		"explicit refusal is stored without recruitment")
 	check(not NPC.plan_recruit(refused.record, true, true).ok,
 		"food cannot override a refused agreement")
+	check(NPC.plan_consent(refused.record, true).code == "REQUIRES_CONTACT",
+		"direct player consent cannot bypass a declined NPC and reputation gate")
 	check(NPC.eligibility(refused.record, false, false).code == "REPUTATION_REQUIRED",
 		"declined NPC requires positive personal or faction reputation condition")
 	check(NPC.eligibility(refused.record, true, false).ok,
@@ -46,6 +48,11 @@ func run() -> void:
 	var accepted: Dictionary = NPC.plan_consent(renewed.record, true)
 	check(accepted.ok and accepted.record.status == "AWAITING_SUPPLIES" and accepted.record.consent,
 		"explicit consent enters waiting for supplies")
+	var withdrawn: Dictionary = NPC.plan_consent(accepted.record, false)
+	check(withdrawn.ok and withdrawn.record.status == "declined" and not withdrawn.record.consent,
+		"NPC can retract consent before settlement without losing history")
+	check(NPC.plan_recruit(withdrawn.record, true, true).code == "REQUIRES_CONSENT",
+		"withdrawn consent cannot be overridden by existing stored resources")
 	var no_food: Dictionary = NPC.plan_recruit(accepted.record, false, true)
 	check(not no_food.ok and no_food.code == "INSUFFICIENT_RESOURCES"
 		and no_food.record == accepted.record, "food shortage preserves consent and waiting state")
