@@ -165,6 +165,7 @@ func horizon(seed_value: int, days: int, mode: String, units: int, path: String)
         cleanup(path)
         return
     var initial_food: int = 6 if mode == "reserve" else 6 - units
+    var spent_food: int = 0
     for day in range(days):
         var start: Dictionary = session.get_snapshot()
         if start.game_time_minutes != DAY_MINUTES * day or not Model.validate(start, rules):
@@ -187,10 +188,23 @@ func horizon(seed_value: int, days: int, mode: String, units: int, path: String)
         var once: Dictionary = session.get_snapshot()
         check(session.execute(harvest, store).get("code") == "ALREADY_APPLIED"
             and session.get_snapshot() == once, "harvest idempotency")
+        var before_shift: Dictionary = session.get_snapshot()
         var shift: Dictionary = request(session, "game.assign_shift", {"resident_id": "resident_1", "job": "seed"})
-        if not session.execute(shift, store).get("ok", false):
+        var shift_result: Dictionary = session.execute(shift, store)
+        if not shift_result.get("ok", false):
             check(false, "edible funded resident shift")
             break
+        var ration: Dictionary = shift_result.get("data", {}).get("work_ration", {})
+        var payer_container: String = ""
+        for source_item in before_shift.inventory.items:
+            if source_item.instance_id == ration.get("instance_id", ""):
+                payer_container = source_item.container_id
+                break
+        if payer_container.is_empty() or not int(ration.get("quantity", 0)) == 1:
+            check(false, "shift ration receipt must identify exactly one committed food item")
+            break
+        spent_food += int(ration.quantity)
+        var storage_ration_used: int = int(ration.quantity) if payer_container == "storage" else 0
         var due: int = int(session.get_snapshot().residents.records[0].shift.due)
         if not execute(session, store, "clock.rest", {"target_minute": due}).get("ok", false) or not execute(session, store, "game.collect_shift", {"resident_id": "resident_1"}).get("ok", false):
             check(false, "paid shift cannot finish")
@@ -202,9 +216,15 @@ func horizon(seed_value: int, days: int, mode: String, units: int, path: String)
             check(false, "next day boundary")
             break
         var end: Dictionary = session.get_snapshot()
+        # A lawful worker ration may come from STORAGE, not only the backpack.
+        # Its durable receipt fixes which container paid, so the storage ledger
+        # must subtract that exact source before adding the two-unit transfer.
+        var harvested_total: int = int(rules.crop.yield_units) * (day + 1)
         check(Model.validate(end, rules) and end.game_time_minutes == DAY_MINUTES * (day + 1)
-            and raw_food(end) == initial_food + 2 * (day + 1)
-            and stored_food(end) == 2 * (day + 1), "day resource accounting")
+            and raw_food(end) == initial_food + harvested_total - spent_food
+            and Logic.quantity(end, "crop.potato") == 6 - units + harvested_total - spent_food
+            and stored_food(end) == stored_food(start) + 2 - storage_ration_used,
+            "day receipt-aware resource accounting")
         var save_action: Dictionary = request(session, "session.save")
         if not session.execute(save_action, store).get("ok", false):
             check(false, "daily durable save failed")
