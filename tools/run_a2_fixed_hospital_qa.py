@@ -8,8 +8,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 GODOT = os.environ.get("GODOT", "godot")
-SUITE = "game/tests/world/run_fixed_start_hospital_tests.gd"
-MARKER = re.compile(r"A2 FIXED HOSPITAL PROTOTYPE TESTS: ([1-9][0-9]*) checks, 0 failures")
+SUITES = [
+    ("game/tests/world/run_fixed_start_hospital_tests.gd", "A2 FIXED HOSPITAL PROTOTYPE TESTS"),
+    ("game/tests/world/run_fixed_hospital_physics_tests.gd", "A2 FIXED HOSPITAL PHYSICS TESTS"),
+]
 
 def run(args, timeout=110):
     command = [GODOT, *args]
@@ -31,11 +33,14 @@ def main():
         if not version.startswith("4.7.2.stable."):
             raise RuntimeError(f"Pinned 4.7.2 stable expected, got {version!r}")
         run(["--headless", "--path", ".", "--editor", "--import"], 120)
-        output = run(["--headless", "--path", ".", "--script", SUITE], 120)
-        match = MARKER.search(output)
-        if not match:
-            raise RuntimeError("No direct Godot completion marker for hospital/roof test")
-        print(f"A2 FIXED HOSPITAL QA: PASS ({match.group(1)} checks in Godot {version})")
+        total = 0
+        for suite, marker in SUITES:
+            output = run(["--headless", "--path", ".", "--script", suite], 120)
+            match = re.search(re.escape(marker) + r": ([1-9][0-9]*) checks, 0 failures", output)
+            if not match:
+                raise RuntimeError(f"Missing actual Godot completion marker for {suite}")
+            total += int(match.group(1))
+        print(f"A2 FIXED HOSPITAL QA: PASS ({total} checks in Godot {version})")
         return 0
     except RuntimeError as error:
         print(f"A2 FIXED HOSPITAL QA: FAIL {error}", file=sys.stderr, flush=True)
