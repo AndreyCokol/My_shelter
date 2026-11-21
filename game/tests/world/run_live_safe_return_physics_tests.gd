@@ -161,6 +161,45 @@ func _run() -> void:
 		"path": [ANCHOR, GOAL + Vector2(0, 10)]
 	}).code == "INVALID_PLAN", "diagonal unswept path segment cannot be declared safe")
 
+	# Important A1/WorldHost integration case: the plan is in generator
+	# LOCAL coordinates while PhysicsServer2D uses the world-space transform.
+	# A scene may be mounted with translation and 90 degree rotation.
+	var moved_scene := Node2D.new()
+	moved_scene.position = Vector2(650, 270)
+	moved_scene.rotation = PI / 2.0
+	arena.add_child(moved_scene)
+	wall(moved_scene, barrier_rect)
+	await physics_frame
+	var transform: Transform2D = moved_scene.global_transform
+	var moved_fallback := Guard.plan_and_verify(space, BOUNDS, [barrier_rect], [], [], GOAL, ANCHOR,
+		RADIUS, 1, [], transform)
+	check(moved_fallback.ok and moved_fallback.relocated and moved_fallback.live_physics_verified,
+		"translated+rotated WorldHost gives collision-safe reachable-side fallback")
+	check(moved_fallback.ok and moved_fallback.position.x < barrier_rect.position.x,
+		"world-space rigid transform preserves correct LOCAL fallback point")
+	check(Guard.plan_and_verify(space, BOUNDS, [], [], [], GOAL, ANCHOR,
+		RADIUS, 1, [], transform).code == "PHYSICS_BLOCKED",
+		"stale rectangle snapshot cannot miss a real rotated PhysicsServer2D wall")
+	check(Guard.verify_live(space, open, RADIUS, 1, [], transform).code == "PHYSICS_BLOCKED",
+		"re-check of original route is correctly rotated into target world")
+	check(Guard.verify_live(space, moved_fallback, RADIUS, 1, [], transform).ok,
+		"saved local fallback can be physically revalidated in moved/rotated scene")
+	var scaling := Transform2D(Vector2(2.0, 0.0), Vector2(0.0, 2.0), Vector2.ZERO)
+	var shear := Transform2D(Vector2(1.0, 0.0), Vector2(0.5, 1.0), Vector2.ZERO)
+	var invalid_origin := Transform2D(Vector2.RIGHT, Vector2.DOWN, Vector2(INF, 0.0))
+	check(Guard.plan_and_verify(space, BOUNDS, [], [], [], GOAL, ANCHOR,
+		RADIUS, 1, [], scaling).code == "INVALID_TRANSFORM",
+		"scaled world cannot silently reuse unscaled player collider radius")
+	check(Guard.plan_and_verify(space, BOUNDS, [], [], [], GOAL, ANCHOR,
+		RADIUS, 1, [], shear).code == "INVALID_TRANSFORM",
+		"sheared world fails closed, requiring explicit physics modeling")
+	check(Guard.verify_live(space, open, RADIUS, 1, [], invalid_origin).code == "INVALID_TRANSFORM",
+		"nonfinite world coordinate transform cannot certify any route")
+	moved_scene.queue_free()
+	await physics_frame
+	check(Guard.verify_live(space, open).ok,
+		"real world-space rotated blocker removal restores default coordinates")
+
 	# Real production generator walls. No modification of historical v4/v5
 	# game saves or the generator itself: physical shapes are created here.
 	for version in [4, 5]:
