@@ -61,6 +61,15 @@ func run() -> void:
 	check(Quest.completion_ready("Q07", {"joined_resident_ids": ["a", "b"],
 		"required_joined_count": 2}).ready,
 		"two unique joined residents satisfy synthetic Q07 policy")
+	check(not Quest.completion_ready("Q07", {"joined_resident_ids": ["a", "   "],
+		"required_joined_count": 2}).ok,
+		"blank NPC identity cannot count toward Q07 recruitment")
+	check(not Quest.completion_ready("Q07", {"joined_resident_ids": ["a", " a"],
+		"required_joined_count": 2}).ok,
+		"padded alias of existing resident cannot satisfy Q07 twice")
+	check(not Quest.completion_ready("Q07", {"joined_resident_ids": ["a", "b "],
+		"required_joined_count": 2}).ok,
+		"padded second resident ID cannot unlock Q07")
 	check(not Quest.completion_ready("Q07", {"joined_resident_ids": ["a"],
 		"required_joined_count": 2}).ready,
 		"one resident cannot be counted twice")
