@@ -305,8 +305,120 @@ func check_real() -> void:
 		"real transfer was persisted; quote guard had no power to write checkpoint")
 	cleanup(path)
 
+func check_real_reservation() -> void:
+	var rules: Dictionary = Rules.build()
+	rules.world_seed = 54
+	rules.scenes = Layout.entries()
+	var session = Campaign.new(rules).coordinator
+	if session == null:
+		check(false, "schema4 resident quote fixture initializes")
+		return
+	var path: String = "user://a1-stale-resident-%d-%d.json" % [OS.get_process_id(), Time.get_ticks_usec()]
+	cleanup(path)
+	var store = Store.new(path)
+	var preparation: Array = [
+		act(session, store, "scene.transition", {"destination_scene_id":"shelter", "entry_point_id":"default"}),
+		act(session, store, "scene.transition", {"destination_scene_id":"hospital", "entry_point_id":"default"}),
+		act(session, store, "game.enemy_defeated"),
+		act(session, store, "scene.transition", {"destination_scene_id":"shelter", "entry_point_id":"default"}),
+		act(session, store, "inventory.claim_parcel", {"parcel_id":"starter"})
+	]
+	var ready: bool = preparation.all(func(result): return result.ok)
+	check(ready, "real resident quote starts with shelter and first System victory")
+	if not ready:
+		cleanup(path)
+		return
+	for id in ["plot_1", "plot_2"]:
+		ready = act(session, store, "game.plant", {"plot_id": id}).ok and ready
+		ready = act(session, store, "game.water", {"plot_id": id}).ok and ready
+	check(ready, "real schema4 farm creates two watered potato plots")
+	if not ready:
+		cleanup(path)
+		return
+	ready = act(session, store, "clock.rest", {"target_minute": int(rules.crop.grow_minutes)}).ok
+	for id in ["plot_1", "plot_2"]:
+		ready = act(session, store, "game.harvest", {"plot_id": id}).ok and ready
+	check(ready, "real potatoes harvested before quote")
+	if not ready:
+		cleanup(path)
+		return
+	var route: Array = [
+		act(session, store, "scene.transition", {"destination_scene_id":"hospital", "entry_point_id":"default"}),
+		act(session, store, "scene.transition", {"destination_scene_id":"outside", "entry_point_id":"default"}),
+		act(session, store, "scene.transition", {"destination_scene_id":"louvre", "entry_point_id":"default"})
+	]
+	ready = route.all(func(result): return result.ok)
+	check(ready, "procedural scene graph reaches resident contact")
+	if not ready:
+		cleanup(path)
+		return
+	check(act(session, store, "game.contact", {"resident_id":"resident_1"}).ok,
+		"actual resident contact established")
+	check(act(session, store, "game.consent", {"resident_id":"resident_1", "accept":true}).ok,
+		"actual NPC gives voluntary consent")
+	var before: Dictionary = session.get_snapshot()
+	var potato: Dictionary = {}
+	for item in before.inventory.items:
+		if item.type_id == "crop.potato" and item.container_id == "player":
+			potato = item
+			break
+	check(not potato.is_empty() and potato.quantity >= 3,
+		"real potato source available for partial quote before NPC ration")
+	if potato.is_empty():
+		cleanup(path)
+		return
+	var request_batch: Dictionary = {"from_id": "player", "to_id": "storage",
+		"entries": [{"instance_id": potato.instance_id, "quantity": 1}]}
+	var c: Array = synthetic_caps(before)
+	var m: Dictionary = synthetic_mass(rules)
+	var p: Dictionary = synthetic_policy(rules)
+	var quote: Dictionary = Guard.bind("npc-stale-quote", request_batch,
+		before.inventory.items, c, m, before.inventory.reservations, p,
+		before.resource_revisions)
+	check(quote.ok, "pure quote accepts real unreserved potato stack")
+	if not quote.ok:
+		cleanup(path)
+		return
+	var old_primary: PackedByteArray = FileAccess.get_file_as_bytes(path)
+	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
+		before.inventory.items, c, m, before.inventory.reservations, p,
+		before.resource_revisions).ok
+		and FileAccess.get_file_as_bytes(path) == old_primary,
+		"binding/revalidation are pure before NPC food reservation")
+	var recruit: Dictionary = act(session, store, "game.recruit", {"resident_id":"resident_1"})
+	check(recruit.ok and recruit.data.get("reserve_mode") == "reserve",
+		"actual NPC recruitment commits a durable food reservation")
+	if not recruit.ok:
+		cleanup(path)
+		return
+	var after: Dictionary = session.get_snapshot()
+	check(before.inventory.items == after.inventory.items
+		and after.inventory.reservations.size() > before.inventory.reservations.size(),
+		"reserve mode changes allocation rows while item quantities stay identical")
+	var reserved: int = 0
+	for row in after.inventory.reservations:
+		if row.instance_id == potato.instance_id:
+			reserved += int(row.quantity)
+	check(reserved > 0, "reserved NPC ration affects the quoted potato instance")
+	var persisted: PackedByteArray = FileAccess.get_file_as_bytes(path)
+	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
+		after.inventory.items, c, m, after.inventory.reservations, p,
+		after.resource_revisions).code == "STALE_SNAPSHOT",
+		"real NPC reservation invalidates quote despite unchanged food quantities")
+	check(FileAccess.get_file_as_bytes(path) == persisted,
+		"revalidation rejection never writes or modifies committed food receipt")
+	var reopened = Campaign.new(rules).coordinator
+	check(reopened.load_checkpoint(store).ok, "food reservation roundtrip reloads in real schema4")
+	var fresh: Dictionary = reopened.get_snapshot()
+	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
+		fresh.inventory.items, c, m, fresh.inventory.reservations, p,
+		fresh.resource_revisions).code == "STALE_SNAPSHOT",
+		"post-reload NPC reservation still invalidates the old food quote")
+	cleanup(path)
+
 func run() -> void:
 	check_pure()
 	check_real()
+	check_real_reservation()
 	print("BATCH STALE GUARD TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
