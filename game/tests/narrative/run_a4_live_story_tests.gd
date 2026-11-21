@@ -7,6 +7,7 @@ const Rules = preload("res://game/data/game_rules.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const NPCPolicy = preload("res://game/systems/narrative/npc_policy_candidate.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -354,6 +355,43 @@ func schema4_contact_and_reload(base_rules: Dictionary, path: String, seed_value
 	schema4_finish_recruitment(rules, reloaded.coordinator, store, seed_value)
 	cleanup(path)
 
+# TEMPORARY DIAGNOSTIC ONLY: intentionally verifies a current Core trust gap.
+# This must not be treated as a passing acceptance test or cherry-picked to
+# the main A4 PR. A1 is responsible for the real refusal/recontact fix.
+func diagnostic_current_consent_gap(rules: Dictionary, path: String) -> void:
+	var setup: Dictionary = begin(rules, path)
+	var session = setup.session
+	var store = setup.store
+	check(act(session, store, "scene.transition",
+		{"destination_scene_id": "louvre", "entry_point_id": "default"}).ok,
+		"diagnostic reaches existing NPC area")
+	check(act(session, store, "game.contact", {"resident_id": "resident_1"}).ok,
+		"diagnostic makes first legitimate contact")
+	check(act(session, store, "game.consent",
+		{"resident_id": "resident_1", "accept": false}).ok,
+		"diagnostic records actual NPC refusal in Core")
+	var declined: Dictionary = session.get_snapshot()
+	check(resident(declined, "resident_1").status == "declined"
+		and not resident(declined, "resident_1").consent,
+		"diagnostic refusal persisted as declined")
+	var policy_npc: Dictionary = {"id": "resident_1", "role": "recruitable",
+		"status": "declined", "consent": false, "faction_leader": false, "scripted": false}
+	var policy: Dictionary = NPCPolicy.plan_consent(policy_npc, true)
+	check(not policy.ok and policy.code == "REQUIRES_CONTACT",
+		"pure A4 policy rejects renewed consent without authorized recontact")
+	var current_core: Dictionary = act(session, store, "game.consent",
+		{"resident_id": "resident_1", "accept": true})
+	var after: Dictionary = session.get_snapshot()
+	var gap: bool = current_core.get("ok", false) \
+		and resident(after, "resident_1").status == "AWAITING_SUPPLIES" \
+		and resident(after, "resident_1").consent
+	check(gap, "KNOWN_GAP: current Core accepts direct consent after refusal")
+	if gap:
+		print("A4_DIAGNOSTIC_KNOWN_GAP_CONFIRMED: declined to AWAITING_SUPPLIES without A4 recontact")
+	else:
+		print("A4_DIAGNOSTIC_KNOWN_GAP_NOT_REPRODUCED")
+	cleanup(path)
+
 func run() -> void:
 	var rules: Dictionary = Rules.build()
 	check(Campaign.valid_rules(rules), "current P0 food rules validate")
@@ -366,6 +404,7 @@ func run() -> void:
 	consume_mode_replay(rules, prefix.path_join("consume.json"))
 	for seed_value in [54, 127]:
 		schema4_contact_and_reload(rules, prefix.path_join("schema4-%d.json" % seed_value), seed_value)
+	diagnostic_current_consent_gap(rules, prefix.path_join("decline-consent-gap.json"))
 	DirAccess.remove_absolute(base)
 	print("A4 LIVE STORY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
