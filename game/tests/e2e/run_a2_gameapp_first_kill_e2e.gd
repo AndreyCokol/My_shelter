@@ -54,8 +54,36 @@ func _run() -> void:
 
 	var enemy = app.enemy()
 	enemy.process_mode = Node.PROCESS_MODE_DISABLED
-	enemy.take_damage(enemy.MAX_HEALTH + 100)
-	check(enemy.health == 0, "actual production Enemy clamps lethal hit to zero")
+	# Choose a collision-free melee position in the CURRENT physical
+	# hospital instead of calling Enemy.take_damage directly. This tests
+	# the actual Player.try_attack -> enemy death -> GameApp transaction.
+	var arena = app.scene_router.current_world()
+	var selected := false
+	for offset in [Vector2(38, 0), Vector2(-38, 0), Vector2(0, 38), Vector2(0, -38)]:
+		enemy.position = app.hero.position + offset
+		var inside_wall := false
+		for wall in arena.collision_rects():
+			if wall.grow(enemy.BODY_RADIUS + 2.0).has_point(enemy.position):
+				inside_wall = true
+				break
+		await physics_frame
+		if not inside_wall and enemy.has_clear_line_to(app.hero):
+			selected = true
+			break
+	check(selected, "live hospital offers a physically open melee approach near hero")
+	if selected:
+		var original_hp: int = enemy.health
+		check(app.hero.try_attack(enemy.global_position) and enemy.health < original_hp,
+			"real Player.try_attack hits actual Enemy in mounted hospital scene")
+		# Simulate a nearly defeated foe; the final damage itself must still
+		# come from the production Player attack (not an arbitrary HP setter).
+		enemy.health = 1
+		app.hero.attack_cooldown = 0.0
+		check(app.hero.try_attack(enemy.global_position) and enemy.health == 0,
+			"actual player final melee blow causes the lethal Enemy state")
+	else:
+		enemy.take_damage(enemy.MAX_HEALTH + 100)
+	check(enemy.health == 0, "actual production Enemy clamps lethal damage at zero")
 	enemy._physics_process(0.016)
 	enemy._physics_process(0.016)
 	await process_frame
