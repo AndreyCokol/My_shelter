@@ -75,7 +75,9 @@ static func verify_live(
 		query.transform = Transform2D(0.0, previous)
 		query.motion = position - previous
 		var fractions: PackedFloat32Array = space.cast_motion(query)
-		if fractions.size() != 2 or not is_finite(fractions[0]) or fractions[0] < 0.999:
+		# Fail closed on ANY fractional sweep contact, even very near the end.
+		# A 99.9% path is NOT a safe path for a solid player collider.
+		if fractions.size() != 2 or not is_finite(fractions[0]) or not is_finite(fractions[1]) or fractions[0] < 1.0 or fractions[1] < 1.0:
 			return _fail("PHYSICS_BLOCKED")
 	var verified: Dictionary = planned.duplicate(true)
 	verified["live_physics_verified"] = true
