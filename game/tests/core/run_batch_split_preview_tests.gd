@@ -142,6 +142,7 @@ func run() -> void:
 		"MISSING_MASS", "unknown mass on an unmoved item also invalidates full preview")
 	var wrong_source: Dictionary = request()
 	wrong_source.from_id = "storage"
+	wrong_source.to_id = "player"
 	check(prepare("batch-001", wrong_source, items, caps, mass, holds, policy).code ==
 		"INVALID_SOURCE", "each selected item must originate from request source")
 	var nonexisting: Dictionary = request()
