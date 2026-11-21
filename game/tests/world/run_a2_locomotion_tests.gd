@@ -11,8 +11,13 @@ class FakeRouter extends RefCounted:
 
 class FakeApp extends RefCounted:
 	var scene_router = FakeRouter.new()
+	var defeat_calls := 0
 	func running() -> bool:
 		return true
+	func update_hud() -> void:
+		pass
+	func player_defeated() -> void:
+		defeat_calls += 1
 
 var checks := 0
 var failures := 0
@@ -151,6 +156,15 @@ func _run() -> void:
 	Input.action_release("dodge")
 	Input.action_release("jump")
 	Input.action_release("run")
+	# Negative integration case: lethal hit during visual elevation stops
+	# physics processing. The actor must not remain floating indefinitely.
+	hero.health = 1
+	hero.hurt_remaining = 0.0
+	hero.jump_remaining = 0.2
+	hero.pixel_sprite.position.y = -12.0
+	check(hero.take_damage(15) and hero.defeated and hero.jump_remaining == 0.0
+		and hero.pixel_sprite.position.y == 0.0 and hero.movement_state == "idle",
+		"lethal hit mid visual jump immediately grounds the sprite")
 	hero.restore(100)
 	check(hero.movement_state == "idle" and hero.jump_remaining == 0.0 and not hero.water_contact,
 		"real hero restore resets optional movement states safely")
