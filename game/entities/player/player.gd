@@ -141,6 +141,12 @@ func take_damage(amount: int) -> bool:
 	# lethal hit leaves a permanently red "hurt" frame while physics stops.
 	if health == 0:
 		defeated = true
+		# Lethal hit while the sprite is visually airborne must reset its
+		# offset: physics processing stops immediately on defeat.
+		jump_remaining = 0.0
+		movement_state = "idle"
+		if is_instance_valid(pixel_sprite):
+			pixel_sprite.position.y = 0.0
 	hurt_remaining = 0.45
 	_update_pixel_animation(false)
 	queue_redraw()
