@@ -169,12 +169,12 @@ func run() -> void:
 	var corrupted: Array = inventory()
 	corrupted[0].quantity = 0
 	check(prepare("batch-001", req, corrupted, caps, mass, holds, policy).code ==
-		"INVALID_RESERVATION", "malformed original stack rejected before preview")
+		"INVALID_ITEM", "malformed original stack rejected before preview")
 	var colliding: Array = inventory()
 	colliding.append({"instance_id": plan.split_instance_ids[0], "type_id": "misc",
 		"quantity": 1, "container_id": "storage"})
 	check(prepare("batch-001", req, colliding, items, mass, holds, policy).code ==
-		"INVALID_ARGUMENT", "malformed capacities argument cannot bypass validation")
+		"INVALID_CONTAINER", "malformed capacities argument cannot bypass validation")
 	check(prepare("batch-001", req, colliding, capacities(19), mass, holds, policy).code ==
 		"DUPLICATE_INSTANCE_ID", "existing future split ID collision rejected before committing")
 	check(prepare("batch-001", req, items, caps, mass, holds, policy).preview_items == plan.preview_items,
