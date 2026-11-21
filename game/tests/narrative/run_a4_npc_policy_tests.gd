@@ -115,6 +115,19 @@ func run() -> void:
 	illicit.status = "joined"
 	illicit.consent = true
 	check(not NPC.valid_npc(illicit), "nonrecruitable contact cannot be serialized as joined resident")
+	var nameless: Dictionary = fixture("   ")
+	check(not NPC.valid_npc(nameless), "blank padded NPC identity cannot enter a roster")
+	var padded: Dictionary = fixture("traveller-01 ")
+	check(not NPC.valid_npc(padded), "trailing spaces cannot create a duplicate actor ID")
+	padded = fixture(" traveller-01")
+	check(not NPC.valid_npc(padded), "leading spaces cannot create another actor identity")
+	var normal_internal_spaces: Dictionary = fixture("resident Marie Curie")
+	check(NPC.valid_npc(normal_internal_spaces),
+		"canonical identifiers may preserve meaningful internal spaces")
+	var padded_joined: Dictionary = first.duplicate(true)
+	padded_joined.id = "traveller-01 "
+	check(NPC.plan_group_expedition([first, padded_joined], true, true, 2).code == "UNAVAILABLE_PARTICIPANT",
+		"padded alias cannot depart as a second expedition member")
 	check(not NPC.valid_npc({"id":"a"}), "incomplete NPC data fails closed")
 	var bad: Dictionary = fixture("bad")
 	bad.status = "joined"
