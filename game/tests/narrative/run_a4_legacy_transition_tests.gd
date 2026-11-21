@@ -80,8 +80,14 @@ func run() -> void:
 		"consent can be withdrawn before a resident joins")
 	check(waiting.status == "AWAITING_SUPPLIES" and waiting.consent,
 		"withdrawal patch does not release A1 reservations itself")
-	check(Bridge.plan_contact(waiting, false, false).ok,
-		"contact helper is a pure proposal even when waiting state is presented")
+	check(Bridge.plan_contact(waiting, false, false).code == "ALREADY_CONSENTED",
+		"already consenting legacy NPC cannot receive duplicate new contact")
+	check(Bridge.plan_contact(waiting, true, true).code == "ALREADY_CONSENTED",
+		"high reputation never bypasses an already accepted NPC contract")
+	check(Bridge.plan_consent(waiting, true).code == "ALREADY_CONSENTED",
+		"positive consent replay cannot create a new A4 decision")
+	check(waiting.status == "AWAITING_SUPPLIES" and waiting.consent,
+		"duplicate proposals do not mutate A1 waiting state")
 	var joined: Dictionary = fixture("resident_2")
 	joined.status = "joined"
 	joined.consent = true
