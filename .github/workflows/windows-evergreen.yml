@@ -32,9 +32,35 @@ jobs:
       - name: Offline updater tests (no secrets/network)
         run: python -m unittest discover -s tools/delivery -p 'test_*.py' -v
 
+  installer-windows:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline updater tests on real Windows
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tools/delivery -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows updater unit tests failed' }
+      - name: Install local launcher without admin, network or scheduled tasks
+        shell: pwsh
+        run: |
+          $install = Join-Path $env:RUNNER_TEMP 'MyShelterInstall'
+          & ./tools/delivery/Install-MyShelter.ps1 -InstallDir $install -NoScheduledTask -NoDesktopShortcut
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Bootstrap installer failed' }
+          foreach ($name in @('windows_updater.py','MyShelter.cmd','UpdateMyShelter.cmd','RollbackMyShelter.cmd')) {
+            if (-not (Test-Path (Join-Path $install $name))) { throw "Missing local installer file: $name" }
+          }
+          Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
+
   build-windows:
     if: github.event_name == 'workflow_dispatch'
-    needs: updater-tests
+    needs: [updater-tests, installer-windows]
     runs-on: windows-latest
     timeout-minutes: 40
     permissions:
@@ -137,8 +163,8 @@ jobs:
           if-no-files-found: error
 
   publish-preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true
-    needs: [updater-tests, build-windows]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol'
+    needs: [updater-tests, installer-windows, build-windows]
     runs-on: ubuntu-latest
     environment: preview-release
     timeout-minutes: 10
