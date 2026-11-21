@@ -5,6 +5,7 @@ on:
     paths:
       - 'game/systems/world/spatial_whole_object_intent.gd'
       - 'game/tests/world/run_spatial_whole_object_tests.gd'
+      - 'game/tests/world/run_spatial_whole_object_physics_tests.gd'
       - 'tools/run_a2_whole_object_qa.py'
       - '.github/workflows/a2-whole-object-qa.yml'
   push:
