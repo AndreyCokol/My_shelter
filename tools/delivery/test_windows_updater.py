@@ -96,6 +96,40 @@ class UpdaterTests(unittest.TestCase):
             self.assertFalse((self.root / "evil.exe").exists())
             package.unlink()
 
+    def test_duplicate_filename_and_symlink_rejected(self):
+        package = self.root / "malicious.zip"
+        duplicate = io.BytesIO()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(duplicate, "w") as z:
+                z.writestr("MyShelter.exe", b"MZold")
+                z.writestr("MyShelter.exe", b"MZnew")
+        package.write_bytes(duplicate.getvalue())
+        with self.assertRaises(u.UpdateError):
+            u._extract_verified(package, self.root / "unpack-dup")
+        special = io.BytesIO()
+        with zipfile.ZipFile(special, "w") as z:
+            entry = zipfile.ZipInfo("MyShelter.exe")
+            entry.create_system = 3
+            entry.external_attr = 0o120777 << 16
+            z.writestr(entry, b"MZlink")
+        package.write_bytes(special.getvalue())
+        with self.assertRaises(u.UpdateError):
+            u._extract_verified(package, self.root / "unpack-link")
+
+    def test_no_current_release_keeps_existing_binary(self):
+        oldsha = "b" * 40
+        folder = self.root / "versions" / oldsha
+        folder.mkdir(parents=True)
+        (folder / "MyShelter.exe").write_bytes(b"MZexisting")
+        u.atomic_json(self.root / "state.json", {"active_sha": oldsha})
+        with mock.patch.object(u, "discover", side_effect=u.UpdateError("GitHub offline")):
+            with self.assertRaises(u.UpdateError):
+                u.update(self.root)
+        self.assertEqual(u.load_state(self.root)["active_sha"], oldsha)
+        self.assertEqual((folder / "MyShelter.exe").read_bytes(), b"MZexisting")
+
     def test_rollback_preserves_both_versions_and_pauses(self):
         oldsha = "b" * 40
         for sha in (self.sha, oldsha):
