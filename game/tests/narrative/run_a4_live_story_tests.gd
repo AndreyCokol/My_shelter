@@ -240,18 +240,18 @@ func consume_mode_replay(base_rules: Dictionary, path: String) -> void:
 		"new action cannot recharge consumed ration after restart")
 	cleanup(path)
 
-func schema4_contact_and_reload(base_rules: Dictionary, path: String) -> void:
+func schema4_contact_and_reload(base_rules: Dictionary, path: String, seed_value: int) -> void:
 	# Cross-check the currently deployed world-seeded schema4, not merely
 	# the older four-scene schema3 test world.
 	var rules: Dictionary = base_rules.duplicate(true)
-	rules.world_seed = 54
+	rules.world_seed = seed_value
 	rules.scenes = Layout.entries()
-	check(Campaign.valid_rules(rules), "world-seeded schema4 real rules validate")
+	check(Campaign.valid_rules(rules), "world-seeded schema4 real rules validate seed " + str(seed_value))
 	var setup: Dictionary = begin(rules, path)
 	var session = setup.session
 	var store = setup.store
 	check(session.get_snapshot().schema_version == 4
-		and session.get_snapshot().world_states.layout.seed == 54,
+		and session.get_snapshot().world_states.layout.seed == seed_value,
 		"NPC quest test actually runs in production-style schema4 world")
 	check(act(session, store, "scene.transition", {"destination_scene_id": "hospital", "entry_point_id": "default"}).ok,
 		"world-seeded shelter return follows saved hospital identity")
@@ -292,7 +292,8 @@ func run() -> void:
 	free_sandbox(rules, prefix.path_join("free.json"))
 	waiting_then_join(rules, prefix.path_join("waiting.json"))
 	consume_mode_replay(rules, prefix.path_join("consume.json"))
-	schema4_contact_and_reload(rules, prefix.path_join("schema4.json"))
+	for seed_value in [54, 127]:
+		schema4_contact_and_reload(rules, prefix.path_join("schema4-%d.json" % seed_value), seed_value)
 	DirAccess.remove_absolute(base)
 	print("A4 LIVE STORY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
