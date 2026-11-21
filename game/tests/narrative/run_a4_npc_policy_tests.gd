@@ -48,6 +48,14 @@ func run() -> void:
 	var accepted: Dictionary = NPC.plan_consent(renewed.record, true)
 	check(accepted.ok and accepted.record.status == "AWAITING_SUPPLIES" and accepted.record.consent,
 		"explicit consent enters waiting for supplies")
+	check(NPC.eligibility(accepted.record, false, false).code == "ALREADY_CONSENTED",
+		"already consenting NPC is not eligible for duplicate new offer")
+	check(NPC.plan_contact(accepted.record, true, true).code == "ALREADY_CONSENTED",
+		"even high reputation cannot reopen an already accepted proposal")
+	check(NPC.plan_consent(accepted.record, true).code == "ALREADY_CONSENTED",
+		"repeated positive decision does not create a second consent event")
+	check(accepted.record.status == "AWAITING_SUPPLIES" and accepted.record.consent,
+		"duplicate decision denials cannot alter the accepted waiting record")
 	var withdrawn: Dictionary = NPC.plan_consent(accepted.record, false)
 	check(withdrawn.ok and withdrawn.record.status == "declined" and not withdrawn.record.consent,
 		"NPC can retract consent before settlement without losing history")
