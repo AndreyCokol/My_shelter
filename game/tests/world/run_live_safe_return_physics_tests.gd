@@ -145,8 +145,8 @@ func _run() -> void:
 		"path": [ANCHOR, GOAL + Vector2(0, 10)]
 	}).code == "INVALID_PLAN", "mismatched end point cannot get physics authorization")
 	check(Guard.verify_live(space, {
-		"ok": true, "anchor": ANCHOR, "position": GOAL,
-		"path": [ANCHOR, GOAL]
+		"ok": true, "anchor": ANCHOR, "position": GOAL + Vector2(0, 10),
+		"path": [ANCHOR, GOAL + Vector2(0, 10)]
 	}).code == "INVALID_PLAN", "diagonal unswept path segment cannot be declared safe")
 
 	# Real production generator walls. No modification of historical v4/v5
