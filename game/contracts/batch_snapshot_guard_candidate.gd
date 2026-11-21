@@ -28,14 +28,16 @@ static func canonical_catalog(catalog: Dictionary, positive_mass: bool) -> Dicti
 		result.append([key, value])
 	return {"ok": true, "entries": result}
 
-# Identity is trusted CoreSession context, NEVER a player-supplied command field.
+# Identity is trusted CoreSession/SlotManager context, NEVER player payload.
+# Current CampaignModel.new_state() defaults save_id to constant "slot-01",
+# so a trusted storage_slot_key is also required for cross-slot isolation.
 static func canonical_identity(identity) -> Dictionary:
-	if not identity is Dictionary or identity.size() != 3:
+	if not identity is Dictionary or identity.size() != 4:
 		return fail("INVALID_IDENTITY")
-	for key in ["save_id", "actor_id", "ruleset_version"]:
+	for key in ["save_id", "actor_id", "ruleset_version", "storage_slot_key"]:
 		if not identity.get(key) is String or identity[key].is_empty():
 			return fail("INVALID_IDENTITY")
-	return {"ok": true, "entries": [identity.save_id, identity.actor_id, identity.ruleset_version]}
+	return {"ok": true, "entries": [identity.save_id, identity.actor_id, identity.ruleset_version, identity.storage_slot_key]}
 
 static func required_revisions(source_id: String, target_id: String, revisions) -> Dictionary:
 	if not revisions is Dictionary:
