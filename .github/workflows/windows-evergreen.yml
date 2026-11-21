@@ -50,12 +50,22 @@ jobs:
       - name: Install local launcher without admin, network or scheduled tasks
         shell: pwsh
         run: |
-          $install = Join-Path $env:RUNNER_TEMP 'MyShelterInstall'
+          # Use spaces in path; merely checking file existence is not enough.
+          $install = Join-Path $env:RUNNER_TEMP 'My Shelter Install'
           & ./tools/delivery/Install-MyShelter.ps1 -InstallDir $install -NoScheduledTask -NoDesktopShortcut
           if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Bootstrap installer failed' }
           foreach ($name in @('windows_updater.py','MyShelter.cmd','UpdateMyShelter.cmd','RollbackMyShelter.cmd')) {
             if (-not (Test-Path (Join-Path $install $name))) { throw "Missing local installer file: $name" }
           }
+          foreach ($name in @('MyShelter.cmd', 'UpdateMyShelter.cmd')) {
+            $cmd = Join-Path $install $name
+            $cmdArgs = '""' + $cmd + '" --help"'
+            $output = (& $env:ComSpec /d /c $cmdArgs 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0 -or $output -notmatch 'usage:') {
+              throw "CMD wrapper invocation failed: $name : $output"
+            }
+          }
+          Write-Output 'WINDOWS EVERGREEN CMD ROOT QUOTING: PASS'
           Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
 
   build-windows:
