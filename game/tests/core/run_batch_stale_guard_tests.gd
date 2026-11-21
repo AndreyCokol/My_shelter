@@ -63,11 +63,11 @@ func identity(snapshot: Dictionary) -> Dictionary:
 		"ruleset_version": snapshot.ruleset_version}
 
 func bind(action_id, req, stock, containers, catalog, reserves, divisibility, revisions_map, source_identity = null) -> Dictionary:
-	var trusted: Dictionary = synthetic_identity() if source_identity == null else source_identity
+	var trusted = synthetic_identity() if source_identity == null else source_identity
 	return Guard.bind(action_id, req, stock, containers, catalog, reserves, divisibility, revisions_map, trusted)
 
 func verify(quote, action_id, req, stock, containers, catalog, reserves, divisibility, revisions_map, source_identity = null) -> Dictionary:
-	var trusted: Dictionary = synthetic_identity() if source_identity == null else source_identity
+	var trusted = synthetic_identity() if source_identity == null else source_identity
 	return Guard.revalidate(quote, action_id, req, stock, containers, catalog, reserves, divisibility, revisions_map, trusted)
 
 func check_pure() -> void:
