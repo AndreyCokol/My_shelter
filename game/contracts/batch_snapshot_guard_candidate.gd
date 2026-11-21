@@ -28,6 +28,15 @@ static func canonical_catalog(catalog: Dictionary, positive_mass: bool) -> Dicti
 		result.append([key, value])
 	return {"ok": true, "entries": result}
 
+# Identity is trusted CoreSession context, NEVER a player-supplied command field.
+static func canonical_identity(identity) -> Dictionary:
+	if not identity is Dictionary or identity.size() != 3:
+		return fail("INVALID_IDENTITY")
+	for key in ["save_id", "actor_id", "ruleset_version"]:
+		if not identity.get(key) is String or identity[key].is_empty():
+			return fail("INVALID_IDENTITY")
+	return {"ok": true, "entries": [identity.save_id, identity.actor_id, identity.ruleset_version]}
+
 static func required_revisions(source_id: String, target_id: String, revisions) -> Dictionary:
 	if not revisions is Dictionary:
 		return fail("INVALID_REVISION")
@@ -41,11 +50,14 @@ static func required_revisions(source_id: String, target_id: String, revisions) 
 	return {"ok": true, "entries": canonical}
 
 static func bind(action_id, request, snapshot_items, capacities, mass_catalog,
-		reservation_rows, trusted_divisibility, resource_revisions) -> Dictionary:
+		reservation_rows, trusted_divisibility, resource_revisions, trusted_identity) -> Dictionary:
 	var plan: Dictionary = Split.prepare(action_id, request, snapshot_items, capacities,
 		mass_catalog, reservation_rows, trusted_divisibility)
 	if not plan.ok:
 		return fail(plan.code)
+	var identity: Dictionary = canonical_identity(trusted_identity)
+	if not identity.ok:
+		return identity
 	var revisions: Dictionary = required_revisions(plan.payload.from_id,
 		plan.payload.to_id, resource_revisions)
 	if not revisions.ok:
@@ -66,7 +78,7 @@ static func bind(action_id, request, snapshot_items, capacities, mass_catalog,
 		return JSON.stringify([a.instance_id, a.resident_id, a.quantity]) \
 			< JSON.stringify([b.instance_id, b.resident_id, b.quantity]))
 	var fingerprint: String = JSON.stringify([
-		action_id, plan.payload, canonical_items, canonical_caps,
+		identity.entries, action_id, plan.payload, canonical_items, canonical_caps,
 		mass.entries, policy.entries, canonical_rows, revisions.entries
 	], "", true, true).sha256_text()
 	return {"ok": true, "code": "OK", "binding_fingerprint": fingerprint,
@@ -79,13 +91,13 @@ static func bind(action_id, request, snapshot_items, capacities, mass_catalog,
 # This is snapshot equality, NOT a lock, transaction or secure signature.
 static func revalidate(binding, action_id, request, current_items, current_caps,
 		current_mass_catalog, current_reservation_rows, current_divisibility,
-		current_revisions) -> Dictionary:
+		current_revisions, current_identity) -> Dictionary:
 	if not binding is Dictionary or not binding.get("binding_fingerprint") is String \
 			or binding.binding_fingerprint.length() != 64:
 		return fail("INVALID_BINDING")
 	var now: Dictionary = bind(action_id, request, current_items, current_caps,
 		current_mass_catalog, current_reservation_rows, current_divisibility,
-		current_revisions)
+		current_revisions, current_identity)
 	if not now.ok or now.binding_fingerprint != binding.binding_fingerprint:
 		return fail("STALE_SNAPSHOT")
 	return now
