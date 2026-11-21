@@ -43,6 +43,8 @@ static func eligibility(npc, personal_reputation_high: bool, faction_reputation_
 		return response(false, "NOT_RECRUITABLE")
 	if npc.status == "joined":
 		return response(false, "ALREADY_RECRUITED")
+	if npc.status == "AWAITING_SUPPLIES":
+		return response(false, "ALREADY_CONSENTED")
 	if npc.status == "declined" and not (personal_reputation_high or faction_reputation_high):
 		return response(false, "REPUTATION_REQUIRED")
 	# High reputation only grants the ability to propose again;
@@ -69,6 +71,10 @@ static func plan_consent(npc, accept: bool) -> Dictionary:
 		return response(false, "REQUIRES_CONTACT")
 	if npc.status == "joined":
 		return response(false, "ALREADY_RECRUITED")
+	if npc.status == "AWAITING_SUPPLIES" and accept:
+		# Already consenting is not another NPC decision/receipt.
+		# Withdrawal remains legal before settlement (accept=false).
+		return response(false, "ALREADY_CONSENTED")
 	var next: Dictionary = npc.duplicate(true)
 	next.consent = accept
 	next.status = "AWAITING_SUPPLIES" if accept else "declined"
