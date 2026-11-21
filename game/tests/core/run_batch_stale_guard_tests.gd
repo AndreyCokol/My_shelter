@@ -56,11 +56,12 @@ func batch() -> Dictionary:
 
 # Test-only convenience: production Guard requires explicit CoreSession identity.
 func synthetic_identity() -> Dictionary:
-	return {"save_id": "synthetic-slot-a", "actor_id": "player", "ruleset_version": "test-v1"}
+	return {"save_id": "slot-01", "actor_id": "player", "ruleset_version": "test-v1",
+		"storage_slot_key": "user://synthetic-slot-a.json"}
 
-func identity(snapshot: Dictionary) -> Dictionary:
+func identity(snapshot: Dictionary, slot_path: String) -> Dictionary:
 	return {"save_id": snapshot.save_id, "actor_id": "player",
-		"ruleset_version": snapshot.ruleset_version}
+		"ruleset_version": snapshot.ruleset_version, "storage_slot_key": slot_path}
 
 func bind(action_id, req, stock, containers, catalog, reserves, divisibility, revisions_map, source_identity = null) -> Dictionary:
 	var trusted = synthetic_identity() if source_identity == null else source_identity
@@ -162,6 +163,12 @@ func check_pure() -> void:
 	other_save.save_id = "different-save-slot"
 	check(verify(quote, "action-1", req, stock, containers, catalog, reservations, divisibility, version, other_save).code ==
 		"STALE_SNAPSHOT", "same item IDs from another save slot cannot reuse old quote")
+	var other_storage: Dictionary = synthetic_identity()
+	other_storage.storage_slot_key = "user://synthetic-slot-b.json"
+	check(verify(quote, "action-1", req, stock, containers, catalog, reservations, divisibility, version, other_storage).code ==
+		"STALE_SNAPSHOT", "two files with identical save_id slot-01 cannot reuse quotes")
+	check(bind("action-1", req, stock, containers, catalog, reservations, divisibility, version, other_storage).binding_fingerprint !=
+		quote.binding_fingerprint, "trusted storage scope differentiates identical content and save_id")
 	var other_actor: Dictionary = synthetic_identity()
 	other_actor.actor_id = "npc-or-companion"
 	check(verify(quote, "action-1", req, stock, containers, catalog, reservations, divisibility, version, other_actor).code ==
@@ -178,6 +185,15 @@ func check_pure() -> void:
 	malformed_identity.save_id = ""
 	check(bind("action-1", req, stock, containers, catalog, reservations, divisibility, version, malformed_identity).code ==
 		"INVALID_IDENTITY", "blank trusted save ID fails closed")
+	malformed_identity = synthetic_identity()
+	malformed_identity.erase("storage_slot_key")
+	check(bind("action-1", req, stock, containers, catalog, reservations, divisibility, version, malformed_identity).code ==
+		"INVALID_IDENTITY", "missing trusted storage scope fails closed")
+	malformed_identity = synthetic_identity()
+	malformed_identity.storage_slot_key = ""
+	check(bind("action-1", req, stock, containers, catalog, reservations, divisibility, version, malformed_identity).code ==
+		"INVALID_IDENTITY", "blank trusted storage scope fails closed")
+
 	check(bind("action-1", req, stock, containers, catalog, reservations, divisibility, version, []).code ==
 		"INVALID_IDENTITY", "identity must be explicitly typed trusted metadata")
 
@@ -290,6 +306,10 @@ func check_real() -> void:
 	check(act(session, store, "inventory.claim_parcel", {"parcel_id":"starter"}).ok,
 		"starter parcel grants a real seed stack")
 	var snapshot: Dictionary = session.get_snapshot()
+	var separate = Campaign.new(rules).coordinator
+	check(separate.get_snapshot().save_id == snapshot.save_id
+		and snapshot.save_id == "slot-01",
+		"real separate campaigns currently share hardcoded slot-01 save_id")
 	var seed: Dictionary = {}
 	for item in snapshot.inventory.items:
 		if item.type_id == "seed.basic" and item.container_id == "player":
@@ -307,7 +327,7 @@ func check_real() -> void:
 	var p: Dictionary = synthetic_policy(rules)
 	var binding: Dictionary = Guard.bind("a1-real-batch-quote", batch_request,
 		snapshot.inventory.items, c, m, snapshot.inventory.reservations, p,
-		snapshot.resource_revisions, identity(snapshot))
+		snapshot.resource_revisions, identity(snapshot, path))
 	check(binding.ok, "actual inventory snapshot can produce isolated synthetic-mass quote")
 	if not binding.ok:
 		cleanup(path)
@@ -316,7 +336,7 @@ func check_real() -> void:
 	var after_clock: Dictionary = session.get_snapshot()
 	check(Guard.revalidate(binding, "a1-real-batch-quote", batch_request,
 		after_clock.inventory.items, c, m, after_clock.inventory.reservations, p,
-		after_clock.resource_revisions, identity(after_clock)).ok,
+		after_clock.resource_revisions, identity(after_clock, path)).ok,
 		"unrelated fractional time does not invalidate unchanged inventory quote")
 	check(act(session, store, "inventory.transfer", {"instance_id": seed.instance_id,
 		"from_id": "player", "to_id": "storage", "quantity": 1}).ok,
@@ -324,14 +344,14 @@ func check_real() -> void:
 	var after_real: Dictionary = session.get_snapshot()
 	check(Guard.revalidate(binding, "a1-real-batch-quote", batch_request,
 		after_real.inventory.items, c, m, after_real.inventory.reservations, p,
-		after_real.resource_revisions, identity(after_real)).code == "STALE_SNAPSHOT",
+		after_real.resource_revisions, identity(after_real, path)).code == "STALE_SNAPSHOT",
 		"actual durable inventory mutation invalidates old preview before batch")
 	var reopened = Campaign.new(rules).coordinator
 	check(reopened.load_checkpoint(store).ok, "actual changed inventory reloads from disk")
 	var recovered: Dictionary = reopened.get_snapshot()
 	check(Guard.revalidate(binding, "a1-real-batch-quote", batch_request,
 		recovered.inventory.items, c, m, recovered.inventory.reservations, p,
-		recovered.resource_revisions, identity(recovered)).code == "STALE_SNAPSHOT",
+		recovered.resource_revisions, identity(recovered, path)).code == "STALE_SNAPSHOT",
 		"stale quote stays invalid after independent campaign reload")
 	check(snapshot.inventory.items != recovered.inventory.items
 		and not FileAccess.get_file_as_bytes(path).is_empty(),
@@ -407,7 +427,7 @@ func check_real_reservation() -> void:
 	var p: Dictionary = synthetic_policy(rules)
 	var quote: Dictionary = Guard.bind("npc-stale-quote", request_batch,
 		before.inventory.items, c, m, before.inventory.reservations, p,
-		before.resource_revisions, identity(before))
+		before.resource_revisions, identity(before, path))
 	check(quote.ok, "pure quote accepts real unreserved potato stack")
 	if not quote.ok:
 		cleanup(path)
@@ -415,7 +435,7 @@ func check_real_reservation() -> void:
 	var old_primary: PackedByteArray = FileAccess.get_file_as_bytes(path)
 	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
 		before.inventory.items, c, m, before.inventory.reservations, p,
-		before.resource_revisions, identity(before)).ok
+		before.resource_revisions, identity(before, path)).ok
 		and FileAccess.get_file_as_bytes(path) == old_primary,
 		"binding/revalidation are pure before NPC food reservation")
 	var recruit: Dictionary = act(session, store, "game.recruit", {"resident_id":"resident_1"})
@@ -436,7 +456,7 @@ func check_real_reservation() -> void:
 	var persisted: PackedByteArray = FileAccess.get_file_as_bytes(path)
 	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
 		after.inventory.items, c, m, after.inventory.reservations, p,
-		after.resource_revisions, identity(after)).code == "STALE_SNAPSHOT",
+		after.resource_revisions, identity(after, path)).code == "STALE_SNAPSHOT",
 		"real NPC reservation invalidates quote despite unchanged food quantities")
 	check(FileAccess.get_file_as_bytes(path) == persisted,
 		"revalidation rejection never writes or modifies committed food receipt")
@@ -445,7 +465,7 @@ func check_real_reservation() -> void:
 	var fresh: Dictionary = reopened.get_snapshot()
 	check(Guard.revalidate(quote, "npc-stale-quote", request_batch,
 		fresh.inventory.items, c, m, fresh.inventory.reservations, p,
-		fresh.resource_revisions, identity(fresh)).code == "STALE_SNAPSHOT",
+		fresh.resource_revisions, identity(fresh, path)).code == "STALE_SNAPSHOT",
 		"post-reload NPC reservation still invalidates the old food quote")
 	cleanup(path)
 
