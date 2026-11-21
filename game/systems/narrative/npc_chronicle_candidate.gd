@@ -2,11 +2,12 @@ extends RefCounted
 
 # A4-04 PURE CANDIDATE. Identity/chronicle are future DTO helpers only.
 # No RNG, gameplay actions, Save migration, trait multipliers or UI effects.
+# Canonical stable IDs/event keys reject leading/trailing whitespace aliasing.
 const MAX_EXACT_JSON_INT: int = 9007199254740991
 const FACT_KINDS := ["met", "helped", "conflict", "friendship", "trained", "injury", "expedition_return"]
 
 static func _key(value) -> bool:
-	return value is String and not value.strip_edges().is_empty()
+	return value is String and not value.strip_edges().is_empty() and value == value.strip_edges()
 
 static func _minute(value) -> bool:
 	return value is int and value >= 0 and value <= MAX_EXACT_JSON_INT
