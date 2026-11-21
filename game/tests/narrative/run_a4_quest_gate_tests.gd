@@ -82,5 +82,72 @@ func run() -> void:
 		"nonboolean story flag rejected")
 	check(not Quest.completion_ready("Q08", {}).ok, "unknown late-game quest rejected")
 	check(not Quest.completion_ready("Q01", {}).ok, "missing historic fact rejected")
+
+	# A4 Q07 legacy bridge must not accept a free-form UI-provided joined IDs
+	# list as evidence. Input records must come from A1-validated actual state.
+	var legacy_a: Dictionary = {"id":"resident_1", "status":"unknown",
+		"consent":false, "food_receipt_id":""}
+	var legacy_b: Dictionary = {"id":"resident_2", "status":"contacted",
+		"consent":false, "food_receipt_id":""}
+	var prior_a: Dictionary = legacy_a.duplicate(true)
+	var prior_b: Dictionary = legacy_b.duplicate(true)
+	var empty_ready: Dictionary = Quest.completion_ready_legacy_q07([legacy_a, legacy_b], 2)
+	check(empty_ready.ok and not empty_ready.ready
+		and empty_ready.joined_resident_ids.is_empty(),
+		"Q07 real legacy roster without joined residents is not ready")
+	var joined_a: Dictionary = legacy_a.duplicate(true)
+	joined_a.status = "joined"
+	joined_a.consent = true
+	joined_a.food_receipt_id = "historical-receipt-a"
+	var partial: Dictionary = Quest.completion_ready_legacy_q07([joined_a, legacy_b], 2)
+	check(partial.ok and not partial.ready
+		and partial.joined_resident_ids == ["resident_1"],
+		"Q07 legacy roster sees exactly one joined resident")
+	var joined_b: Dictionary = legacy_b.duplicate(true)
+	joined_b.status = "joined"
+	joined_b.consent = true
+	joined_b.food_receipt_id = "historical-receipt-b"
+	var complete: Dictionary = Quest.completion_ready_legacy_q07([joined_b, joined_a], 2)
+	check(complete.ok and complete.ready
+		and complete.joined_resident_ids == ["resident_1", "resident_2"],
+		"Q07 legacy result uses sorted stable ids regardless of roster order")
+	check(Quest.completion_ready_legacy_q07([joined_a, joined_b], 1).ready,
+		"Q07 explicit policy count need not be invented by the helper")
+	check(not Quest.completion_ready_legacy_q07([joined_a, joined_b], 3).ready,
+		"Q07 explicit greater count is not silently reduced to two")
+	check(not Quest.completion_ready_legacy_q07([joined_a, joined_b], 0).ok,
+		"Q07 required count must be explicitly positive")
+	check(not Quest.completion_ready_legacy_q07([joined_a, joined_b], "2").ok,
+		"Q07 required count cannot come from a UI string")
+	check(not Quest.completion_ready_legacy_q07({"joined_resident_ids":["resident_1", "resident_2"]}, 2).ok,
+		"Q07 free-form UI assertion cannot impersonate the authoritative roster")
+	check(not Quest.completion_ready_legacy_q07([joined_a], 1).ok,
+		"Q07 incomplete legacy roster fails closed")
+	check(not Quest.completion_ready_legacy_q07([joined_a, joined_b, joined_b], 2).ok,
+		"Q07 injected third record fails closed")
+	check(not Quest.completion_ready_legacy_q07([joined_a, joined_a], 2).ok,
+		"Q07 duplicated stable resident id fails closed")
+	var foreign: Dictionary = joined_b.duplicate(true)
+	foreign.id = "npc.generated.example"
+	check(not Quest.completion_ready_legacy_q07([joined_a, foreign], 2).ok,
+		"Q07 foreign generated id cannot masquerade as a legacy resident")
+	foreign = joined_b.duplicate(true)
+	foreign.id = "resident_2 "
+	check(not Quest.completion_ready_legacy_q07([joined_a, foreign], 2).ok,
+		"Q07 padded ID cannot add another joined resident")
+	foreign = joined_b.duplicate(true)
+	foreign.food_receipt_id = ""
+	check(not Quest.completion_ready_legacy_q07([joined_a, foreign], 2).ok,
+		"Q07 legacy joined actor must carry food receipt ID shape")
+	foreign = joined_b.duplicate(true)
+	foreign.consent = false
+	check(not Quest.completion_ready_legacy_q07([joined_a, foreign], 2).ok,
+		"Q07 actor cannot be joined without informed consent")
+	check(legacy_a == prior_a and legacy_b == prior_b,
+		"Q07 roster derivation never changes its source")
+	check(not Quest.completion_ready_legacy_q07(null, 2).ok,
+		"Q07 null legacy roster cannot be treated as zero residents")
+	check(not Quest.completion_ready_legacy_q07([], 2).ok,
+		"Q07 empty list cannot be treated as no validated NPCs")
 	print("A4 QUEST GATE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
