@@ -19,17 +19,17 @@ Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDir 'windows_upda
 
 @'
 @echo off
-py -3 "%~dp0windows_updater.py" --root "%~dp0" launch %*
+py -3 "%~dp0windows_updater.py" --root "%~dp0." launch %*
 '@ | Set-Content -LiteralPath (Join-Path $InstallDir 'MyShelter.cmd') -Encoding Ascii
 
 @'
 @echo off
-py -3 "%~dp0windows_updater.py" --root "%~dp0" update %*
+py -3 "%~dp0windows_updater.py" --root "%~dp0." update %*
 '@ | Set-Content -LiteralPath (Join-Path $InstallDir 'UpdateMyShelter.cmd') -Encoding Ascii
 
 @'
 @echo off
-py -3 "%~dp0windows_updater.py" --root "%~dp0" rollback
+py -3 "%~dp0windows_updater.py" --root "%~dp0." rollback
 '@ | Set-Content -LiteralPath (Join-Path $InstallDir 'RollbackMyShelter.cmd') -Encoding Ascii
 
 if (-not $NoDesktopShortcut) {
@@ -58,4 +58,4 @@ if (-not $NoScheduledTask) {
 Write-Host "MyShelter installed at: $InstallDir"
 Write-Host 'Start from desktop shortcut or MyShelter.cmd.'
 Write-Host 'First run requires an approved GitHub preview release; no release is published by this installer.'
-Write-Host 'RollbackMyShelter.cmd restores prior build and pauses updates; UpdateMyShelter.cmd update --force resumes.'
+Write-Host 'RollbackMyShelter.cmd restores prior build and pauses updates; UpdateMyShelter.cmd --force resumes.'
