@@ -7,6 +7,8 @@ on:
       - 'game/systems/world/safe_reachable_position.gd'
       - 'game/tests/world/run_safe_return_tests.gd'
       - 'game/tests/world/run_safe_reachable_tests.gd'
+      - 'game/systems/world/live_safe_return_guard.gd'
+      - 'game/tests/world/run_live_safe_return_physics_tests.gd'
       - 'tools/run_a2_safe_return_qa.py'
       - '.github/workflows/a2-safe-return-qa.yml'
   push:
