@@ -105,9 +105,12 @@ func _run() -> void:
 	root.add_child(arena)
 	var hero = Player.new()
 	hero.app = FakeApp.new()
-	hero.process_mode = Node.PROCESS_MODE_DISABLED
+	# Do NOT use PROCESS_MODE_DISABLED for a CharacterBody2D: Godot removes
+	# its RID from PhysicsServer2D space, making move_and_slide invalid.
+	# Suppress only the automatic script callback, keeping live collisions.
 	hero.position = Vector2(80, 160)
 	arena.add_child(hero)
+	hero.set_physics_process(false)
 	await physics_frame
 	Input.action_press("move_right")
 	hero._physics_process(0.016)
