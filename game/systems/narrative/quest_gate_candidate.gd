@@ -1,6 +1,7 @@
 extends RefCounted
 
 # Narrative-only P0 candidate. Does not activate/deactivate game capabilities,
+# Q07 identity checks reject invalid/padded IDs to prevent false resident counts.
 # award items, mutate story flags, or own the durable quest receipts.
 const QUEST_IDS := ["Q01", "Q02", "Q03", "Q04", "Q05", "Q06", "Q07"]
 const OPTIONAL_IDS := ["Q03", "Q04", "Q05", "Q06", "Q07"]
@@ -45,7 +46,7 @@ static func completion_ready(quest_id: String, facts) -> Dictionary:
 			return {"ok": false, "code": "INVALID_ARGUMENT"}
 		var unique: Dictionary = {}
 		for id in ids:
-			if not id is String or id.is_empty() or unique.has(id):
+			if not id is String or id.strip_edges().is_empty() or id != id.strip_edges() or unique.has(id):
 				return {"ok": false, "code": "INVALID_ARGUMENT"}
 			unique[id] = true
 		return {"ok": true, "ready": unique.size() >= required}
