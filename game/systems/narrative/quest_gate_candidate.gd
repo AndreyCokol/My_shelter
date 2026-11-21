@@ -6,6 +6,7 @@ extends RefCounted
 const QUEST_IDS := ["Q01", "Q02", "Q03", "Q04", "Q05", "Q06", "Q07"]
 const OPTIONAL_IDS := ["Q03", "Q04", "Q05", "Q06", "Q07"]
 const SANDBOX_CAPABILITIES := ["shelter", "farm", "storage", "world_exploration"]
+const LegacyNPC = preload("res://game/systems/narrative/npc_legacy_transition_candidate.gd")
 
 static func is_known_quest(id: String) -> bool:
 	return QUEST_IDS.has(id)
@@ -54,3 +55,29 @@ static func completion_ready(quest_id: String, facts) -> Dictionary:
 	if not facts.get(field) is bool:
 		return {"ok": false, "code": "INVALID_ARGUMENT"}
 	return {"ok": true, "ready": facts[field]}
+
+# A4-only PURE bridge for the two legacy starter residents. It accepts the
+# A1-authoritative, ALREADY-VALIDATED campaign residents.records snapshot,
+# never a joined_resident_ids array supplied by a dialogue/UI.
+# This helper cannot authenticate Save, completed_actions or food receipts.
+# A1 must run CampaignModel.validate and use current revisions at commit.
+static func completion_ready_legacy_q07(records, required_joined_count) -> Dictionary:
+	if not records is Array or records.size() != LegacyNPC.LEGACY_IDS.size() \
+			or not required_joined_count is int or required_joined_count <= 0:
+		return {"ok": false, "code": "INVALID_ARGUMENT"}
+	var seen: Dictionary = {}
+	var joined_ids: Array = []
+	for record in records:
+		if not LegacyNPC.valid_legacy(record) or seen.has(record.id):
+			return {"ok": false, "code": "INVALID_ARGUMENT"}
+		seen[record.id] = true
+		if record.status == "joined":
+			joined_ids.append(record.id)
+	# Exact legacy roster, independent of array order. A1 validates the
+	# authenticity of food_receipt_id and completed actions before this call.
+	for id in LegacyNPC.LEGACY_IDS:
+		if not seen.has(id):
+			return {"ok": false, "code": "INVALID_ARGUMENT"}
+	joined_ids.sort()
+	return {"ok": true, "ready": joined_ids.size() >= required_joined_count,
+		"joined_resident_ids": joined_ids}
