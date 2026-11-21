@@ -11,6 +11,7 @@ ENGINE = os.environ.get("GODOT", "godot")
 SUITES = [
     ("game/tests/world/run_safe_return_tests.gd", "A2 SAFE RETURN TESTS"),
     ("game/tests/world/run_safe_reachable_tests.gd", "A2 SAFE REACHABLE TESTS"),
+    ("game/tests/world/run_live_safe_return_physics_tests.gd", "A2 LIVE SAFE RETURN PHYSICS TESTS"),
 ]
 ERRORS = ("SCRIPT ERROR:", "ERROR:", "WARNING: ObjectDB instances leaked")
 
