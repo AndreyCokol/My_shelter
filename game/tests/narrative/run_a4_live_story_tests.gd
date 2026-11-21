@@ -240,6 +240,77 @@ func consume_mode_replay(base_rules: Dictionary, path: String) -> void:
 		"new action cannot recharge consumed ration after restart")
 	cleanup(path)
 
+# A4-03 command-level bridge: no synthetic food or pre-seeded System state.
+# Source seeds are collected using the real outside command; the NPCs use
+# the same A1-authoritative recruitment and historical food receipts as schema3.
+# This does NOT prove physical pickup or NPC behaviour/GUI on the 3D map.
+func schema4_finish_recruitment(rules: Dictionary, session, store, seed_value: int) -> void:
+	var tag: String = "schema4 seed %d: " % seed_value
+	check(act(session, store, "scene.transition",
+		{"destination_scene_id": "outside", "entry_point_id": "default"}).ok,
+		tag + "existing outside can provide real farm seed")
+	check(act(session, store, "game.resource_collect").ok,
+		tag + "real outside command gives two farm seeds with no starter parcel")
+	check(act(session, store, "scene.transition",
+		{"destination_scene_id": "shelter", "entry_point_id": "default"}).ok,
+		tag + "collected seeds travel back to always-accessible shelter")
+	for plot_id in ["plot_1", "plot_2"]:
+		check(act(session, store, "game.plant", {"plot_id": plot_id}).ok,
+			tag + plot_id + " plants with actual collected seed")
+		check(act(session, store, "game.water", {"plot_id": plot_id}).ok,
+			tag + plot_id + " is watered in shelter")
+	var ready_minute: int = int(session.get_snapshot().game_time_minutes) + int(rules.crop.grow_minutes)
+	check(act(session, store, "clock.rest", {"target_minute": ready_minute}).ok,
+		tag + "existing A1 clock reaches crop readiness")
+	for plot_id in ["plot_1", "plot_2"]:
+		check(act(session, store, "game.harvest", {"plot_id": plot_id}).ok,
+			tag + plot_id + " produces real potato inventory")
+	check(act(session, store, "scene.transition",
+		{"destination_scene_id": "outside", "entry_point_id": "default"}).ok,
+		tag + "NPC return route goes through real outside")
+	check(act(session, store, "scene.transition",
+		{"destination_scene_id": "louvre", "entry_point_id": "default"}).ok,
+		tag + "real generated route reaches waiting survivor")
+	var first_join: Dictionary = request(session, "game.recruit", {"resident_id": "resident_1"})
+	check(session.execute(first_join, store).ok
+		and resident(session.get_snapshot(), "resident_1").status == "joined",
+		tag + "waiting and voluntary consenting resident joins after actual harvest")
+	var joined_once: Dictionary = session.get_snapshot()
+	check(session.execute(first_join, store).code == "ALREADY_APPLIED"
+		and session.get_snapshot() == joined_once,
+		tag + "same recruit action cannot duplicate resident or food")
+	check(act(session, store, "game.contact", {"resident_id": "resident_2"}).ok,
+		tag + "second survivor contact independent")
+	check(act(session, store, "game.consent",
+		{"resident_id": "resident_2", "accept": true}).ok,
+		tag + "second survivor explicitly consents")
+	check(act(session, store, "game.recruit", {"resident_id": "resident_2"}).ok
+		and resident(session.get_snapshot(), "resident_2").status == "joined",
+		tag + "second survivor joins using remaining harvested food")
+	var paid_by_resident: Dictionary = {}
+	for row in session.get_snapshot().inventory.reservations:
+		paid_by_resident[row.resident_id] = int(paid_by_resident.get(row.resident_id, 0)) + int(row.quantity)
+	check(paid_by_resident.size() == 2
+		and paid_by_resident.get("resident_1", 0) == int(rules.food.units_per_resident)
+		and paid_by_resident.get("resident_2", 0) == int(rules.food.units_per_resident)
+		and quest(session.get_snapshot(), "Q07") == "inactive",
+		tag + "food reservations sum per joined NPC while Q07 remains optional")
+	check(act(session, store, "game.quest_track", {"quest_id": "Q07"}).ok
+		and quest(session.get_snapshot(), "Q07") == "completed",
+		tag + "tracking Q07 AFTER recruiting both observes real current state")
+	var final_state: Dictionary = session.get_snapshot()
+	var reopened = Campaign.new(rules)
+	check(reopened.coordinator.load_checkpoint(store).ok
+		and reopened.coordinator.get_snapshot() == final_state,
+		tag + "joined NPCs, Q07 and inventory reservations survive disk reload")
+	check(reopened.coordinator.execute(first_join, store).code == "ALREADY_APPLIED"
+		and reopened.coordinator.get_snapshot() == final_state,
+		tag + "historical recruit receipt remains once-only after restart")
+	check(act(reopened.coordinator, store, "game.recruit",
+		{"resident_id": "resident_1"}).code == "INVALID_STATE"
+		and reopened.coordinator.get_snapshot() == final_state,
+		tag + "new ID cannot recruit the same joined NPC twice")
+
 func schema4_contact_and_reload(base_rules: Dictionary, path: String, seed_value: int) -> void:
 	# Cross-check the currently deployed world-seeded schema4, not merely
 	# the older four-scene schema3 test world.
@@ -280,6 +351,7 @@ func schema4_contact_and_reload(base_rules: Dictionary, path: String, seed_value
 		and reloaded.coordinator.get_snapshot().scene.current_scene_id == "shelter"
 		and resident(reloaded.coordinator.get_snapshot(), "resident_1").status == "AWAITING_SUPPLIES",
 		"schema4 shelter save roundtrip preserves NPC consent history")
+	schema4_finish_recruitment(rules, reloaded.coordinator, store, seed_value)
 	cleanup(path)
 
 func run() -> void:
