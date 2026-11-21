@@ -6,7 +6,7 @@ param(
     [switch]$NoDesktopShortcut
 )
 $ErrorActionPreference = 'Stop'
-$commit = 'f517117789b22ba57500e5b061c272498b5e4c6c'
+$commit = '8bed91ece24336bc75fa811b607c7a8d071f91e0'
 $base = "https://raw.githubusercontent.com/AndreyCokol/My_shelter/$commit/tools/delivery"
 $temp = Join-Path $env:TEMP ('MyShelter-bootstrap-' + [Guid]::NewGuid().ToString('N'))
 New-Item -Path $temp -ItemType Directory -Force | Out-Null
