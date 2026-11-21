@@ -102,6 +102,20 @@ func run() -> void:
 	bad.free_resources = 1000
 	check(not History.add_fact(same_time.record, bad).ok,
 		"untrusted extra payload cannot grant resources through the story ledger")
+	check(not History.generated_id(5, 54, "paris:region:3:-2 ", "spawn:traveller:01").ok,
+		"padded region key cannot silently create another stable NPC")
+	check(not History.generated_id(5, 54, "paris:region:3:-2", " spawn:traveller:01").ok,
+		"padded spawn key is rejected before identity hashing")
+	check(not History.scripted_id("resident_alice ").ok,
+		"padded scripted key cannot create duplicate scripted actor")
+	check(not History.relationship_id(" " + id1.npc_id, named.npc_id).ok,
+		"padded participant cannot create another social relationship")
+	check(not History.fresh_chronicle(id1.npc_id + " ").ok,
+		"personal history rejects ambiguous padded owner key")
+	check(not History.add_fact(same_time.record, fact(" evt", 130, "met", named.npc_id)).ok,
+		"padded event ID cannot bypass historical replay identity")
+	check(not History.add_fact(same_time.record, fact("evt", 130, "met", named.npc_id + " ")).ok,
+		"padded subject ID cannot create an alias in the personal ledger")
 	check(same_time.record.facts.size() == 4 and append1.record.facts.size() == 1,
 		"adding later events never mutates previous snapshots")
 	print("A4 NPC MEMORY TESTS: %d checks, %d failures" % [checks, failures])
