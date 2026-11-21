@@ -84,6 +84,18 @@ func _run() -> void:
 	check(Guard.verify_live(space, open).ok,
 		"removal of the physical wall restores the previously open route")
 
+	# A moving enemy can block only the MIDDLE of an otherwise clear
+	# return path. Both endpoint tests remain empty; only a real
+	# PhysicsServer2D swept-circle query can veto this trajectory.
+	var roaming_enemy := actor(arena, Vector2(140, 100), 12.0)
+	await physics_frame
+	check(Guard.verify_live(space, open).code == "PHYSICS_BLOCKED",
+		"live enemy across middle of route vetoes circle sweep despite free endpoints")
+	roaming_enemy.queue_free()
+	await physics_frame
+	check(Guard.verify_live(space, open).ok,
+		"after moving enemy away, middle segment can be retraversed")
+
 	# Native dynamic CharacterBody2D at destination, missing from Rect2
 	# snapshot: the old static planner would erroneously approve the spawn.
 	var enemy := actor(arena, GOAL, 13.0)
