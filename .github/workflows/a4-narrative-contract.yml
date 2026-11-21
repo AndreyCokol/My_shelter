@@ -7,6 +7,7 @@ on:
     paths:
       - 'game/systems/narrative/**'
       - 'game/tests/narrative/**'
+      - 'game/data/narrative/**'
       - '.github/workflows/a4-narrative-contract.yml'
 permissions:
   contents: read
@@ -37,6 +38,9 @@ jobs:
           "$GODOT" --headless --path . --script game/tests/narrative/run_a4_npc_policy_tests.gd > a4-npc.log 2>&1
           cat a4-npc.log
           grep -Eq 'A4 NPC POLICY TESTS: [1-9][0-9]* checks, 0 failures' a4-npc.log
+          "$GODOT" --headless --path . --script game/tests/narrative/run_a4_legacy_transition_tests.gd > a4-legacy.log 2>&1
+          cat a4-legacy.log
+          grep -Eq 'A4 LEGACY TRANSITION TESTS: [1-9][0-9]* checks, 0 failures' a4-legacy.log
           "$GODOT" --headless --path . --script game/tests/narrative/run_a4_quest_gate_tests.gd > a4-quest.log 2>&1
           cat a4-quest.log
           grep -Eq 'A4 QUEST GATE TESTS: [1-9][0-9]* checks, 0 failures' a4-quest.log
@@ -55,7 +59,7 @@ jobs:
           fi
           cat a4-memory.log
           grep -Eq 'A4 NPC MEMORY TESTS: [1-9][0-9]* checks, 0 failures' a4-memory.log
-          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-quest.log a4-dialogue.log a4-live.log a4-memory.log; then exit 1; fi
+          if grep -Eq 'SCRIPT ERROR:|ERROR:|WARNING: ObjectDB instances leaked' a4-npc.log a4-legacy.log a4-quest.log a4-dialogue.log a4-live.log a4-memory.log; then exit 1; fi
   windows-a4:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -77,6 +81,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Godot import failed' }
           $scripts = @(
             @{file='game/tests/narrative/run_a4_npc_policy_tests.gd'; marker='A4 NPC POLICY'},
+            @{file='game/tests/narrative/run_a4_legacy_transition_tests.gd'; marker='A4 LEGACY TRANSITION'},
             @{file='game/tests/narrative/run_a4_quest_gate_tests.gd'; marker='A4 QUEST GATE'},
             @{file='game/tests/narrative/run_a4_dialogue_catalog_tests.gd'; marker='A4 DIALOGUE CATALOG'},
             @{file='game/tests/narrative/run_a4_live_story_tests.gd'; marker='A4 LIVE STORY'},
