@@ -8,8 +8,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 GODOT = os.environ.get("GODOT", "godot")
-SUITE = "game/tests/world/run_region_seam_tests.gd"
-MARK = re.compile(r"A2 REGION SEAM TESTS: ([1-9][0-9]*) checks, 0 failures")
+SUITES = [
+    ("game/tests/world/run_region_seam_tests.gd", "A2 REGION SEAM TESTS"),
+    ("game/tests/world/run_region_crossing_tests.gd", "A2 REGION CROSSING TESTS"),
+]
 
 def run(args, timeout=100):
     cmd = [GODOT, *args]
@@ -30,11 +32,14 @@ def main():
         if not version.startswith("4.7.2.stable."):
             raise RuntimeError(f"Godot 4.7.2 stable required, got {version!r}")
         run(["--headless", "--path", ".", "--editor", "--import"], 120)
-        output = run(["--headless", "--path", ".", "--script", SUITE], 120)
-        m = MARK.search(output)
-        if not m:
-            raise RuntimeError("No evidence the region-seam suite actually finished")
-        print(f"A2 REGION SEAMS QA: PASS ({m.group(1)} checks, Godot {version})")
+        total = 0
+        for script, marker in SUITES:
+            output = run(["--headless", "--path", ".", "--script", script], 120)
+            match = re.search(re.escape(marker) + r": ([1-9][0-9]*) checks, 0 failures", output)
+            if not match:
+                raise RuntimeError(f"Missing direct Godot completion marker for {script}")
+            total += int(match.group(1))
+        print(f"A2 REGION SEAMS QA: PASS ({total} checks, Godot {version})")
         return 0
     except RuntimeError as e:
         print(f"A2 REGION SEAMS QA: FAIL: {e}", file=sys.stderr, flush=True)
