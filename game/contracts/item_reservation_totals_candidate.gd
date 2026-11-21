@@ -19,6 +19,7 @@ static func aggregate(items, reservation_rows) -> Dictionary:
 			return {"ok": false, "code": "INVALID_ITEM"}
 		capacities[item.instance_id] = int(item.quantity)
 	var sums: Dictionary = {}
+	var seen_resident_instance: Dictionary = {}
 	for reservation in reservation_rows:
 		if not reservation is Dictionary or reservation.size() != 3 \
 				or not reservation.get("instance_id") is String \
@@ -28,6 +29,10 @@ static func aggregate(items, reservation_rows) -> Dictionary:
 				or not _positive_count(reservation.get("quantity")):
 			return {"ok": false, "code": "INVALID_RESERVATION"}
 		var id: String = reservation.instance_id
+		var resident_instance_key: String = JSON.stringify([reservation.resident_id, id])
+		if seen_resident_instance.has(resident_instance_key):
+			return {"ok": false, "code": "INVALID_RESERVATION"}
+		seen_resident_instance[resident_instance_key] = true
 		if not capacities.has(id):
 			return {"ok": false, "code": "INVALID_RESERVATION"}
 		var count: int = int(reservation.quantity)
