@@ -5,6 +5,15 @@ extends RefCounted
 # No runtime transaction, item split, durable save, event or domain weight is defined.
 const Batch = preload("res://game/contracts/inventory_batch_command_candidate.gd")
 const Mass = preload("res://game/contracts/mass_accounting_candidate.gd")
+const Reservations = preload("res://game/contracts/item_reservation_totals_candidate.gd")
+
+# Preferred future gameplay-facing adapter: source the reservation aggregate from
+# ALL real inventory reservation rows in the SAME authoritative snapshot.
+static func prepare_from_rows(request, snapshot_items, capacities, mass_catalog, reservation_rows) -> Dictionary:
+	var totals: Dictionary = Reservations.aggregate(snapshot_items, reservation_rows)
+	if not totals.ok:
+		return {"ok": false, "code": totals.code}
+	return prepare(request, snapshot_items, capacities, mass_catalog, totals.reserved_by_instance)
 
 static func fail(code: String) -> Dictionary:
 	return {"ok": false, "code": code}
