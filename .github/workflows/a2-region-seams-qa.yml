@@ -5,6 +5,8 @@ on:
     paths:
       - 'game/systems/world/region_seams.gd'
       - 'game/tests/world/run_region_seam_tests.gd'
+      - 'game/systems/world/region_crossing_geometry.gd'
+      - 'game/tests/world/run_region_crossing_tests.gd'
       - 'tools/run_a2_region_seams_qa.py'
       - '.github/workflows/a2-region-seams-qa.yml'
   push:
