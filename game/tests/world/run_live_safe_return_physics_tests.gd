@@ -163,21 +163,22 @@ func _run() -> void:
 
 	# Real production generator walls. No modification of historical v4/v5
 	# game saves or the generator itself: physical shapes are created here.
-	for seed_value in [0, 42]:
-		var world: Dictionary = Layout.build(seed_value, 5)
-		for scene_id in ["hospital", "hospital_0_3", "outside"]:
-			var node: Dictionary = world[scene_id]
-			var area := Node2D.new()
-			arena.add_child(area)
-			for rect in node.obstacles:
-				wall(area, rect)
-			await physics_frame
-			var result: Dictionary = Guard.plan_and_verify(
-				space, node.bounds, node.obstacles, [], [], node.spawn, node.spawn)
-			check(result.ok and not result.relocated and result.position == node.spawn,
-				"seed %d real %s world collider verifies its own physical spawn" % [seed_value, scene_id])
-			area.queue_free()
-			await physics_frame
+	for version in [4, 5]:
+		for seed_value in [0, 42]:
+			var world: Dictionary = Layout.build(seed_value, version)
+			for scene_id in ["hospital", "hospital_0_3", "outside"]:
+				var node: Dictionary = world[scene_id]
+				var area := Node2D.new()
+				arena.add_child(area)
+				for rect in node.obstacles:
+					wall(area, rect)
+				await physics_frame
+				var result: Dictionary = Guard.plan_and_verify(
+					space, node.bounds, node.obstacles, [], [], node.spawn, node.spawn)
+				check(result.ok and not result.relocated and result.position == node.spawn,
+					"generator v%d seed %d real %s collider verifies physical spawn" % [version, seed_value, scene_id])
+				area.queue_free()
+				await physics_frame
 
 	print("A2 LIVE SAFE RETURN PHYSICS TESTS: %d checks, %d failures" % [checks, failures])
 	arena.queue_free()
