@@ -59,8 +59,8 @@ jobs:
           }
           foreach ($name in @('MyShelter.cmd', 'UpdateMyShelter.cmd')) {
             $cmd = Join-Path $install $name
-            $cmdArgs = '""' + $cmd + '" --help"'
-            $output = (& $env:ComSpec /d /c $cmdArgs 2>&1 | Out-String)
+            # PowerShell's call operator handles paths with spaces without cmd /c re-quoting.
+            $output = (& $cmd --help 2>&1 | Out-String)
             if ($LASTEXITCODE -ne 0 -or $output -notmatch 'usage:') {
               throw "CMD wrapper invocation failed: $name : $output"
             }
