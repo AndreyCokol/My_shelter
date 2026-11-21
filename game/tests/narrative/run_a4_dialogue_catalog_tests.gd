@@ -68,8 +68,12 @@ func run() -> void:
 			"decline is explicitly represented and not a game-over")
 		check(str(npc.get("accepted_waiting", "")).contains("припасы"),
 			"consent and supply check are separate")
-		check(str(npc.get("expedition_observation", "")).contains("не предусмотрено"),
-			"expedition monitoring text does not promise teleport")
+		check(str(npc.get("expedition_observation", "")).contains("компьютера убежища")
+			and str(npc.get("expedition_observation", "")).contains("наблюдать"),
+			"future expedition monitoring is described through the shelter computer")
+		check(str(npc.get("expedition_observation", "")).contains("Телепортация")
+			and str(npc.get("expedition_observation", "")).contains("недоступна"),
+			"expedition monitoring text never promises teleport")
 	check(not raw.to_lower().contains("осколок"),
 		"later spatial shard arc does not leak into P0 dialogues")
 	print("A4 DIALOGUE CATALOG TESTS: %d checks, %d failures" % [checks, failures])
