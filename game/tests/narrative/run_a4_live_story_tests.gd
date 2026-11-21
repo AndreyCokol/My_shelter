@@ -7,6 +7,7 @@ const Rules = preload("res://game/data/game_rules.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
+const Q07Policy = preload("res://game/systems/narrative/quest_gate_candidate.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -284,6 +285,10 @@ func schema4_finish_recruitment(rules: Dictionary, session, store, seed_value: i
 	check(act(session, store, "game.consent",
 		{"resident_id": "resident_2", "accept": true}).ok,
 		tag + "second survivor explicitly consents")
+	var before_second_join: Dictionary = session.get_snapshot()
+	check(Q07Policy.completion_ready_legacy_q07(before_second_join.residents.records, 2)
+		== {"ok": true, "ready": false, "joined_resident_ids": ["resident_1"]},
+		tag + "A1 current roster yields one joined resident before second recruit")
 	check(act(session, store, "game.recruit", {"resident_id": "resident_2"}).ok
 		and resident(session.get_snapshot(), "resident_2").status == "joined",
 		tag + "second survivor joins using remaining harvested food")
@@ -299,10 +304,17 @@ func schema4_finish_recruitment(rules: Dictionary, session, store, seed_value: i
 		and quest(session.get_snapshot(), "Q07") == "completed",
 		tag + "tracking Q07 AFTER recruiting both observes real current state")
 	var final_state: Dictionary = session.get_snapshot()
+	var q07_from_core: Dictionary = Q07Policy.completion_ready_legacy_q07(final_state.residents.records, 2)
+	check(Model.validate(final_state, rules) and q07_from_core.ok and q07_from_core.ready
+		and q07_from_core.joined_resident_ids == ["resident_1", "resident_2"],
+		tag + "validated A1 final-state roster drives A4 Q07, not untrusted UI ids")
 	var reopened = Campaign.new(rules)
 	check(reopened.coordinator.load_checkpoint(store).ok
 		and reopened.coordinator.get_snapshot() == final_state,
 		tag + "joined NPCs, Q07 and inventory reservations survive disk reload")
+	check(Q07Policy.completion_ready_legacy_q07(
+		reopened.coordinator.get_snapshot().residents.records, 2) == q07_from_core,
+		tag + "reloaded authoritative roster yields same Q07 readiness and IDs")
 	check(reopened.coordinator.execute(first_join, store).code == "ALREADY_APPLIED"
 		and reopened.coordinator.get_snapshot() == final_state,
 		tag + "historical recruit receipt remains once-only after restart")
