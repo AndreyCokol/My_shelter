@@ -10,8 +10,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 GODOT = os.environ.get("GODOT", "godot")
-SCRIPT = "game/tests/e2e/run_a2_real_combat_physics_tests.gd"
-MARKER = re.compile(r"A2 REAL COMBAT PHYSICS TESTS: ([1-9][0-9]*) checks, 0 failures")
+SUITES = [
+    ("game/tests/e2e/run_a2_real_combat_physics_tests.gd", "A2 REAL COMBAT PHYSICS TESTS"),
+    ("game/tests/e2e/run_a2_gameapp_first_kill_e2e.gd", "A2 GAMEAPP FIRST KILL E2E TESTS"),
+]
 
 def run(args: list[str], timeout: int) -> str:
     cmd = [GODOT, *args]
@@ -33,11 +35,14 @@ def main() -> int:
         if not version.startswith("4.7.2.stable."):
             raise RuntimeError(f"Expected pinned Godot 4.7.2 stable, got {version!r}")
         run(["--headless", "--path", ".", "--editor", "--import"], 120)
-        output = run(["--headless", "--path", ".", "--script", SCRIPT], 120)
-        match = MARKER.search(output)
-        if not match:
-            raise RuntimeError("Missing actual completed A2 real-combat test marker")
-        print(f"A2 REAL COMBAT QA: PASS ({match.group(1)} Godot checks on {version})")
+        total = 0
+        for script, marker in SUITES:
+            output = run(["--headless", "--path", ".", "--script", script], 120)
+            match = re.search(re.escape(marker) + r": ([1-9][0-9]*) checks, 0 failures", output)
+            if not match:
+                raise RuntimeError(f"No zero-failure marker for actual Godot script: {script}")
+            total += int(match.group(1))
+        print(f"A2 REAL COMBAT QA: PASS ({total} Godot checks on {version})")
         return 0
     except RuntimeError as error:
         print(f"A2 REAL COMBAT QA: FAIL {error}", file=sys.stderr)
