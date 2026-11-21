@@ -1,13 +1,14 @@
 extends RefCounted
 # A4-only PURE PROTOTYPE. No gameplay, Save or UI integration.
 # Requires explicit, already-evaluated context instead of invented reputation thresholds.
+# Stable IDs must be canonical; whitespace padding cannot represent another NPC.
 const STATUSES := ["unknown", "contacted", "declined", "AWAITING_SUPPLIES", "joined"]
 const ROLES := ["resident", "recruitable", "non_recruitable"]
 
 static func valid_npc(npc) -> bool:
 	if not npc is Dictionary:
 		return false
-	if not npc.get("id") is String or str(npc.id).is_empty():
+	if not npc.get("id") is String or npc.id.strip_edges().is_empty() or npc.id != npc.id.strip_edges():
 		return false
 	if not npc.get("role") in ROLES:
 		return false
