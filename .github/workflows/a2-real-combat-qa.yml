@@ -7,6 +7,7 @@ on:
       - 'game/entities/enemies/enemy.gd'
       - 'game/systems/combat/combat_loadout.gd'
       - 'game/tests/e2e/run_a2_real_combat_physics_tests.gd'
+      - 'game/tests/e2e/run_a2_gameapp_first_kill_e2e.gd'
       - 'tools/run_a2_real_combat_qa.py'
       - '.github/workflows/a2-real-combat-qa.yml'
   push:
