@@ -182,8 +182,105 @@ jobs:
           MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
           MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
         run: |
+          # The game checkout uses inputs.source_sha and may not contain the
+          # tooling-only release_policy.py. Validate explicitly here, BEFORE
+          # upload, using the protected environment's exact SHA attestations.
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}
+      - name: Suppress EXE artifact for public PR or build-only smoke
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_preview != true
+        shell: pwsh
+        run: Write-Output 'PUBLIC EXE ARTIFACT: SUPPRESSED (build/test passed; no unapproved binary uploaded)'
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'
+        with:
+          name: myshelter-windows-candidate
+          path: build/windows/MyShelter-Windows-x64.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  publish-preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol' && github.ref == 'refs/heads/main'
+    needs: [updater-tests, installer-windows, build-windows]
+    runs-on: ubuntu-latest
+    environment: preview-release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      # Each must be set to the EXACT game source SHA in the protected
+      # preview-release environment after separate owner/rights/A0/G0 approvals.
+      # Missing environment or vars => empty strings => publication blocked.
+      MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+      MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+      MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+      MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require protected environment attestations for exact game source
+        shell: bash
+        run: |
+          set -euo pipefail
           python tools/delivery/release_policy.py
-          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC EXE ARTIFACT BLOCKED: exact-source approvals missing' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: myshelter-windows-candidate
+          path: publication
+      - name: Create pinned manifest and immutable preview release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          sha = os.environ['SOURCE_SHA']
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise SystemExit('Not a full source SHA')
+          z = pathlib.Path('publication/MyShelter-Windows-x64.zip')
+          with zipfile.ZipFile(z) as archive:
+              if sorted(archive.namelist()) != ['MyShelter.exe', 'README.txt']:
+                  raise SystemExit('Unexpected package members')
+              if archive.read('MyShelter.exe')[:2] != b'MZ':
+                  raise SystemExit('Missing PE header')
+          manifest = {
+              'schema': 1,
+              'application': 'MyShelter',
+              'channel': 'preview',
+              'source_sha': sha,
+              'package': z.name,
+              'entrypoint': 'MyShelter.exe',
+              'archive_sha256': hashlib.sha256(z.read_bytes()).hexdigest(),
+              'archive_size': z.stat().st_size,
+          }
+          pathlib.Path('publication/manifest.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True), encoding='utf-8')
+          PY
+          tag="myshelter-preview-$SOURCE_SHA"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable release $tag" >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            publication/MyShelter-Windows-x64.zip publication/manifest.json \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --prerelease \
+            --title "MyShelter QA preview ($SOURCE_SHA)" \
+            --notes "Manually promoted Windows preview. Exact source $SOURCE_SHA. Automated contracts + offline smoke tested. NOT G0/G4 owner approval. Check asset rights before publishing."
+) {
+            throw 'PUBLIC EXE ARTIFACT BLOCKED: invalid source SHA'
+          }
+          foreach ($name in @(
+              'MYSHELTER_OWNER_APPROVED_SHA',
+              'MYSHELTER_ASSET_RIGHTS_APPROVED_SHA',
+              'MYSHELTER_A0_REVIEWED_SHA',
+              'MYSHELTER_G0_G4_APPROVED_SHA')) {
+            $approved = [Environment]::GetEnvironmentVariable($name)
+            if ($approved -cne $env:SOURCE_SHA) {
+              throw "PUBLIC EXE ARTIFACT BLOCKED: absent/wrong $name"
+            }
+          }
+          Write-Output 'PUBLIC EXE ARTIFACT GATE: PASS (four exact-SHA attestations)'
       - name: Suppress EXE artifact for public PR or build-only smoke
         if: github.event_name != 'workflow_dispatch' || inputs.publish_preview != true
         shell: pwsh
