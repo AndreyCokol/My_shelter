@@ -20,17 +20,19 @@ static func step(
 		return {"ok": false, "code": "INVALID_MOVEMENT_INPUT"}
 	if input_direction.length() > 1.000001 or facing.length() > 1.000001:
 		return {"ok": false, "code": "INVALID_MOVEMENT_INPUT"}
-	if dodge_remaining > 0.0:
-		return {
-			"ok": true, "code": "OK", "mode": "dodge",
-			"velocity": facing.normalized() * DODGE_SPEED,
-			"jump_remaining": 0.0, "visual_height": 0.0,
-		}
+	# Water wins over a dodge that started just before immersion. This
+	# prevents a 320 px/s land dash crossing real non-solid flooded zones.
 	if in_water:
 		return {
 			"ok": true, "code": "OK",
 			"mode": "swim" if input_direction.length_squared() > 0.01 else "float",
 			"velocity": input_direction * SWIM_SPEED,
+			"jump_remaining": 0.0, "visual_height": 0.0,
+		}
+	if dodge_remaining > 0.0:
+		return {
+			"ok": true, "code": "OK", "mode": "dodge",
+			"velocity": facing.normalized() * DODGE_SPEED,
 			"jump_remaining": 0.0, "visual_height": 0.0,
 		}
 	var remaining := jump_remaining
