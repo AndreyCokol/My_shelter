@@ -115,6 +115,57 @@ func import_old(path: String, raw: PackedByteArray, sha: String) -> bool:
 	file.close()
 	return good and FileAccess.get_sha256(path) == sha
 
+# The NPC ration migration must be crash-consistent even after a durable
+# replace produced an uncertain response. Use a separate disposable slot.
+func verify_historical_npc_fault_recovery(config: Dictionary,
+		source: Dictionary, original: PackedByteArray, expected_sha: String) -> void:
+	var fault_path: String = "user://a1-old-v4-npc-fault-%d-%d.json" % [
+		OS.get_process_id(), Time.get_ticks_usec()]
+	check(import_old(fault_path, original, expected_sha),
+		"historical v4 NPC fault test imports identical original bytes")
+	var fault_store = Store.new(fault_path)
+	var replay_session = Campaign.new(config).coordinator
+	check(replay_session.load_checkpoint(fault_store).ok
+		and replay_session.get_snapshot() == source,
+		"real old v4 NPC archive initializes separate fault-injection session")
+	var request_upgrade: Dictionary = request(replay_session,
+		"a1-real-v4:npc-food:uncertain-upgrade", "session.upgrade_world")
+	fault_store.fault = "before_replace"
+	check(replay_session.execute(request_upgrade, fault_store).code == "SAVE_FAILED"
+		and not replay_session.requires_recovery(),
+		"pre-replace failure of original v4 NPC upgrade is explicitly uncommitted")
+	check(replay_session.get_snapshot() == source
+		and FileAccess.get_file_as_bytes(fault_path) == original,
+		"failed old NPC upgrade preserves complete original RAM and file bytes")
+	fault_store.fault = "after_replace"
+	var ambiguous: Dictionary = replay_session.execute(request_upgrade, fault_store)
+	check(ambiguous.code == "UNAVAILABLE" and replay_session.requires_recovery()
+		and replay_session.get_snapshot() == source,
+		"post-replace old NPC upgrade reports uncertainty and locks old RAM")
+	var durable: Dictionary = fault_store.read_checkpoint()
+	check(durable.ok and durable.state.completed_actions.has(request_upgrade.action_id)
+		and durable.state.world_states.layout.generator_version == Layout.VERSION,
+		"uncertain historical migration has one committed new-world receipt on disk")
+	check(FileAccess.get_file_as_bytes(fault_path + ".bak") == original,
+		"uncertain original v4 NPC upgrade preserves exact legacy backup")
+	fault_store.fault = ""
+	check(replay_session.load_checkpoint(fault_store).ok
+		and not replay_session.requires_recovery()
+		and replay_session.get_snapshot() == durable.state,
+		"reloading after uncertain migration installs exactly durable committed world")
+	var restored: Dictionary = replay_session.get_snapshot()
+	check(restored.inventory == source.inventory and restored.residents == source.residents
+		and restored.crops == source.crops and restored.quests == source.quests,
+		"recovered v4->v5 NPC migration preserves food, resident, farm and quests")
+	check(replay_session.execute(request_upgrade, fault_store).code == "ALREADY_APPLIED"
+		and replay_session.get_snapshot() == restored,
+		"replaying uncertain migration receipt cannot double-apply world upgrade")
+	check(replay_session.execute(request(replay_session, OLD_NPC_ID, "game.recruit",
+		{"resident_id":"resident_1"}), fault_store).code == "ALREADY_APPLIED"
+		and replay_session.get_snapshot().inventory.reservations == source.inventory.reservations,
+		"replayed old NPC recruit after uncertain migration cannot double-reserve food")
+	cleanup(fault_path)
+
 func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 	var original: PackedByteArray = historical_bytes(name)
 	check(not original.is_empty(), "authentic v4 " + name + " bytes decoded")
@@ -217,6 +268,8 @@ func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 		"explicit backup rollback restores actual historic v4 domain state")
 	check(FileAccess.get_file_as_bytes(path + ".bak") == original,
 		"rollback preserves exact historical v4 backup bytes")
+	if name == "npc_food":
+		verify_historical_npc_fault_recovery(config, source, original, expected_sha)
 	cleanup(path)
 
 func run() -> void:
