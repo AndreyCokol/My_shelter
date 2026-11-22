@@ -90,6 +90,57 @@ func emit(name: String, state: Dictionary, store: Object, config: Dictionary) ->
 	print("A1_REAL_V4_FIXTURE_" + name + "_B64=" + Marshalls.raw_to_base64(bytes))
 	print("A1_REAL_V4_FIXTURE_" + name + "_SHA256=" + FileAccess.get_sha256(store.path))
 
+# Domain-rich old-save fixture: all state must be produced by real v4
+# commands, never synthetic mutation of crops/resident status/receipts.
+func commit_old(session, store, action_id: String, kind: String, payload: Dictionary = {}) -> bool:
+	var result: Dictionary = session.execute(request(session, action_id, kind, payload), store)
+	expect(result.ok, "native v4 progress " + action_id + ": " + kind)
+	return result.ok
+
+func make_food_npc_fixture(campaign, store: Object, config: Dictionary) -> void:
+	var session = campaign.coordinator
+	var steps: Array = [
+		["v4:travel-outside", "scene.transition", {"destination_scene_id":"outside", "entry_point_id":"default"}],
+		["v4:collect-seeds", "game.resource_collect", {}],
+		["v4:travel-shelter", "scene.transition", {"destination_scene_id":"shelter", "entry_point_id":"default"}],
+		["v4:starter-parcel", "inventory.claim_parcel", {"parcel_id":"starter"}],
+		["v4:plant-1", "game.plant", {"plot_id":"plot_1"}],
+		["v4:water-1", "game.water", {"plot_id":"plot_1"}],
+		["v4:plant-2", "game.plant", {"plot_id":"plot_2"}],
+		["v4:water-2", "game.water", {"plot_id":"plot_2"}],
+	]
+	for step in steps:
+		if not commit_old(session, store, step[0], step[1], step[2]):
+			return
+	expect(campaign.tick(float(config.crop.grow_minutes)),
+		"historical v4 campaign clock advances real growing farm")
+	if session.get_snapshot().crops.plots[0].status != "ripe":
+		expect(false, "historical v4 crop ripens naturally")
+		return
+	for step in [
+		["v4:harvest-1", "game.harvest", {"plot_id":"plot_1"}],
+		["v4:harvest-2", "game.harvest", {"plot_id":"plot_2"}],
+		["v4:travel-outside-again", "scene.transition", {"destination_scene_id":"outside", "entry_point_id":"default"}],
+		["v4:travel-louvre", "scene.transition", {"destination_scene_id":"louvre", "entry_point_id":"default"}],
+		["v4:contact-npc", "game.contact", {"resident_id":"resident_1"}],
+		["v4:consent-npc", "game.consent", {"resident_id":"resident_1", "accept":true}],
+		["v4:recruit-npc", "game.recruit", {"resident_id":"resident_1"}]
+	]:
+		if not commit_old(session, store, step[0], step[1], step[2]):
+			return
+	var real: Dictionary = session.get_snapshot()
+	var resident: Dictionary = real.residents.records[0]
+	expect(resident.status == "joined" and resident.consent
+		and resident.food_receipt_id == "v4:recruit-npc"
+		and real.completed_actions.has("v4:recruit-npc"),
+		"historical NPC is genuinely joined with durable receipt")
+	expect(real.inventory.reservations.size() > 0
+		and real.crops.plots[0].status == "empty"
+		and real.crops.plots[1].status == "empty",
+		"historical harvested crops and NPC food reservations coexist")
+	if resident.status == "joined" and real.inventory.reservations.size() > 0:
+		emit("NPC_FOOD", real, store, config)
+
 func run() -> void:
 	expect(Layout.VERSION == 4, "artifact generator executes historical VERSION 4 code")
 	var geo: Dictionary = geometry_digest(54, Layout.VERSION)
@@ -129,7 +180,8 @@ func run() -> void:
 		print("HISTORICAL V4 FIXTURE TESTS: %d checks, %d failures" % [checks, fails])
 		quit(1)
 		return
-	var session = Campaign.new(config).coordinator
+	var campaign = Campaign.new(config)
+	var session = campaign.coordinator
 	var original: Dictionary = session.get_snapshot()
 	expect(original.schema_version == 4
 		and original.world_states.layout.generator_version == 4,
@@ -146,6 +198,7 @@ func run() -> void:
 			and progressed.world_states.first_enemy_defeated,
 			"old v4 state includes actual historical action receipt and world flag")
 		emit("REWARD", progressed, store, config)
+		make_food_npc_fixture(campaign, store, config)
 	for suffix in ["", ".bak", ".tmp", ".bak.tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
