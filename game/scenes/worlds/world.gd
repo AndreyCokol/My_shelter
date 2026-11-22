@@ -66,15 +66,22 @@ func _ready() -> void:
 	for rect in walls:
 		add_wall(rect)
 	if layout.has("water_zones"):
-		var layer = WaterZones.new()
-		if layer.configure(layout["water_zones"], floor):
-			layer.name = "WaterZones"
-			layer.z_index = -1
-			add_child(layer)
-			water_zone_layer = layer
-		else:
+		# The layout comes from a Variant dictionary (including loaded scene
+		# data). Passing a String/Dictionary/null to the typed Area2D
+		# configure(Array, Rect2) would throw before it can fail closed.
+		var water_data = layout["water_zones"]
+		if not water_data is Array:
 			water_zones_valid = false
-			layer.free()
+		else:
+			var layer = WaterZones.new()
+			if layer.configure(water_data, floor):
+				layer.name = "WaterZones"
+				layer.z_index = -1
+				add_child(layer)
+				water_zone_layer = layer
+			else:
+				water_zones_valid = false
+				layer.free()
 	if not layout.get("obstacles", []).is_empty():
 		occlusion = Node2D.new()
 		occlusion.z_index = 21
