@@ -79,7 +79,7 @@ func _run() -> void:
 	check(solid_collision.size() > 0 and not solid_collision.has(WATER_ONE)
 		and not solid_collision.has(WATER_TWO),
 		"water is not a static wall and does not corrupt old navigation collision catalog")
-	var deep_copy := world.water_hazard_rects()
+	var deep_copy: Array[Rect2] = world.water_hazard_rects()
 	deep_copy.clear()
 	check(world.water_hazard_rects().size() == 2,
 		"caller cannot mutate the persistent water hazard list by clearing a return array")
