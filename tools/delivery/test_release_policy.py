@@ -63,7 +63,8 @@ class PublicReleaseGateTests(unittest.TestCase):
         self.assertLess(approval, upload)
         self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'", build)
         self.assertIn("retention-days: 1", build)
-        self.assertIn("if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'", build)
+        self.assertIn("github.event_name == 'pull_request'", build)
+        self.assertIn("github.head_ref == 'delivery/evergreen-windows-updater-20261121'", build)
 
     def test_publication_workflow_invokes_gate_before_release(self):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/windows-evergreen.yml").read_text(encoding="utf-8")
