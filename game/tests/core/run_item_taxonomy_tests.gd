@@ -42,8 +42,37 @@ func run() -> void:
 		"rarity": "legendary", "quality_percent": 100}),
 		"hundred quality valid within rarity for system gear")
 	check(Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
-		"rarity": "special", "quality_percent": 37.5}),
-		"intermediate quality within an explicit rarity is valid")
+		"rarity": "epic", "quality_percent": 37.5}),
+		"intermediate quality within one approved rarity is valid")
+	var approved: Array = ["common", "uncommon", "rare", "epic", "legendary"]
+	check(Taxonomy.rarities() == approved, "exactly five owner-approved rarity tiers, no sixth value")
+	var local_copy: Array = Taxonomy.rarities()
+	local_copy.append("special")
+	check(Taxonomy.rarities() == approved, "readers cannot mutate the canonical rarity list")
+	for rarity in approved:
+		check(Taxonomy.valid_rarity(rarity), "approved rarity accepted: " + rarity)
+		check(Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
+			"rarity": rarity, "quality_percent": 50}),
+			"system equipment accepts approved rarity with independent quality: " + rarity)
+	for invalid_rarity in ["special", "mythic", "normal", "universal", "unknown", "RARE",
+			" rare", "rare ", "легендарный", "", " "]:
+		check(not Taxonomy.valid_rarity(invalid_rarity),
+			"invalid rarity tier rejected by pure enum: " + invalid_rarity)
+		check(not Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
+			"rarity": invalid_rarity, "quality_percent": 37.5}),
+			"invalid rarity cannot be saved as metadata: " + invalid_rarity)
+	for wrong_type in [null, 42, true, [], {}, 0.5]:
+		check(not Taxonomy.valid_rarity(wrong_type),
+			"non-string rarity enum rejected without coercion")
+		check(not Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
+			"rarity": wrong_type, "quality_percent": 50}),
+			"non-string rarity metadata rejected without coercion")
+	check(Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
+		"rarity": "common", "quality_percent": 0.125}),
+		"decimal quality inside 0..100 does not create additional rarity tiers")
+	check(not Taxonomy.valid_metadata({"category": "system_equipment", "is_equipment": true,
+		"rarity": "common", "quality_percent": NAN}),
+		"NaN quality cannot enter approved rarity metadata")
 	check(not Taxonomy.valid_metadata({"category": "material", "is_equipment": true}),
 		"materials cannot masquerade as equipment")
 	check(not Taxonomy.valid_metadata({"category": "shelter_object", "is_equipment": true}),
