@@ -42,6 +42,49 @@ func cleanup(path: String) -> void:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
+const GEOMETRY_KEYS := ["kind", "segment", "label", "bounds", "spawn", "loot",
+	"enemy", "patrol", "obstacles", "links", "aprons", "roadways",
+	"facades", "rooms", "floor_plan", "exits", "salvage", "event",
+	"building_id", "floor_number"]
+
+static func geometry_value(value):
+	if value is Vector2:
+		return ["Vector2", value.x, value.y]
+	if value is Rect2:
+		return ["Rect2", value.position.x, value.position.y, value.size.x, value.size.y]
+	if value is PackedVector2Array:
+		var values: Array = []
+		for v in value:
+			values.append(geometry_value(v))
+		return ["PackedVector2Array", values]
+	if value is Dictionary:
+		var rows: Array = []
+		var keys: Array = value.keys()
+		keys.sort()
+		for k in keys:
+			rows.append([str(k), geometry_value(value[k])])
+		return rows
+	if value is Array:
+		var result: Array = []
+		for v in value:
+			result.append(geometry_value(v))
+		return result
+	return value
+
+static func geometry_digest(world_seed: int, version: int) -> Dictionary:
+	var nodes: Dictionary = Layout.build(world_seed, version)
+	var ids: Array = nodes.keys()
+	ids.sort()
+	var projection: Array = []
+	for id in ids:
+		var selected: Dictionary = {}
+		for key in GEOMETRY_KEYS:
+			if nodes[id].has(key):
+				selected[key] = nodes[id][key]
+		projection.append([id, geometry_value(selected)])
+	return {"nodes": ids.size(),
+		"sha256": JSON.stringify(projection, "", true, true).sha256_text()}
+
 func historical_bytes(name: String) -> PackedByteArray:
 	var fixture_file: String = "res://game/tests/fixtures/authentic_gen4_%s.b64" % name
 	var base64: String = FileAccess.get_file_as_string(fixture_file).strip_edges()
@@ -133,6 +176,10 @@ func run() -> void:
 	config.scenes = Layout.entries()
 	check(Campaign.valid_rules(config), "current config validates before importing actual old saves")
 	check(Layout.VERSION > 4, "test executes current generator, distinct from real v4 fixture generator")
+	var geom: Dictionary = geometry_digest(54, 4)
+	check(geom.nodes == 30, "current v4 compatibility renderer preserves all 30 historical scene IDs")
+	check(geom.sha256 == "99953d0a2702fa054a14bf98de9730a5db919f4125426383cd4c37a14293a793",
+		"current legacy-v4 geometry/link fingerprint matches true historical generator-v4 layout")
 	for fixture in SOURCES:
 		verify_one(config, fixture.name, fixture.sha256)
 	print("AUTHENTIC V4 COMPAT TESTS: %d checks, %d failures" % [checks, failures])
