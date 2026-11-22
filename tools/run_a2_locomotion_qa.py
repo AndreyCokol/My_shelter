@@ -11,6 +11,7 @@ GODOT = os.environ.get("GODOT", "godot")
 SUITES = [
     ("game/tests/world/run_a2_locomotion_tests.gd", "A2 LOCOMOTION CONTRACT TESTS"),
     ("game/tests/world/run_a2_water_contact_tests.gd", "A2 REAL WATER CONTACT TESTS"),
+    ("game/tests/e2e/run_a2_water_gameapp_compat_tests.gd", "A2 WATER GAMEAPP COMPAT TESTS"),
 ]
 
 def call(args, timeout=120):
