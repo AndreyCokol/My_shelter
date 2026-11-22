@@ -104,6 +104,9 @@ func run() -> void:
 				selected[key] = nodes[id][key]
 		var canonical: String = JSON.stringify([id, geometry_value(selected)], "", true, true)
 		print("A1_REAL_V4_NODE_" + id + "_SHA256=" + canonical.sha256_text())
+		if id in ["hospital", "hospital_1_1", "house_0"]:
+			print("A1_REAL_V4_EXIT_JSON_" + id + "=" +
+				JSON.stringify(geometry_value(selected.get("exits", {})), "", true, true))
 		if id in ["hospital", "hospital_1_1", "house_0", "house_0_2"]:
 			for key in GEOMETRY_KEYS:
 				if selected.has(key):
