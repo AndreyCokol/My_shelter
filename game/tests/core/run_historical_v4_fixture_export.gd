@@ -94,6 +94,16 @@ func run() -> void:
 	expect(geo.nodes > 15 and geo.sha256.length() == 64, "historical native v4 geometry canonical digest generated")
 	print("A1_REAL_V4_GEOMETRY_NODES=" + str(geo.nodes))
 	print("A1_REAL_V4_GEOMETRY_SHA256=" + geo.sha256)
+	var nodes: Dictionary = Layout.build(54, 4)
+	var ids: Array = nodes.keys()
+	ids.sort()
+	for id in ids:
+		var selected: Dictionary = {}
+		for key in GEOMETRY_KEYS:
+			if nodes[id].has(key):
+				selected[key] = nodes[id][key]
+		var canonical: String = JSON.stringify([id, geometry_value(selected)], "", true, true)
+		print("A1_REAL_V4_NODE_" + id + "_SHA256=" + canonical.sha256_text())
 	var config: Dictionary = Rules.build()
 	config.world_seed = 54
 	config.scenes = Layout.entries()
