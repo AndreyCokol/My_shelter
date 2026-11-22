@@ -9,6 +9,15 @@ const MATERIAL := "material"
 const NON_SYSTEM := "non_system"
 const SYSTEM_EQUIPMENT := "system_equipment"
 const CATEGORIES := [SHELTER_OBJECT, MATERIAL, NON_SYSTEM, SYSTEM_EQUIPMENT]
+# Exact five approved rarity tiers: quality 0..100 is a separate dimension.
+# Do not invent additional rarity values like "special" in the pure DTO.
+const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
+
+static func rarities() -> Array:
+	return RARITIES.duplicate()
+
+static func valid_rarity(value) -> bool:
+	return value is String and RARITIES.has(value)
 
 static func categories() -> Array:
 	return CATEGORIES.duplicate()
@@ -35,7 +44,7 @@ static func valid_metadata(value) -> bool:
 	if not is_equipment:
 		return false
 	var rarity = value.get("rarity")
-	if not rarity is String or rarity.strip_edges().is_empty():
+	if not valid_rarity(rarity):
 		return false
 	# Quality only has meaning in the same record as its rarity.
 	# No unapproved rarity tiers, item weights or migration defaults here.
