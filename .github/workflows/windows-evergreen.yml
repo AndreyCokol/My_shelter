@@ -70,7 +70,7 @@ jobs:
 
   build-windows:
     # PR smoke checks only; no EXE artifact may be uploaded from an unapproved public branch.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'delivery/evergreen-windows-updater-20261121')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     needs: [updater-tests, installer-windows]
     runs-on: windows-latest
     timeout-minutes: 40
