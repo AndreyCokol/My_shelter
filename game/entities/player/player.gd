@@ -99,8 +99,12 @@ func _physics_process(delta: float) -> void:
 
 # Future water Area2D zones may call this. No water is generated here.
 func set_water_contact(value: bool) -> void:
+	if value == water_contact:
+		return
 	water_contact = value
 	if water_contact:
+		# Never carry a land dodge or a visual jump into water.
+		dodge_remaining = 0.0
 		jump_remaining = 0.0
 		if is_instance_valid(pixel_sprite):
 			pixel_sprite.position.y = 0.0
@@ -109,7 +113,7 @@ func dodge_readiness() -> float:
 	return 1.0 - clampf(dodge_cooldown / DODGE_COOLDOWN, 0.0, 1.0)
 
 func try_dodge() -> bool:
-	if defeated or dodge_cooldown > 0 or app == null or not app.running():
+	if defeated or water_contact or dodge_cooldown > 0 or app == null or not app.running():
 		return false
 	dodge_remaining = 0.22
 	dodge_cooldown = DODGE_COOLDOWN
