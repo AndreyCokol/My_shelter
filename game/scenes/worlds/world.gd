@@ -132,6 +132,14 @@ func water_hazard_rects() -> Array[Rect2]:
 		return water_zone_layer.hazard_rectangles()
 	return []
 
+# A1 must NOT interpret an invalid authored water layout as a dry scene.
+# The existing SceneRouter ignores this until its owner integrates a
+# precommit staging check; callers must require snapshot.ok.
+func water_hazard_snapshot() -> Dictionary:
+	if not water_zones_valid:
+		return {"ok": false, "code": "INVALID_WATER_LAYOUT", "rectangles": []}
+	return {"ok": true, "code": "OK", "rectangles": water_hazard_rects()}
+
 func collision_rects() -> Array[Rect2]:
 	var rects: Array[Rect2] = []
 	for child in get_children():
