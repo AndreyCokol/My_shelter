@@ -75,6 +75,10 @@ func _run() -> void:
 		"authoritative water rectangles exposed as non-solid safe-return hazards")
 	check(world.water_zone_layer.active_water_zone_count() == 2,
 		"both separately authored water bodies have real independent contact colliders")
+	var hazard_snapshot: Dictionary = world.water_hazard_snapshot()
+	check(hazard_snapshot.ok and hazard_snapshot.code == "OK"
+		and hazard_snapshot.rectangles == [WATER_ONE, WATER_TWO],
+		"valid WorldHost exposes explicit authoritative hazard snapshot for A1")
 	var solid_collision: Array[Rect2] = world.collision_rects()
 	check(solid_collision.size() > 0 and not solid_collision.has(WATER_ONE)
 		and not solid_collision.has(WATER_TWO),
@@ -83,6 +87,26 @@ func _run() -> void:
 	deep_copy.clear()
 	check(world.water_hazard_rects().size() == 2,
 		"caller cannot mutate the persistent water hazard list by clearing a return array")
+
+	# Malformed optional water data must never be silently interpreted as a
+	# dry target by an A1 transition that asks for a hazard snapshot.
+	var corrupt_nodes: Dictionary = Layout.build(42, 5)
+	var corrupt: Dictionary = corrupt_nodes["outside"].duplicate(true)
+	corrupt["water_zones"] = [Rect2(-50, 630, 120, 60)]
+	corrupt_nodes["outside"] = corrupt
+	var corrupt_world = WorldScene.instantiate()
+	corrupt_world.configure_layout(corrupt_nodes, "outside")
+	root.add_child(corrupt_world)
+	await at_next_physics()
+	var rejected: Dictionary = corrupt_world.water_hazard_snapshot()
+	check(not corrupt_world.water_zones_valid
+		and not rejected.ok and rejected.code == "INVALID_WATER_LAYOUT",
+		"authoritative hazard snapshot fails closed on corrupt outside-water geometry")
+	check(rejected.rectangles.is_empty()
+		and not is_instance_valid(corrupt_world.water_zone_layer),
+		"invalid water metadata cannot create partially active Area2D volumes")
+	corrupt_world.queue_free()
+	await at_next_physics()
 
 	var water_is_clear := true
 	for obstacle in solid_collision:
