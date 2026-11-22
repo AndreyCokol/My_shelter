@@ -8,8 +8,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 GODOT = os.environ.get("GODOT", "godot")
-SCRIPT = "game/tests/world/run_a2_locomotion_tests.gd"
-MARKER = re.compile(r"A2 LOCOMOTION CONTRACT TESTS: ([1-9][0-9]*) checks, 0 failures")
+SUITES = [
+    ("game/tests/world/run_a2_locomotion_tests.gd", "A2 LOCOMOTION CONTRACT TESTS"),
+    ("game/tests/world/run_a2_water_contact_tests.gd", "A2 REAL WATER CONTACT TESTS"),
+]
 
 def call(args, timeout=120):
     cmd = [GODOT, *args]
@@ -34,11 +36,14 @@ def main():
         if not version.startswith("4.7.2.stable."):
             raise RuntimeError(f"Expected Godot 4.7.2 stable, got {version!r}")
         call(["--headless", "--path", ".", "--editor", "--import"])
-        output = call(["--headless", "--path", ".", "--script", SCRIPT])
-        count = MARKER.search(output)
-        if not count:
-            raise RuntimeError("No native A2-01 completion with zero failures")
-        print(f"A2 LOCOMOTION QA: PASS ({count.group(1)} direct Godot checks on {version})")
+        total = 0
+        for script, marker in SUITES:
+            output = call(["--headless", "--path", ".", "--script", script])
+            count = re.search(re.escape(marker) + r": ([1-9][0-9]*) checks, 0 failures", output)
+            if not count:
+                raise RuntimeError(f"No completed direct Godot evidence for {script}")
+            total += int(count.group(1))
+        print(f"A2 LOCOMOTION QA: PASS ({total} direct Godot checks on {version})")
         return 0
     except RuntimeError as exc:
         print(f"A2 LOCOMOTION QA: FAIL {exc}", file=sys.stderr)
