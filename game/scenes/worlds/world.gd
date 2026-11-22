@@ -15,11 +15,15 @@ var hospital_cache := {}
 var occlusion: Node2D
 var last_occlusion_position := Vector2.INF
 var collision_revision := 0
+# Optional authored water areas: legacy v4/v5 maps have none by default.
+var water_zone_layer: Node2D
+var water_zones_valid := true
 const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const GameplayState = preload("res://game/state/gameplay_state.gd")
+const WaterZones = preload("res://game/systems/world/world_water_zones.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
 	location_id = id
@@ -61,6 +65,16 @@ func _ready() -> void:
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
 		add_wall(rect)
+	if layout.has("water_zones"):
+		var layer = WaterZones.new()
+		if layer.configure(layout["water_zones"], floor):
+			layer.name = "WaterZones"
+			layer.z_index = -1
+			add_child(layer)
+			water_zone_layer = layer
+		else:
+			water_zones_valid = false
+			layer.free()
 	if not layout.get("obstacles", []).is_empty():
 		occlusion = Node2D.new()
 		occlusion.z_index = 21
@@ -111,6 +125,13 @@ func add_wall(rect: Rect2) -> StaticBody2D:
 # Live physics walls (including player-built shelter structures) are the
 # authoritative navigation obstacle set. Rebuilding after changes invalidates
 # the zombie chase path; no collision is bypassed by the pathfinder.
+# Source of non-solid hazards for A1 precommit shelter-return staging.
+# The current A1 SceneRouter does not consume this until its own integration.
+func water_hazard_rects() -> Array[Rect2]:
+	if is_instance_valid(water_zone_layer):
+		return water_zone_layer.hazard_rectangles()
+	return []
+
 func collision_rects() -> Array[Rect2]:
 	var rects: Array[Rect2] = []
 	for child in get_children():
