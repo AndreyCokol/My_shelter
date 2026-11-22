@@ -10,6 +10,7 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const OLD_WIN_ID := "a1-historical-v4:first-win"
+const OLD_NPC_ID := "v4:recruit-npc"
 # Native original generator-v4 canonical fingerprints from source SHA
 # 59bb12517e21850386092bd1e0a5e3d79c23c98a; confirmed on both
 # Linux and Windows (old test PR #191, commit 3c08f163...).
@@ -22,7 +23,8 @@ const OLD_V4_GEOMETRY := {
 }
 const SOURCES := [
 	{"name":"fresh", "sha256":"b7aa2dad9fda7cc82e4d8b8792b87b660efea00e64eb29e890586a26c35221d8"},
-	{"name":"reward", "sha256":"f1ca6539208d5b440fdb95e830925112162131934bb82d8d43329d14fd3d2514"}
+	{"name":"reward", "sha256":"f1ca6539208d5b440fdb95e830925112162131934bb82d8d43329d14fd3d2514"},
+	{"name":"npc_food", "sha256":"5af4884eab1cb6645269494892287e6f2427a8db4a6a37239e1174cb423caa30"}
 ]
 var checks: int = 0
 var failures: int = 0
@@ -38,12 +40,12 @@ func check(ok: bool, label: String) -> void:
 		failures += 1
 		push_error("FAIL " + label)
 
-func request(session, action_id: String, kind: String) -> Dictionary:
+func request(session, action_id: String, kind: String, payload: Dictionary = {}) -> Dictionary:
 	var s: Dictionary = session.get_snapshot()
 	var revisions: Array = []
 	for key in s.resource_revisions:
 		revisions.append({"key": key, "revision": s.resource_revisions[key]})
-	return {"action_id":action_id, "command_type":kind, "payload":{},
+	return {"action_id":action_id, "command_type":kind, "payload":payload,
 		"context":{"actor_id":"player", "scene_id":s.scene.current_scene_id,
 			"expected_resource_revisions":revisions}}
 
@@ -155,6 +157,29 @@ func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 			"authentic historical receipt replay cannot regrant weapon or XP")
 		check(FileAccess.get_file_as_bytes(path) == original,
 			"authentic historic receipt replay leaves original file intact")
+	if name == "npc_food":
+		var resident: Dictionary = state.residents.records[0]
+		check(resident.status == "joined" and resident.consent
+			and resident.food_receipt_id == OLD_NPC_ID
+			and state.completed_actions.has(OLD_NPC_ID),
+			"genuine old v4 joined resident retains original durable recruitment receipt")
+		var food_reserved: int = 0
+		for row in state.inventory.reservations:
+			if row.resident_id == "resident_1":
+				food_reserved += int(row.quantity)
+		check(food_reserved == int(config.food.units_per_resident)
+			and state.inventory.reservations.size() > 0,
+			"actual v4 NPC food allocation is preserved with exact configured quantity")
+		check(int(state.game_time_minutes) >= int(config.crop.grow_minutes)
+			and state.crops.plots[0].status == "empty"
+			and state.crops.plots[1].status == "empty",
+			"genuine old v4 clock and harvested farm state remain valid")
+		var old_recruit: Dictionary = request(session, OLD_NPC_ID, "game.recruit",
+			{"resident_id":"resident_1"})
+		check(session.execute(old_recruit, store).code == "ALREADY_APPLIED",
+			"same historical recruit request replays existing durable receipt, no duplicate ration")
+		check(FileAccess.get_file_as_bytes(path) == original,
+			"old v4 NPC receipt replay never rewrites original checkpoint bytes")
 	var upgrade: Dictionary = request(session, "a1-real-v4:%s:upgrade" % name, "session.upgrade_world")
 	var migrated: Dictionary = session.execute(upgrade, store)
 	check(migrated.ok, "explicit actual legacy v4 -> current world upgrade succeeds " + name)
@@ -165,6 +190,10 @@ func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 	check(after.world_states.layout.generator_version == Layout.VERSION
 		and after.world_states.layout.seed == 54 and Model.validate(after, config),
 		"upgraded real old v4 save preserves seed, valid schema4 and current generator")
+	if name == "npc_food":
+		check(after.inventory == state.inventory and after.residents == state.residents
+			and after.crops == state.crops and after.quests == state.quests,
+			"migrating real v4 world preserves all NPC, reservation, harvested farm and quest data")
 	check(FileAccess.get_file_as_bytes(path + ".bak") == original,
 		"backup contains EXACT original historical v4 bytes after upgrade")
 	check(session.execute(upgrade, store).code == "ALREADY_APPLIED",
@@ -175,6 +204,14 @@ func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 	if name == "reward":
 		check(reboot.execute(request(reboot, OLD_WIN_ID, "game.enemy_defeated"), store).code ==
 			"ALREADY_APPLIED", "old v4 victory receipt survives migration and reboot")
+	if name == "npc_food":
+		var fresh: Dictionary = reboot.get_snapshot()
+		check(fresh.inventory == state.inventory and fresh.residents == state.residents
+			and fresh.crops == state.crops and fresh.quests == state.quests,
+			"old NPC food and farm survive migration plus independent disk reboot")
+		check(reboot.execute(request(reboot, OLD_NPC_ID, "game.recruit",
+			{"resident_id":"resident_1"}), store).code == "ALREADY_APPLIED",
+			"historical resident recruitment receipt remains idempotent after migration and reboot")
 	var rollback: Dictionary = reboot.load_checkpoint(store, true)
 	check(rollback.ok and reboot.get_snapshot() == source,
 		"explicit backup rollback restores actual historic v4 domain state")
