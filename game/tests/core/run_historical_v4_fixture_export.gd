@@ -96,6 +96,13 @@ func run() -> void:
 	expect(geo.nodes > 15 and geo.sha256.length() == 64, "historical native v4 geometry canonical digest generated")
 	print("A1_REAL_V4_GEOMETRY_NODES=" + str(geo.nodes))
 	print("A1_REAL_V4_GEOMETRY_SHA256=" + geo.sha256)
+	# Reproduce more than one procedural world, including allowed boundaries.
+	# These values must come from the *original* v4 runtime, never modern code.
+	for legacy_seed in [0, 1, 54, 1234, Layout.MAX_SEED]:
+		var probe: Dictionary = geometry_digest(legacy_seed, 4)
+		expect(probe.nodes == 30 and probe.sha256.length() == 64,
+			"original generator4 produces 30-node canonical layout seed " + str(legacy_seed))
+		print("A1_REAL_V4_GEOMETRY_SEED_" + str(legacy_seed) + "_SHA256=" + probe.sha256)
 	var nodes: Dictionary = Layout.build(54, 4)
 	var ids: Array = nodes.keys()
 	ids.sort()
