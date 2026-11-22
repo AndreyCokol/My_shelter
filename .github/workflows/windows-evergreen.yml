@@ -1,0 +1,352 @@
+name: MyShelter evergreen Windows preview
+
+on:
+  pull_request:
+    paths:
+      - 'tools/delivery/**'
+      - '.github/workflows/windows-evergreen.yml'
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Full 40-character A5-reviewed game source SHA'
+        required: true
+        type: string
+      publish_preview:
+        description: 'After build and smoke, publish a PUBLIC preview GitHub Release (needs asset-rights approval)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  updater-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline updater tests (no secrets/network)
+        run: python -m unittest discover -s tools/delivery -p 'test_*.py' -v
+
+  installer-windows:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline updater tests on real Windows
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tools/delivery -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows updater unit tests failed' }
+      - name: Install local launcher without admin, network or scheduled tasks
+        shell: pwsh
+        run: |
+          # Use spaces in path; merely checking file existence is not enough.
+          $install = Join-Path $env:RUNNER_TEMP 'My Shelter Install'
+          & ./tools/delivery/Install-MyShelter.ps1 -InstallDir $install -NoScheduledTask -NoDesktopShortcut
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Bootstrap installer failed' }
+          foreach ($name in @('windows_updater.py','MyShelter.cmd','UpdateMyShelter.cmd','RollbackMyShelter.cmd')) {
+            if (-not (Test-Path (Join-Path $install $name))) { throw "Missing local installer file: $name" }
+          }
+          foreach ($name in @('MyShelter.cmd', 'UpdateMyShelter.cmd')) {
+            $cmd = Join-Path $install $name
+            # PowerShell's call operator handles paths with spaces without cmd /c re-quoting.
+            $output = (& $cmd --help 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0 -or $output -notmatch 'usage:') {
+              throw "CMD wrapper invocation failed: $name : $output"
+            }
+          }
+          Write-Output 'WINDOWS EVERGREEN CMD ROOT QUOTING: PASS'
+          Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
+
+  build-windows:
+    # On this delivery PR, exercise the actual Godot/export path on a PINNED
+    # previously validated game commit. This never publishes an executable.
+    # Manual dispatch later uses an A5-reviewed exact integration source SHA.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'delivery/evergreen-windows-updater-20261121')
+    needs: [updater-tests, installer-windows]
+    runs-on: windows-latest
+    timeout-minutes: 40
+    # Block downloadable game archives before any public upload.
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && 'preview-release' || 'build-only' }}
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || 'e76cfcfba0c643fe0658fde61a6b4499f34c7914' }}
+      PYTHONUTF8: '1'
+      SHELTER_REQUIRE_ASSETS: '1'
+    steps:
+      - name: Reject ambiguous or non-SHA ref
+        shell: pwsh
+        run: |
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'Provide an exact lowercase full commit SHA, not a PR, branch, or tag'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Confirm checkout provenance
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -cne $env:SOURCE_SHA) { throw 'Checkout does not match approved source_sha' }
+          if (-not (Test-Path 'export_presets.cfg')) { throw 'Game export preset missing' }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact Godot engine and release templates
+        shell: pwsh
+        run: |
+          $base = 'https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/'
+          Invoke-WebRequest ($base + 'Godot_v4.7.2-stable_win64.exe.zip') -OutFile "$env:RUNNER_TEMP/engine.zip"
+          Expand-Archive "$env:RUNNER_TEMP/engine.zip" "$env:RUNNER_TEMP/engine"
+          $engine = (Get-ChildItem "$env:RUNNER_TEMP/engine" -Recurse -Filter '*_console.exe' | Select-Object -First 1).FullName
+          if (-not $engine) { throw 'Godot console engine missing' }
+          "GODOT=$engine" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Invoke-WebRequest ($base + 'Godot_v4.7.2-stable_export_templates.tpz') -OutFile "$env:RUNNER_TEMP/templates.zip"
+          @'
+          import os, pathlib, zipfile
+          dest = pathlib.Path(os.environ['APPDATA']) / 'Godot/export_templates/4.7.2.stable'
+          dest.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(pathlib.Path(os.environ['RUNNER_TEMP']) / 'templates.zip') as z:
+              for name in ['version.txt', 'windows_release_x86_64.exe', 'windows_debug_x86_64.exe']:
+                  (dest / name).write_bytes(z.read('templates/' + name))
+          '@ | python -
+      - name: Install verified UI resources
+        shell: pwsh
+        run: |
+          python tools/install_ui_assets.py --download-ui
+          if ($LASTEXITCODE -ne 0) { throw 'Asset installation failed' }
+      - name: Run game test suites and documentation
+        shell: pwsh
+        run: |
+          python tools/run_godot_checks.py
+          if ($LASTEXITCODE -ne 0) { throw 'Game regression suite failed' }
+          python tools/check_g0_docs.py
+          if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed' }
+      - name: Export Windows EXE and strict offline smoke test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/windows | Out-Null
+          & $env:GODOT --headless --path . --export-release 'Windows Desktop' build/windows/MyShelter.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Godot Windows export failed' }
+          $exe = Join-Path $PWD 'build/windows/MyShelter.exe'
+          $stdout = Join-Path $PWD 'build/windows/runtime.log'
+          $stderr = Join-Path $PWD 'build/windows/runtime-errors.log'
+          $p = Start-Process -FilePath $exe -ArgumentList '--headless','--audio-driver','Dummy','--quit-after','10' -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $p.WaitForExit(30000)) { $p.Kill(); throw 'Offline EXE startup timed out' }
+          if ($p.ExitCode -ne 0) { throw "Offline EXE exited $($p.ExitCode)" }
+          $logs = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          if ($logs -match 'SCRIPT ERROR:|ERROR:|instances leaked') { throw 'Godot startup reported errors' }
+          if ($logs -notmatch 'Playable prototype initialized; schema v4') { throw 'Missing expected runtime marker' }
+          $assetLog = (& $env:GODOT --headless --main-pack $exe --script "$PWD/tools/verify_export_assets.gd" 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $assetLog -notmatch 'EXPORTED ASSETS: 18 Kibyra textures verified PASS') {
+            throw 'Offline export lost verified textures'
+          }
+      - name: Package only immutable executable plus provenance README
+        shell: pwsh
+        run: |
+          $env:SHA = $env:SOURCE_SHA
+          @'
+          import os, pathlib, zipfile
+          root = pathlib.Path('build/windows')
+          exe = root / 'MyShelter.exe'
+          if not exe.is_file() or exe.stat().st_size < 1024:
+              raise RuntimeError('Missing Windows executable')
+          with exe.open('rb') as f:
+              if f.read(2) != b'MZ':
+                  raise RuntimeError('Invalid PE header')
+          with zipfile.ZipFile(root / 'MyShelter-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED, 6) as z:
+              z.write(exe, 'MyShelter.exe')
+              z.writestr('README.txt', 'MyShelter Windows QA preview\nSource SHA: ' + os.environ['SHA'] + '\nNOT a public game release or final G0.\n')
+          '@ | python -
+      # The PUBLIC repository does not make Actions artifacts private.
+      # The Windows runner may test the EXE, but PR/build-only never uploads it.
+      - name: Require four exact-SHA approvals BEFORE any EXE artifact upload
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true
+        shell: pwsh
+        env:
+          MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+          MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+          MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+          MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
+        run: |
+          # The game checkout does not necessarily include the A5 delivery script.
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'PUBLIC EXE ARTIFACT BLOCKED: invalid source SHA'
+          }
+          foreach ($name in @('MYSHELTER_OWNER_APPROVED_SHA', 'MYSHELTER_ASSET_RIGHTS_APPROVED_SHA', 'MYSHELTER_A0_REVIEWED_SHA', 'MYSHELTER_G0_G4_APPROVED_SHA')) {
+            $approved = [Environment]::GetEnvironmentVariable($name)
+            if ($approved -cne $env:SOURCE_SHA) {
+              throw "PUBLIC EXE ARTIFACT BLOCKED: absent/wrong $name"
+            }
+          }
+          Write-Output 'PUBLIC EXE ARTIFACT GATE: PASS (four exact-SHA attestations)'
+      - name: Suppress EXE artifact for public PR or build-only smoke
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_preview != true
+        shell: pwsh
+        run: |
+          Write-Output 'PUBLIC EXE ARTIFACT: SUPPRESSED (no unapproved binary uploaded)'
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'
+        with:
+          name: myshelter-windows-candidate
+          path: build/windows/MyShelter-Windows-x64.zip
+          retention-days: 1
+          if-no-files-found: error
+
+
+      # A real first-install smoke, using precisely the delivery scripts from
+      # this PR, but without publishing an additional owner package.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          path: owner-delivery-tools
+          persist-credentials: false
+      - name: Build owner QA manifest for native offline first-install test
+        shell: pwsh
+        run: |
+          $target = 'build/windows/owner-qa'
+          New-Item -ItemType Directory -Force $target | Out-Null
+          Copy-Item 'build/windows/MyShelter-Windows-x64.zip' "$target/MyShelter-Windows-x64.zip"
+          Copy-Item 'owner-delivery-tools/tools/delivery/windows_updater.py' "$target/windows_updater.py"
+          Copy-Item 'owner-delivery-tools/tools/delivery/Install-MyShelter.ps1' "$target/Install-MyShelter.ps1"
+          Copy-Item 'owner-delivery-tools/tools/delivery/Install-LocalQACandidate.ps1' "$target/Install-LocalQACandidate.ps1"
+          @'
+          import datetime, hashlib, json, os, pathlib, zipfile
+          root = pathlib.Path('build/windows/owner-qa')
+          payload = root / 'MyShelter-Windows-x64.zip'
+          with zipfile.ZipFile(payload) as archive:
+              if sorted(archive.namelist()) != ['MyShelter.exe', 'README.txt']:
+                  raise SystemExit('Wrong owner QA payload layout')
+              with archive.open('MyShelter.exe') as src:
+                  digest = hashlib.sha256()
+                  size = 0
+                  while block := src.read(1024 * 1024):
+                      digest.update(block)
+                      size += len(block)
+          metadata = {
+              'schema': 1, 'application': 'MyShelter', 'channel': 'preview',
+              'source_sha': os.environ['SOURCE_SHA'],
+              'archive_sha256': hashlib.sha256(payload.read_bytes()).hexdigest(),
+              'archive_size': payload.stat().st_size,
+              'exe_sha256': digest.hexdigest(), 'exe_size': size,
+              'published_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+          }
+          (root / 'manifest.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+          '@ | python -
+      - name: Actual Windows first-install with QA ZIP, local state and offline launch contract
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD 'build/windows/owner-qa'
+          $install = Join-Path $env:RUNNER_TEMP 'My Shelter Owner QA'
+          & (Join-Path $target 'Install-LocalQACandidate.ps1') -BundleDir $target -InstallDir $install -NoScheduledTask -NoDesktopShortcut
+          if (-not $?) { throw 'Native owner QA installation failed' }
+          $state = Get-Content (Join-Path $install 'state.json') -Raw | ConvertFrom-Json
+          if ($state.active_sha -cne $env:SOURCE_SHA) { throw 'Owner QA install state points to wrong source SHA' }
+          $exe = Join-Path $install "versions/$env:SOURCE_SHA/MyShelter.exe"
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'Offline installed executable missing' }
+          # Do not contact GitHub in this test; the installer itself must not
+          # need a public release, and the existing exe is usable offline.
+          $smokeOut = Join-Path $env:RUNNER_TEMP 'qa-owner-offline-stdout.txt'
+          $smokeErr = Join-Path $env:RUNNER_TEMP 'qa-owner-offline-stderr.txt'
+          $p = Start-Process -FilePath $exe -ArgumentList '--headless','--audio-driver','Dummy','--quit-after','10' -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
+          if (-not $p.WaitForExit(30000)) { $p.Kill(); throw 'Owner QA offline executable timed out' }
+          if ($p.ExitCode -ne 0) { throw 'Owner QA installed game failed to launch' }
+          $log = (Get-Content $smokeOut -Raw) + (Get-Content $smokeErr -Raw)
+          if ($log -notmatch 'Playable prototype initialized; schema v4') { throw 'Owner QA game startup marker missing' }
+          Write-Output 'MY SHELTER OWNER QA FIRST INSTALL: PASS'
+
+
+  publish-preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol' && github.ref == 'refs/heads/main'
+    needs: [updater-tests, installer-windows, build-windows]
+    runs-on: ubuntu-latest
+    environment: preview-release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      PUBLIC_RIGHTS_APPROVED: ${{ vars.MYSHELTER_PUBLIC_RELEASE_APPROVED }}
+      APPROVED_SOURCE_SHA: ${{ vars.MYSHELTER_APPROVED_PREVIEW_SHA }}
+      # Separate exact-SHA attestations from the protected environment.
+      MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+      MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+      MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+      MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Refuse public release without all four exact source attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/delivery/release_policy.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: myshelter-windows-candidate
+          path: publication
+      - name: Mandatory explicit public rights and exact-SHA owner gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLIC_RIGHTS_APPROVED" != "YES" ]]; then
+            echo "Blocked: repository variable MYSHELTER_PUBLIC_RELEASE_APPROVED must be YES only after rights review" >&2
+            exit 1
+          fi
+          if [[ "$APPROVED_SOURCE_SHA" != "$SOURCE_SHA" || ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Blocked: MYSHELTER_APPROVED_PREVIEW_SHA must equal exactly the 40-char game source SHA" >&2
+            exit 1
+          fi
+      - name: Create pinned manifest and non-overwriting preview release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          sha = os.environ['SOURCE_SHA']
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise SystemExit('Not a full source SHA')
+          z = pathlib.Path('publication/MyShelter-Windows-x64.zip')
+          with zipfile.ZipFile(z) as archive:
+              if sorted(archive.namelist()) != ['MyShelter.exe', 'README.txt']:
+                  raise SystemExit('Unexpected package members')
+              if archive.read('MyShelter.exe')[:2] != b'MZ':
+                  raise SystemExit('Missing PE header')
+          manifest = {
+              'schema': 1,
+              'application': 'MyShelter',
+              'channel': 'preview',
+              'source_sha': sha,
+              'package': z.name,
+              'entrypoint': 'MyShelter.exe',
+              'archive_sha256': hashlib.sha256(z.read_bytes()).hexdigest(),
+              'archive_size': z.stat().st_size,
+          }
+          pathlib.Path('publication/manifest.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True), encoding='utf-8')
+          PY
+          tag="myshelter-preview-$SOURCE_SHA"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable release $tag" >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            publication/MyShelter-Windows-x64.zip publication/manifest.json \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --prerelease \
+            --title "MyShelter QA preview ($SOURCE_SHA)" \
+            --notes "Manually promoted Windows preview. Exact source $SOURCE_SHA. Automated contracts + offline smoke tested. NOT G0/G4 owner approval. Check asset rights before publishing."
