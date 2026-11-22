@@ -79,6 +79,14 @@ func _run() -> void:
 	check(hazard_snapshot.ok and hazard_snapshot.code == "OK"
 		and hazard_snapshot.rectangles == [WATER_ONE, WATER_TWO],
 		"valid WorldHost exposes explicit authoritative hazard snapshot for A1")
+	var dry_anchors: Array = [water_map.spawn]
+	for exit_data in water_map.exits.values():
+		dry_anchors.append(exit_data.arrival)
+	check(WaterZones.preserves_dry_entries([WATER_ONE, WATER_TWO], dry_anchors, 9.0),
+		"real accepted water pools preserve all mandatory v5 spawn/portal arrivals")
+	check(not WaterZones.preserves_dry_entries([WATER_ONE], [Vector2(INF, 0)], 9.0)
+		and not WaterZones.preserves_dry_entries([WATER_ONE], dry_anchors, -1.0),
+		"invalid player anchor or radius cannot bypass water entry safety")
 	var solid_collision: Array[Rect2] = world.collision_rects()
 	check(solid_collision.size() > 0 and not solid_collision.has(WATER_ONE)
 		and not solid_collision.has(WATER_TWO),
@@ -107,6 +115,28 @@ func _run() -> void:
 		"invalid water metadata cannot create partially active Area2D volumes")
 	corrupt_world.queue_free()
 	await at_next_physics()
+
+	# Even a syntactically valid Rect2 water pool must be denied when it
+	# swallows the spawn or any mandatory exit arrival. Otherwise an A1 G
+	# return or ordinary doorway could initialize the hero underwater.
+	var protected_arrival: Vector2 = water_map.exits.values()[0].arrival
+	for anchor_point in [water_map.spawn, protected_arrival]:
+		var unsafe_nodes: Dictionary = Layout.build(42, 5)
+		var unsafe_layout: Dictionary = unsafe_nodes["outside"].duplicate(true)
+		var flooded_arrival := Rect2(anchor_point - Vector2(15, 15), Vector2(30, 30))
+		unsafe_layout["water_zones"] = [flooded_arrival]
+		unsafe_nodes["outside"] = unsafe_layout
+		var unsafe_world = WorldScene.instantiate()
+		unsafe_world.configure_layout(unsafe_nodes, "outside")
+		root.add_child(unsafe_world)
+		await at_next_physics()
+		var denied: Dictionary = unsafe_world.water_hazard_snapshot()
+		check(not unsafe_world.water_zones_valid and not denied.ok
+			and denied.code == "INVALID_WATER_LAYOUT"
+			and not is_instance_valid(unsafe_world.water_zone_layer),
+			"water pool covering mandatory spawn/portal arrival cannot activate physics")
+		unsafe_world.queue_free()
+		await at_next_physics()
 
 	# Negative inputs can be non-Array values in an untrusted layout
 	# Variant. They must NOT trigger a typed-GDScript runtime exception or
