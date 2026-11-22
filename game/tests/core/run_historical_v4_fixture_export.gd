@@ -104,6 +104,11 @@ func run() -> void:
 				selected[key] = nodes[id][key]
 		var canonical: String = JSON.stringify([id, geometry_value(selected)], "", true, true)
 		print("A1_REAL_V4_NODE_" + id + "_SHA256=" + canonical.sha256_text())
+		if id in ["hospital", "hospital_1_1", "house_0", "house_0_2"]:
+			for key in GEOMETRY_KEYS:
+				if selected.has(key):
+					print("A1_REAL_V4_FIELD_" + id + "__" + key + "_SHA256=" +
+						JSON.stringify(geometry_value(selected[key]), "", true, true).sha256_text())
 	var config: Dictionary = Rules.build()
 	config.world_seed = 54
 	config.scenes = Layout.entries()
