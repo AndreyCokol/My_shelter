@@ -10,6 +10,16 @@ const Layout = preload("res://game/systems/world/world_layout.gd")
 const Store = preload("res://game/systems/core/checkpoint_store.gd")
 const Model = preload("res://game/state/campaign_model.gd")
 const OLD_WIN_ID := "a1-historical-v4:first-win"
+# Native original generator-v4 canonical fingerprints from source SHA
+# 59bb12517e21850386092bd1e0a5e3d79c23c98a; confirmed on both
+# Linux and Windows (old test PR #191, commit 3c08f163...).
+const OLD_V4_GEOMETRY := {
+	0: "f239bfde9c6b06bf66b8d2093e462e9ae72a1b873908e8ac1b2e8eb3fd868174",
+	1: "47e5cc76e27dc9fa4c5a28f083f92f6cb75610d01e9069a250f8fff08b37378f",
+	54: "66e12d5213a5f7e93e2cb2ef9ac9f25b855760d332b5d5f79c977087fc6e0826",
+	1234: "f87dcf8d2caee31444031aca392fea1865ecfd9c7305df12e0d99031d406d554",
+	2147483647: "def5a7a20a16d5888d816771f6d6ba3ab42b56c1032d9d75cb74f1faf2c2bf38"
+}
 const SOURCES := [
 	{"name":"fresh", "sha256":"b7aa2dad9fda7cc82e4d8b8792b87b660efea00e64eb29e890586a26c35221d8"},
 	{"name":"reward", "sha256":"f1ca6539208d5b440fdb95e830925112162131934bb82d8d43329d14fd3d2514"}
@@ -196,6 +206,13 @@ func run() -> void:
 	# corrected canonicalizer hashes both by sorted TEXT key, not Variant.
 	check(geom.sha256 == "66e12d5213a5f7e93e2cb2ef9ac9f25b855760d332b5d5f79c977087fc6e0826",
 		"current v4 geometry equals genuine v4 geometry using OS-stable canonical key order")
+	# Deliberately compare multiple worlds, not only seed 54; include both
+	# boundaries and verify per-seed cross-OS legacy geometry contracts.
+	for legacy_seed in [0, 1, 54, 1234, Layout.MAX_SEED]:
+		var candidate: Dictionary = geometry_digest(legacy_seed, 4)
+		check(candidate.nodes == 30 and candidate.sha256 == OLD_V4_GEOMETRY[legacy_seed],
+			"current v4 legacy geometry matches original source for seed " + str(legacy_seed))
+		print("A1_CURRENT_V4_GEOMETRY_SEED_" + str(legacy_seed) + "_SHA256=" + candidate.sha256)
 	for fixture in SOURCES:
 		verify_one(config, fixture.name, fixture.sha256)
 	print("AUTHENTIC V4 COMPAT TESTS: %d checks, %d failures" % [checks, failures])
