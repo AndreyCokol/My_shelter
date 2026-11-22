@@ -69,14 +69,17 @@ jobs:
           Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
 
   build-windows:
-    if: github.event_name == 'workflow_dispatch'
+    # On this delivery PR, exercise the actual Godot/export path on a PINNED
+    # previously validated game commit. This never publishes an executable.
+    # Manual dispatch later uses an A5-reviewed exact integration source SHA.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'delivery/evergreen-windows-updater-20261121')
     needs: [updater-tests, installer-windows]
     runs-on: windows-latest
     timeout-minutes: 40
     permissions:
       contents: read
     env:
-      SOURCE_SHA: ${{ inputs.source_sha }}
+      SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || 'e76cfcfba0c643fe0658fde61a6b4499f34c7914' }}
       PYTHONUTF8: '1'
       SHELTER_REQUIRE_ASSETS: '1'
     steps:
