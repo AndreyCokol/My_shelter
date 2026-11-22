@@ -1,5 +1,6 @@
 """Offline security regression tests for the public-release promotion gate."""
 import unittest
+from pathlib import Path
 
 from release_policy import APPROVAL_VARIABLES, ReleaseGateError, check_public_preview_approvals
 
@@ -47,6 +48,17 @@ class PublicReleaseGateTests(unittest.TestCase):
     def test_new_build_needs_fresh_fourfold_approval(self):
         with self.assertRaises(ReleaseGateError):
             check_public_preview_approvals("b" * 40, approved(SOURCE))
+
+    def test_publication_workflow_invokes_gate_before_release(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/windows-evergreen.yml").read_text(encoding="utf-8")
+        section = workflow.split("  publish-preview:", 1)[-1]
+        self.assertIn("github.ref == 'refs/heads/main'", section)
+        self.assertIn("environment: preview-release", section)
+        self.assertIn("python tools/delivery/release_policy.py", section)
+        self.assertIn("gh release create", section)
+        self.assertLess(section.index("python tools/delivery/release_policy.py"), section.index("gh release create"))
+        for key in APPROVAL_VARIABLES:
+            self.assertIn(f"{key}: ${{{{ vars.{key} }}}}", section)
 
 
 if __name__ == "__main__":
