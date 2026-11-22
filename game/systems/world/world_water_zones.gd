@@ -13,6 +13,22 @@ const MAX_ZONES := 32
 var _zones: Array[Rect2] = []
 var _occupants: Dictionary = {}
 
+# Water may never invalidate the mandatory scene spawn or a portal's
+# return-arrival position. This is an authoring constraint for NEW maps,
+# not a modification of historical WorldLayout v4/v5.
+static func preserves_dry_entries(rectangles: Array, anchors: Array, actor_radius: float = 9.0) -> bool:
+	if not is_finite(actor_radius) or actor_radius < 0.0:
+		return false
+	for point in anchors:
+		if not point is Vector2 or not point.is_finite():
+			return false
+		for item in rectangles:
+			if not item is Rect2 or not item.is_finite() or not item.has_area():
+				return false
+			if item.grow(actor_radius + 0.5).has_point(point):
+				return false
+	return true
+
 func configure(rectangles: Array, bounds: Rect2) -> bool:
 	if is_inside_tree() or get_child_count() != 0 or not _zones.is_empty():
 		return false
