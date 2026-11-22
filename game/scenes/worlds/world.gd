@@ -73,8 +73,13 @@ func _ready() -> void:
 		if not water_data is Array:
 			water_zones_valid = false
 		else:
+			var anchor_points: Array = [layout.get("spawn", Vector2.INF)]
+			for portal in portals:
+				anchor_points.append(portal.get("arrival", Vector2.INF))
+			var dry_entries: bool = WaterZones.preserves_dry_entries(
+				water_data, anchor_points, 9.0)
 			var layer = WaterZones.new()
-			if layer.configure(water_data, floor):
+			if dry_entries and layer.configure(water_data, floor):
 				layer.name = "WaterZones"
 				layer.z_index = -1
 				add_child(layer)
