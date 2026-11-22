@@ -186,6 +186,8 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SOURCE_SHA: ${{ inputs.source_sha }}
+      PUBLIC_RIGHTS_APPROVED: ${{ vars.MYSHELTER_PUBLIC_RELEASE_APPROVED }}
+      APPROVED_SOURCE_SHA: ${{ vars.MYSHELTER_APPROVED_PREVIEW_SHA }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -194,7 +196,19 @@ jobs:
         with:
           name: myshelter-windows-candidate
           path: publication
-      - name: Create pinned manifest and immutable preview release
+      - name: Mandatory explicit public rights and exact-SHA owner gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLIC_RIGHTS_APPROVED" != "YES" ]]; then
+            echo "Blocked: repository variable MYSHELTER_PUBLIC_RELEASE_APPROVED must be YES only after rights review" >&2
+            exit 1
+          fi
+          if [[ "$APPROVED_SOURCE_SHA" != "$SOURCE_SHA" || ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Blocked: MYSHELTER_APPROVED_PREVIEW_SHA must equal exactly the 40-char game source SHA" >&2
+            exit 1
+          fi
+      - name: Create pinned manifest and non-overwriting preview release
         shell: bash
         run: |
           set -euo pipefail
