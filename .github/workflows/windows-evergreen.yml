@@ -173,7 +173,7 @@ jobs:
           if-no-files-found: error
 
   publish-preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol' && github.ref == 'refs/heads/main'
     needs: [updater-tests, installer-windows, build-windows]
     runs-on: ubuntu-latest
     environment: preview-release
@@ -183,10 +183,22 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SOURCE_SHA: ${{ inputs.source_sha }}
+      # Each must be set to the EXACT game source SHA in the protected
+      # preview-release environment after separate owner/rights/A0/G0 approvals.
+      # Missing environment or vars => empty strings => publication blocked.
+      MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+      MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+      MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+      MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Require protected environment attestations for exact game source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/delivery/release_policy.py
       - uses: actions/download-artifact@v4
         with:
           name: myshelter-windows-candidate
