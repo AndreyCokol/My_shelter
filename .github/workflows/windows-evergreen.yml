@@ -69,14 +69,19 @@ jobs:
           Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
 
   build-windows:
-    if: github.event_name == 'workflow_dispatch'
+    # PR smoke checks only; no EXE artifact may be uploaded from an unapproved public branch.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'delivery/evergreen-windows-updater-20261121')
     needs: [updater-tests, installer-windows]
     runs-on: windows-latest
     timeout-minutes: 40
+    # When an EXE is intended to become downloadable, require approval BEFORE
+    # any artifact is uploaded. Other smoke tests have no publishing rights.
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && 'preview-release' || 'build-only' }}
     permissions:
       contents: read
     env:
-      SOURCE_SHA: ${{ inputs.source_sha }}
+      SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || 'e76cfcfba0c643fe0658fde61a6b4499f34c7914' }}
       PYTHONUTF8: '1'
       SHELTER_REQUIRE_ASSETS: '1'
     steps:
@@ -88,7 +93,7 @@ jobs:
           }
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
       - name: Confirm checkout provenance
         shell: pwsh
@@ -165,11 +170,30 @@ jobs:
               z.write(exe, 'MyShelter.exe')
               z.writestr('README.txt', 'MyShelter Windows QA preview\nSource SHA: ' + os.environ['SHA'] + '\nNOT a public game release or final G0.\n')
           '@ | python -
+      # On a PUBLIC repository, Actions artifacts are not private.
+      # PR smoke and build-only may inspect the EXE in the ephemeral runner,
+      # but must NEVER upload an unapproved game binary as an artifact.
+      - name: Require owner, asset rights, independent A0 and G0/G4 attestations before ANY EXE upload
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true
+        shell: pwsh
+        env:
+          MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+          MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+          MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+          MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
+        run: |
+          python tools/delivery/release_policy.py
+          if ($LASTEXITCODE -ne 0) { throw 'PUBLIC EXE ARTIFACT BLOCKED: exact-source approvals missing' }
+      - name: Suppress EXE artifact for public PR or build-only smoke
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_preview != true
+        shell: pwsh
+        run: Write-Output 'PUBLIC EXE ARTIFACT: SUPPRESSED (build/test passed; no unapproved binary uploaded)'
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'
         with:
           name: myshelter-windows-candidate
           path: build/windows/MyShelter-Windows-x64.zip
-          retention-days: 14
+          retention-days: 1
           if-no-files-found: error
 
   publish-preview:
