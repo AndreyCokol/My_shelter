@@ -49,6 +49,22 @@ class PublicReleaseGateTests(unittest.TestCase):
         with self.assertRaises(ReleaseGateError):
             check_public_preview_approvals("b" * 40, approved(SOURCE))
 
+    def test_public_artifact_is_never_uploaded_in_smoke_builds(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/windows-evergreen.yml").read_text(encoding="utf-8")
+        build = workflow.split("  build-windows:", 1)[1].split("  publish-preview:", 1)[0]
+        self.assertIn("environment:", build)
+        self.assertIn("preview-release' || 'build-only'", build)
+        self.assertIn("PUBLIC EXE ARTIFACT BLOCKED", build)
+        self.assertIn("PUBLIC EXE ARTIFACT: SUPPRESSED", build)
+        for key in APPROVAL_VARIABLES:
+            self.assertIn(f"{key}: ${{{{ vars.{key} }}}}", build)
+        approval = build.index("Require owner, asset rights")
+        upload = build.index("actions/upload-artifact@v4")
+        self.assertLess(approval, upload)
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'", build)
+        self.assertIn("retention-days: 1", build)
+        self.assertIn("github.head_ref == 'delivery/evergreen-windows-updater-20261121'", build)
+
     def test_publication_workflow_invokes_gate_before_release(self):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/windows-evergreen.yml").read_text(encoding="utf-8")
         section = workflow.split("  publish-preview:", 1)[-1]
