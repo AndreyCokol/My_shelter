@@ -58,7 +58,7 @@ class PublicReleaseGateTests(unittest.TestCase):
         self.assertIn("PUBLIC EXE ARTIFACT: SUPPRESSED", build)
         for key in APPROVAL_VARIABLES:
             self.assertIn(f"{key}: ${{{{ vars.{key} }}}}", build)
-        approval = build.index("Require owner, asset rights")
+        approval = build.index("Require four exact-SHA approvals")
         upload = build.index("actions/upload-artifact@v4")
         self.assertLess(approval, upload)
         self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'", build)
