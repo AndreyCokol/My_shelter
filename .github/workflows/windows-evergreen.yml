@@ -69,13 +69,15 @@ jobs:
           Write-Output 'WINDOWS EVERGREEN INSTALLER: PASS'
 
   build-windows:
-    # On this delivery PR, exercise the actual Godot/export path on a PINNED
-    # previously validated game commit. This never publishes an executable.
-    # Manual dispatch later uses an A5-reviewed exact integration source SHA.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'delivery/evergreen-windows-updater-20261121')
+    # PR smoke checks only; no EXE artifact may be uploaded from an unapproved public branch.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     needs: [updater-tests, installer-windows]
     runs-on: windows-latest
     timeout-minutes: 40
+    # When an EXE is intended to become downloadable, require approval BEFORE
+    # any artifact is uploaded. Other smoke tests have no publishing rights.
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && 'preview-release' || 'build-only' }}
     permissions:
       contents: read
     env:
@@ -168,15 +170,43 @@ jobs:
               z.write(exe, 'MyShelter.exe')
               z.writestr('README.txt', 'MyShelter Windows QA preview\nSource SHA: ' + os.environ['SHA'] + '\nNOT a public game release or final G0.\n')
           '@ | python -
+      # The PUBLIC repository does not make Actions artifacts private.
+      # The Windows runner may test the EXE, but PR/build-only never uploads it.
+      - name: Require four exact-SHA approvals BEFORE any EXE artifact upload
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true
+        shell: pwsh
+        env:
+          MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+          MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+          MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+          MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
+        run: |
+          # The game checkout does not necessarily include the A5 delivery script.
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'PUBLIC EXE ARTIFACT BLOCKED: invalid source SHA'
+          }
+          foreach ($name in @('MYSHELTER_OWNER_APPROVED_SHA', 'MYSHELTER_ASSET_RIGHTS_APPROVED_SHA', 'MYSHELTER_A0_REVIEWED_SHA', 'MYSHELTER_G0_G4_APPROVED_SHA')) {
+            $approved = [Environment]::GetEnvironmentVariable($name)
+            if ($approved -cne $env:SOURCE_SHA) {
+              throw "PUBLIC EXE ARTIFACT BLOCKED: absent/wrong $name"
+            }
+          }
+          Write-Output 'PUBLIC EXE ARTIFACT GATE: PASS (four exact-SHA attestations)'
+      - name: Suppress EXE artifact for public PR or build-only smoke
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_preview != true
+        shell: pwsh
+        run: |
+          Write-Output 'PUBLIC EXE ARTIFACT: SUPPRESSED (no unapproved binary uploaded)'
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.ref == 'refs/heads/main'
         with:
           name: myshelter-windows-candidate
           path: build/windows/MyShelter-Windows-x64.zip
-          retention-days: 14
+          retention-days: 1
           if-no-files-found: error
 
   publish-preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview == true && github.actor == 'AndreyCokol' && github.ref == 'refs/heads/main'
     needs: [updater-tests, installer-windows, build-windows]
     runs-on: ubuntu-latest
     environment: preview-release
@@ -186,10 +216,22 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SOURCE_SHA: ${{ inputs.source_sha }}
+      # Each must be set to the EXACT game source SHA in the protected
+      # preview-release environment after separate owner/rights/A0/G0 approvals.
+      # Missing environment or vars => empty strings => publication blocked.
+      MYSHELTER_OWNER_APPROVED_SHA: ${{ vars.MYSHELTER_OWNER_APPROVED_SHA }}
+      MYSHELTER_ASSET_RIGHTS_APPROVED_SHA: ${{ vars.MYSHELTER_ASSET_RIGHTS_APPROVED_SHA }}
+      MYSHELTER_A0_REVIEWED_SHA: ${{ vars.MYSHELTER_A0_REVIEWED_SHA }}
+      MYSHELTER_G0_G4_APPROVED_SHA: ${{ vars.MYSHELTER_G0_G4_APPROVED_SHA }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Require protected environment attestations for exact game source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/delivery/release_policy.py
       - uses: actions/download-artifact@v4
         with:
           name: myshelter-windows-candidate
