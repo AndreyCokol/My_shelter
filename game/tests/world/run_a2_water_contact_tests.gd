@@ -108,6 +108,28 @@ func _run() -> void:
 	corrupt_world.queue_free()
 	await at_next_physics()
 
+	# Negative inputs can be non-Array values in an untrusted layout
+	# Variant. They must NOT trigger a typed-GDScript runtime exception or
+	# silently produce a successful empty ("dry") authoritative snapshot.
+	for malformed in [null, "lake", {"rect": WATER_ONE}, 42, Vector2.ZERO, ["bad"], [WATER_ONE, "bad"]]:
+		var broken_nodes: Dictionary = Layout.build(42, 5)
+		var broken_layout: Dictionary = broken_nodes["outside"].duplicate(true)
+		broken_layout["water_zones"] = malformed
+		broken_nodes["outside"] = broken_layout
+		var broken_world = WorldScene.instantiate()
+		broken_world.configure_layout(broken_nodes, "outside")
+		root.add_child(broken_world)
+		await at_next_physics()
+		var broken_snapshot: Dictionary = broken_world.water_hazard_snapshot()
+		check(not broken_world.water_zones_valid
+			and not broken_snapshot.ok
+			and broken_snapshot.code == "INVALID_WATER_LAYOUT"
+			and broken_snapshot.rectangles.is_empty()
+			and not is_instance_valid(broken_world.water_zone_layer),
+			"bad water metadata %s fails closed with no physics areas" % str(malformed))
+		broken_world.queue_free()
+		await at_next_physics()
+
 	var water_is_clear := true
 	for obstacle in solid_collision:
 		if obstacle.grow(9).intersects(WATER_ONE) or obstacle.grow(9).intersects(WATER_TWO):
