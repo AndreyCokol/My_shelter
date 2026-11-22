@@ -190,8 +190,19 @@ func run() -> void:
 		print("A1_CURRENT_V4_NODE_" + id + "_SHA256=" +
 			JSON.stringify([id, geometry_value(selected)], "", true, true).sha256_text())
 	check(geom.nodes == 30, "current v4 compatibility renderer preserves all 30 historical scene IDs")
-	check(geom.sha256 == "99953d0a2702fa054a14bf98de9730a5db919f4125426383cd4c37a14293a793",
-		"current legacy-v4 geometry/link fingerprint matches true historical generator-v4 layout")
+	# The original v4 source itself yields different geometry digests on
+	# Linux vs Windows for eight first-floor scenes; that is a separate
+	# cross-platform parity risk, NOT a v4->v5 migration mismatch.
+	# Compare native-old and current-old geometry on the SAME pinned OS.
+	var os_name: String = OS.get_name()
+	var legacy_baselines := {
+		"Linux": "99953d0a2702fa054a14bf98de9730a5db919f4125426383cd4c37a14293a793",
+		"Windows": "48bfc230c2246c1814daddc43742097e8197511062d673e5658ea2f52b43c406"
+	}
+	check(legacy_baselines.has(os_name), "historical geometry comparison runs on a verified baseline OS")
+	if legacy_baselines.has(os_name):
+		check(geom.sha256 == legacy_baselines[os_name],
+			"current v4 geometry exactly matches original generator4 on " + os_name)
 	for fixture in SOURCES:
 		verify_one(config, fixture.name, fixture.sha256)
 	print("AUTHENTIC V4 COMPAT TESTS: %d checks, %d failures" % [checks, failures])
