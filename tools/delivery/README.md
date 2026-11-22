@@ -36,7 +36,7 @@ Install-MyShelter.ps1 и windows_updater.py.
 ## Создание проверенной preview-сборки в GitHub
 
 1. A5 собирает все необходимые изменения A1–A5 в одну integration ветку и фиксирует source SHA; Linux/Windows/документы, право использовать ассеты и критические P0 QA должны быть проверены.
-2. После merge CI/tools PR в main: Actions → MyShelter evergreen Windows preview → Run workflow. Вставить lowercase 40-character source_sha проверенной ветки; publish_preview=false. Создастся только Actions artifact (14 дней), публичного Release не будет.
+2. После merge CI/tools PR в main: Actions → MyShelter evergreen Windows preview → Run workflow. Вставить lowercase 40-character source_sha проверенной ветки; `publish_preview=false`. **В публичном репозитории такой build-only выполняет Windows export, офлайновый EXE smoke и тесты, но НИКОГДА не выгружает ZIP в GitHub Actions artifact**: такой артефакт может быть доступен не только владельцу репозитория. Выходы тестов, логи и SHA остаются доступны; для приватной выдачи EXE до проверки прав требуется авторизованное приватное хранилище, а не публичные GitHub Actions artifacts.
 3. Проверить ZIP, запуск EXE/offline smoke и SHA. В GitHub Settings → Environments вручную создать **preview-release** с **Required Reviewers** (независимый A0/владелец согласно порядку приёмки) и ограничить Deployment branches **только main**. Одного YAML поля `environment: preview-release` для ручного подтверждения недостаточно.
 4. Только после проверки **всего игрового SHA** (A0, G0/G4, владелец), а также **лицензии и происхождения каждого ассета**, установить четыре защищённые Environment variables в `preview-release`. Значение каждой переменной — **точно полный lowercase 40-символьный проверенный source SHA**:
    - `MYSHELTER_OWNER_APPROVED_SHA` — решение владельца о публичном preview;
@@ -46,6 +46,12 @@ Install-MyShelter.ps1 и windows_updater.py.
    
    Отсутствующая переменная, `true`, укороченный/старый SHA или запуск с не-main **блокируют публикацию**. Эти маркеры — **человеческие аттестации, а не независимые криптографические подписи**; основания должны храниться отдельно. При смене source SHA нужны повторная проверка и новые значения всех четырёх переменных.
 5. Только после этого повторить `workflow_dispatch` на **main** с `publish_preview=true` и тем же source SHA. После Required Reviewers, успешной сверки четырёх SHA и CI отдельный publisher job получает write permission и создаёт immutable публичный prerelease `myshelter-preview-<source_sha>`.
+
+## Прежние Actions artifacts с непроверенными EXE
+
+**Внимание:** до этого P0-исправления [run #45022145073](https://github.com/AndreyCokol/My_shelter/actions/runs/45022145073) в публичном репозитории создал `myshelter-windows-candidate` (artifact ID `14753344595`, ~38,7 MB, срок хранения до 06.12.2026). **Он не является приватным и не подтверждает права на вложенные игровые ассеты.** Нужно проверить содержимое/права и удалить артефакт через GitHub Actions, если разрешения отсутствуют; исправление workflow не удаляет уже созданные артефакты.
+
+В новой A5 ревизии `build-windows` по-прежнему проверяет экспорт и запускаемость EXE на GitHub-hosted Windows runner, но загрузка архива допускается только при `publish_preview=true`, запуске с `main`, окружении `preview-release` и четырёх актуальных exact-SHA approvals **до вызова `upload-artifact`**. Задача `build-only` не публикует ни Release, ни artifact. Дополнительная независимая проверка тех же разрешений выполняется в `publish-preview`. Срок хранения разрешённого временного архива сокращён до одного дня. Это не заменяет отдельную защиту прав и независимое решение A0.
 
 ## Защита от случайной PUBLIC-публикации
 
