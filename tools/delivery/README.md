@@ -36,10 +36,18 @@ Install-MyShelter.ps1 и windows_updater.py.
 ## Создание проверенной preview-сборки в GitHub
 
 1. A5 собирает все необходимые изменения A1–A5 в одну integration ветку и фиксирует source SHA; Linux/Windows/документы, право использовать ассеты и критические P0 QA должны быть проверены.
-2. После merge CI/tools PR в main: Actions → MyShelter evergreen Windows preview → Run workflow. Вставить lowercase 40-character source_sha проверенной ветки; publish_preview=false. Создастся только Actions artifact (14 дней), публичного Release не будет.
-3. Проверить ZIP, запуск EXE/offline smoke и SHA. В GitHub Settings → Environments настроить preview-release с required reviewers, а также запрет публикации из неразрешённых веток.
-4. Только после этого повторить workflow_dispatch с publish_preview=true и тем же SHA. Отдельный publish job с write permissions публикует immutable prerelease myshelter-preview-<source_sha> с ZIP + manifest.json.
+2. После merge CI/tools PR в main: Actions → MyShelter evergreen Windows preview → Run workflow. Вставить lowercase 40-character source_sha проверенной ветки; publish_preview=false. **EXE экспортируется и проходит Windows offline smoke, но ZIP не загружается как GitHub Actions artifact.** Репозиторий публичный; не считать build-only Actions artifact приватным способом выдачи EXE.
+3. Проверить реальные Windows логи экспорта/EXE startup и exact source SHA. В GitHub Settings → Environments создать защищённое окружение `preview-release`, настроить Required Reviewers и Deployment branches **только main**. Само наличие `environment: preview-release` в YAML не создаёт обязательных ручных подтверждений.
+4. Только после проверки прав на **каждый включённый ассет**, согласования A0, G0/G4 и решения владельца установить **четыре отдельные защищённые переменные окружения**, каждая равна полному lowercase 40-символьному game source SHA: `MYSHELTER_OWNER_APPROVED_SHA`, `MYSHELTER_ASSET_RIGHTS_APPROVED_SHA`, `MYSHELTER_A0_REVIEWED_SHA`, `MYSHELTER_G0_G4_APPROVED_SHA`. Существующие `MYSHELTER_PUBLIC_RELEASE_APPROVED=YES` и `MYSHELTER_APPROVED_PREVIEW_SHA=<тот же SHA>` тоже остаются обязательными. До этого **не запускать** `publish_preview=true`. Публикация блокируется до загрузки артефакта и затем повторно перед GitHub Release; при смене SHA все approvals надо обновить после повторной проверки.
 5. Локальный updater выбирает только публичные prerelease с полным SHA в теге, проверяет manifest и SHA-256 архива. Никакие произвольные PR или main не устанавливаются сами по себе.
+
+## A5 — запрет публичных Actions-артефактов без прав
+
+**На 22.11.2026 ранее созданный [run #45022145073](https://github.com/AndreyCokol/My_shelter/actions/runs/45022145073) содержит ZIP `myshelter-windows-candidate` (artifact ID `14753344595`, около 38,7 МБ, expiration 06.12.2026).** Содержимое и права на игровые ассеты не были независимо подтверждены A5/A0; этот артефакт **нельзя считать приватным**. Необходимо проверить/удалить его через GitHub Actions, если прав на выдачу нет. Доработка workflow не удаляет исторические артефакты.
+
+В обновлённой версии PR- и build-only-тесты по-прежнему выполняют экспорт и offline EXE smoke, включая существующий тест **приватной первой установки QA** внутри GitHub-hosted Windows runner, но не загружают архив наружу. Публичный артефакт разрешается только для ручного `publish_preview=true` **с main**, после одобрения защищённого окружения `preview-release` и **четырёх совпадающих exact-SHA аттестаций**, прежде чем сработает `upload-artifact`. Аналогичные проверки повторяются в `publish-preview`. Временный разрешённый ZIP хранится не более одного дня.
+
+Четыре environment variables — **документируемые человеческие аттестации, а не самостоятельное доказательство лицензий, подпись исполняемого файла или независимая подпись A0**. Обязательны отдельная проверка происхождения/прав каждого ассета, техническая приёмка, G0/G4 и реальные Windows-проверки. До этого не выставлять значения этих переменных. Для закрытого обмена сборкой без открытой лицензии требуется защищённое приватное хранилище.
 
 ## Как гарантируется сохранение рабочей версии
 
