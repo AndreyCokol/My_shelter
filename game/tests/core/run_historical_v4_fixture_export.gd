@@ -32,6 +32,51 @@ func request(session, action_id: String, kind: String, payload: Dictionary = {})
 		"context": {"actor_id":"player", "scene_id":s.scene.current_scene_id,
 			"expected_resource_revisions": revisions}}
 
+# Canonical, type-aware fingerprint of important authored geometry and links.
+# Uses only explicit v4 scene records and stable id/key order; no UI textures.
+const GEOMETRY_KEYS := ["kind", "segment", "label", "bounds", "spawn", "loot",
+	"enemy", "patrol", "obstacles", "links", "aprons", "roadways",
+	"facades", "rooms", "floor_plan", "exits", "salvage", "event",
+	"building_id", "floor_number"]
+
+static func geometry_value(value):
+	if value is Vector2:
+		return ["Vector2", value.x, value.y]
+	if value is Rect2:
+		return ["Rect2", value.position.x, value.position.y, value.size.x, value.size.y]
+	if value is PackedVector2Array:
+		var values: Array = []
+		for v in value:
+			values.append(geometry_value(v))
+		return ["PackedVector2Array", values]
+	if value is Dictionary:
+		var rows: Array = []
+		var keys: Array = value.keys()
+		keys.sort()
+		for k in keys:
+			rows.append([str(k), geometry_value(value[k])])
+		return rows
+	if value is Array:
+		var result: Array = []
+		for v in value:
+			result.append(geometry_value(v))
+		return result
+	return value
+
+static func geometry_digest(world_seed: int, version: int) -> Dictionary:
+	var nodes: Dictionary = Layout.build(world_seed, version)
+	var ids: Array = nodes.keys()
+	ids.sort()
+	var projection: Array = []
+	for id in ids:
+		var selected: Dictionary = {}
+		for key in GEOMETRY_KEYS:
+			if nodes[id].has(key):
+				selected[key] = nodes[id][key]
+		projection.append([id, geometry_value(selected)])
+	return {"nodes": ids.size(),
+		"sha256": JSON.stringify(projection, "", true, true).sha256_text()}
+
 func emit(name: String, state: Dictionary, store: Object, config: Dictionary) -> void:
 	expect(Model.validate(state, config), name + " is valid under REAL v4 model")
 	var result: Dictionary = store.write_checkpoint(state, Model.validate.bind(config))
@@ -45,6 +90,10 @@ func emit(name: String, state: Dictionary, store: Object, config: Dictionary) ->
 
 func run() -> void:
 	expect(Layout.VERSION == 4, "artifact generator executes historical VERSION 4 code")
+	var geo: Dictionary = geometry_digest(54, Layout.VERSION)
+	expect(geo.nodes > 15 and geo.sha256.length() == 64, "historical native v4 geometry canonical digest generated")
+	print("A1_REAL_V4_GEOMETRY_NODES=" + str(geo.nodes))
+	print("A1_REAL_V4_GEOMETRY_SHA256=" + geo.sha256)
 	var config: Dictionary = Rules.build()
 	config.world_seed = 54
 	config.scenes = Layout.entries()
