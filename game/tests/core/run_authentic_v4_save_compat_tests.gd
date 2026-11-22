@@ -177,6 +177,18 @@ func run() -> void:
 	check(Campaign.valid_rules(config), "current config validates before importing actual old saves")
 	check(Layout.VERSION > 4, "test executes current generator, distinct from real v4 fixture generator")
 	var geom: Dictionary = geometry_digest(54, 4)
+	print("A1_CURRENT_V4_GEOMETRY_NODES=" + str(geom.nodes))
+	print("A1_CURRENT_V4_GEOMETRY_SHA256=" + geom.sha256)
+	var nodes: Dictionary = Layout.build(54, 4)
+	var ids: Array = nodes.keys()
+	ids.sort()
+	for id in ids:
+		var selected: Dictionary = {}
+		for key in GEOMETRY_KEYS:
+			if nodes[id].has(key):
+				selected[key] = nodes[id][key]
+		print("A1_CURRENT_V4_NODE_" + id + "_SHA256=" +
+			JSON.stringify([id, geometry_value(selected)], "", true, true).sha256_text())
 	check(geom.nodes == 30, "current v4 compatibility renderer preserves all 30 historical scene IDs")
 	check(geom.sha256 == "99953d0a2702fa054a14bf98de9730a5db919f4125426383cd4c37a14293a793",
 		"current legacy-v4 geometry/link fingerprint matches true historical generator-v4 layout")
