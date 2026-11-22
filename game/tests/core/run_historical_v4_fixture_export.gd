@@ -50,11 +50,13 @@ static func geometry_value(value):
 			values.append(geometry_value(v))
 		return ["PackedVector2Array", values]
 	if value is Dictionary:
+		# StringName and String keys can sort in a different Variant order
+		# on Windows vs Linux. Normalize to String FIRST, then sort rows
+		# by textual key to avoid a false cross-OS geometry mismatch.
 		var rows: Array = []
-		var keys: Array = value.keys()
-		keys.sort()
-		for k in keys:
+		for k in value.keys():
 			rows.append([str(k), geometry_value(value[k])])
+		rows.sort_custom(func(a, b): return a[0] < b[0])
 		return rows
 	if value is Array:
 		var result: Array = []
