@@ -28,6 +28,11 @@ func run() -> void:
 	check(not image.is_empty() and image.get_width() >= 640, "step13 real renderer produces viewport pixels")
 	image.save_png("/tmp/shelter-visual/welcome.png")
 	app.ui.close_panel()
+	await process_frame
+	check(app.ui.hud.current_day == 1 + floori(float(app.snapshot().game_time_minutes) / 1440.0),
+		"scene banner day uses the current saved game time")
+	check(not app.ui.hud.location_text.is_empty() and not app.ui.hud.scene_banner_text().is_empty(),
+		"scene banner uses live location text")
 	app.command("game.enemy_defeated") # Public UI facade must reject trusted-only command.
 	check(not app.snapshot().world_states.first_enemy_defeated, "step12 UI facade cannot issue trusted combat reward")
 	# Exercise real combat via actor, not a direct reward command.
@@ -46,6 +51,9 @@ func run() -> void:
 	hospital.interact()
 	check(app.snapshot().scene.current_scene_id == "hospital_0_2", "stairs are usable in the rendered interior")
 	app.transition("shelter")
+	await process_frame
+	check(app.ui.hud.scene_banner_text().to_lower().contains("убежище"),
+		"scene banner refreshes to the actual shelter")
 	check(app.command("inventory.claim_parcel", {"parcel_id": "starter"}).ok, "populate inventory with real gameplay items")
 	await process_frame
 	await RenderingServer.frame_post_draw
@@ -138,6 +146,13 @@ func check_full_hd_interface(app) -> void:
 	check(app.ui.get_viewport_rect().size == Vector2(640, 360),
 		"Full HD retains the 640x360 logical pixel-art interface")
 	var logical_rect: Rect2 = Rect2(Vector2.ZERO, app.ui.get_viewport_rect().size)
+	var banner: Rect2 = app.ui.hud.scene_banner_rect()
+	check(banner.size.x >= 24.0 and logical_rect.encloses(banner)
+		and not banner.intersects(Rect2(6, 4, 206, 23))
+		and not banner.intersects(app.ui.hud.map_node.get_global_rect()),
+		"Full HD scene banner fits without title or minimap overlap")
+	var banner_width := ThemeDB.fallback_font.get_string_size(app.ui.hud.scene_banner_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+	check(banner_width <= banner.size.x - 18.0, "Full HD scene banner text remains bounded")
 	for section in [app.ui.hud.map_node, app.ui.hud.hotbar, app.ui.hud.navigation]:
 		check(logical_rect.encloses(section.get_global_rect()),
 			"Full HD HUD remains in logical view: " + section.name)
