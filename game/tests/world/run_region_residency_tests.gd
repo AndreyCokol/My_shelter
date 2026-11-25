@@ -24,6 +24,16 @@ func _factory(manifest: Dictionary) -> Node2D:
 	factory_calls += 1
 	var node := Node2D.new()
 	node.name = "AuthoredRegion"
+	node.position = Vector2(float(manifest.x) * Regions.REGION_SIZE.x,
+		float(manifest.y) * Regions.REGION_SIZE.y)
+	var body := StaticBody2D.new()
+	body.position = Vector2(120, 90)
+	var collider := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(28, 28)
+	collider.shape = rect
+	body.add_child(collider)
+	node.add_child(body)
 	node.set_meta("canonical_manifest", manifest.duplicate(true))
 	return node
 
@@ -67,6 +77,9 @@ func _run() -> void:
 	check(a.node.is_inside_tree() and b.node.is_inside_tree()
 		and c.node.is_inside_tree(),
 		"all three Node2D chunks are physically mounted in active SceneTree")
+	check(PhysicsServer2D.body_get_space(a.node.get_child(0).get_rid()).is_valid()
+		and PhysicsServer2D.body_get_space(b.node.get_child(0).get_rid()).is_valid(),
+		"two real chunk StaticBody2D colliders are registered in physics space")
 	check(a.manifest == Regions.manifest(42, 0, 0)
 		and b.manifest == Regions.manifest(42, 1, 0),
 		"cached manifests match canonical seed42 region generator")
