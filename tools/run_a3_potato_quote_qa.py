@@ -38,10 +38,10 @@ def main() -> int:
             raise RuntimeError(f"Expected pinned Godot 4.7.2 stable; got {version!r}")
         run_godot(["--headless", "--path", ".", "--editor", "--import"], 120)
         output = run_godot(["--headless", "--path", ".", "--script", SUITE], 240)
-        match = MARKER.search(output)
-        if not match:
-            raise RuntimeError("Required new A3 potato quote suite completion marker absent")
-        print(f"A3 POTATO QUOTE ISOLATED QA: PASS ({match.group(1)} checks on {version})")
+        matches = MARKER.findall(output)
+        if len(matches) != 1 or int(matches[0]) < 143:
+            raise RuntimeError("Expected one completion marker with at least 143 passing checks")
+        print(f"A3 POTATO QUOTE ISOLATED QA: PASS ({matches[0]} checks on {version})")
         return 0
     except RuntimeError as exc:
         print(f"A3 POTATO QUOTE ISOLATED QA: FAIL: {exc}", file=sys.stderr, flush=True)
