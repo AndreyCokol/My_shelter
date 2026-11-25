@@ -166,6 +166,95 @@ func verify_historical_npc_fault_recovery(config: Dictionary,
 		"replayed old NPC recruit after uncertain migration cannot double-reserve food")
 	cleanup(fault_path)
 
+# A second independent scenario uses the untouched original historical
+# npc_food bytes. Corrupt ONLY copies under user://, never fixture files.
+# No implicit fallback: a bad backup is rejected, and a bad primary requires
+# an explicit selected backup restore preserving the rejected primary.
+func store_bytes(path: String, raw: PackedByteArray) -> bool:
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_buffer(raw)
+	file.flush()
+	var result: bool = file.get_error() == OK
+	file.close()
+	return result and FileAccess.get_file_as_bytes(path) == raw
+
+func verify_historical_npc_corruption(config: Dictionary,
+		source: Dictionary, original: PackedByteArray, expected_sha: String) -> void:
+	var archive_path: String = "user://a1-old-v4-npc-corrupt-%d-%d.json" % [
+		OS.get_process_id(), Time.get_ticks_usec()]
+	check(import_old(archive_path, original, expected_sha),
+		"original NPC archive imported exactly before corrupt-file test")
+	var archive_store = Store.new(archive_path)
+	check(DirAccess.copy_absolute(ProjectSettings.globalize_path(archive_path),
+		ProjectSettings.globalize_path(archive_path + ".bak")) == OK
+		and FileAccess.get_file_as_bytes(archive_path + ".bak") == original,
+		"backup precondition is byte-identical ORIGINAL historical NPC archive")
+	var session = Campaign.new(config).coordinator
+	check(session.load_checkpoint(archive_store).ok
+		and session.get_snapshot() == source,
+		"original v4 NPC file loaded before testing corrupt backup")
+	var damaged_backup: PackedByteArray = "{DAMAGED_BACKUP".to_utf8_buffer()
+	check(store_bytes(archive_path + ".bak", damaged_backup),
+		"only disposable backup bytes are deliberately damaged")
+	var untouched: Dictionary = session.get_snapshot()
+	check(session.load_checkpoint(archive_store, true).code == "INVALID_STATE"
+		and session.get_snapshot() == untouched,
+		"invalid backup cannot overwrite healthy primary or mutate RAM")
+	check(FileAccess.get_file_as_bytes(archive_path) == original
+		and FileAccess.get_file_as_bytes(archive_path + ".bak") == damaged_backup,
+		"failed selected-backup load preserves primary and invalid backup bytes")
+	# Restore a valid historical backup; simulate a torn primary and stale
+	# backup staging file to verify no automatic, unapproved resurrection.
+	check(store_bytes(archive_path + ".bak", original),
+		"valid historical v4 NPC backup restored for recovery exercise")
+	var damaged_primary: PackedByteArray = "{TORN_OR_INVALID_PRIMARY".to_utf8_buffer()
+	var stale_temp: PackedByteArray = "{STALE_BAK_STAGE".to_utf8_buffer()
+	check(store_bytes(archive_path, damaged_primary)
+		and store_bytes(archive_path + ".bak.tmp", stale_temp),
+		"only disposable primary and stale backup stage are corrupted")
+	var after_corrupt = Campaign.new(config).coordinator
+	var before: Dictionary = after_corrupt.get_snapshot()
+	check(after_corrupt.load_checkpoint(archive_store).code == "INVALID_STATE"
+		and after_corrupt.get_snapshot() == before,
+		"corrupt original v4 primary cannot auto-import a partial state")
+	check(FileAccess.get_file_as_bytes(archive_path) == damaged_primary
+		and FileAccess.get_file_as_bytes(archive_path + ".bak") == original
+		and FileAccess.get_file_as_bytes(archive_path + ".bak.tmp") == stale_temp,
+		"failed automatic load never touches torn original or valid backup")
+	check(after_corrupt.load_checkpoint(archive_store, true).ok
+		and after_corrupt.get_snapshot() == source,
+		"explicit validated backup restore recovers exact old NPC domain state")
+	check(FileAccess.get_file_as_bytes(archive_path + ".bak") == original
+		and FileAccess.get_file_as_bytes(archive_path + ".rejected") == damaged_primary,
+		"restore preserves original old v4 backup and archives rejected torn primary")
+	check(after_corrupt.execute(request(after_corrupt, OLD_NPC_ID, "game.recruit",
+		{"resident_id":"resident_1"}), archive_store).code == "ALREADY_APPLIED",
+		"old NPC receipt cannot recruit twice after explicit corruption recovery")
+	var upgrade_cmd: Dictionary = request(after_corrupt,
+		"a1-authentic-v4:npc:recover-upgrade", "session.upgrade_world")
+	check(after_corrupt.execute(upgrade_cmd, archive_store).ok,
+		"recovered old NPC save can still explicitly migrate world v4 to v5")
+	var migrated: Dictionary = after_corrupt.get_snapshot()
+	check(migrated.inventory == source.inventory
+		and migrated.residents == source.residents
+		and migrated.crops == source.crops
+		and migrated.quests == source.quests,
+		"post-corruption migration keeps original NPC, rations, crops and quests")
+	var reboot = Campaign.new(config).coordinator
+	check(reboot.load_checkpoint(archive_store).ok
+		and reboot.get_snapshot() == migrated,
+		"restored-and-migrated NPC state survives a cold restart")
+	check(reboot.execute(request(reboot, OLD_NPC_ID, "game.recruit",
+		{"resident_id":"resident_1"}), archive_store).code == "ALREADY_APPLIED",
+		"historical NPC receipt remains idempotent after cold restart")
+	check(FileAccess.get_file_as_bytes(archive_path + ".rejected") == damaged_primary,
+		"post-restore migration never silently overwrites rejected original bytes")
+	cleanup(archive_path)
+	if FileAccess.file_exists(archive_path + ".bak.tmp"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(archive_path + ".bak.tmp"))
+
 func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 	var original: PackedByteArray = historical_bytes(name)
 	check(not original.is_empty(), "authentic v4 " + name + " bytes decoded")
@@ -270,6 +359,7 @@ func verify_one(config: Dictionary, name: String, expected_sha: String) -> void:
 		"rollback preserves exact historical v4 backup bytes")
 	if name == "npc_food":
 		verify_historical_npc_fault_recovery(config, source, original, expected_sha)
+		verify_historical_npc_corruption(config, source, original, expected_sha)
 	cleanup(path)
 
 func run() -> void:
