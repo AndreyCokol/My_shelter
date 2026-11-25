@@ -16,6 +16,9 @@ var _lru: Array[String] = []
 var _protected_focus := ""
 var _busy := false
 var _evictions := 0
+# Cache-lifetime monotonic edit IDs: prevent stale ACKs after unload/reload.
+# A1 must also bind its durable receipt to the world/session epoch.
+var _edit_sequence: int = 0
 # queue_free() defers actual destruction until the end of the frame.
 # WeakRef tracking bounds *pending* physics objects as well as live nodes.
 var _retiring: Array[WeakRef] = []
@@ -116,7 +119,10 @@ func mark_dirty(id: String) -> Dictionary:
 		return _error("CORRUPT_RESIDENCY")
 	# Every edit increments revision; an ACK for an older revision cannot
 	# silently permit eviction of uncommitted new actor/world changes.
-	record.revision = int(record.revision) + 1
+	if _edit_sequence == 0x7fffffffffffffff:
+		return _error("REVISION_EXHAUSTED")
+	_edit_sequence += 1
+	record.revision = _edit_sequence
 	record.dirty = true
 	_entries[id] = record
 	return {"ok": true, "code": "OK", "revision": record.revision}
@@ -136,7 +142,7 @@ func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Di
 	_busy = true
 	var durable_response = a1_verifier.call(id, revision)
 	_busy = false
-	if durable_response != true:
+	if typeof(durable_response) != TYPE_BOOL or not durable_response:
 		return _error("UNVERIFIED_CHECKPOINT")
 	# Trust boundary: A2 cannot independently attest that bytes were
 	# fsynced. A1 must supply a trusted durable-checkpoint verifier.
@@ -156,12 +162,15 @@ func evict_clean(id: String) -> Dictionary:
 	var entry: Dictionary = _entries[id]
 	if not is_instance_valid(entry.node):
 		return _error("CORRUPT_RESIDENCY")
+	# tree_exiting/_exit_tree run synchronously during remove_child().
+	_busy = true
 	remove_child(entry.node)
 	_retiring.append(weakref(entry.node))
 	entry.node.queue_free()
 	_entries.erase(id)
 	_lru.erase(id)
 	_evictions += 1
+	_busy = false
 	return {"ok": true, "code": "OK"}
 
 func cached_manifest(id: String) -> Dictionary:
