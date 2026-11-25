@@ -176,6 +176,34 @@ func _initialize() -> void:
 	decision[0] = true
 	check(guarded.load_checkpoint(guard_store).ok and counts == [4, 3, 1, 0] and not guarded.requires_recovery() and not guarded.pauses.is_paused(), "approved reload installs durable state and clears recovery")
 	check(guarded.get_snapshot().counter == approved.counter + 1 and guarded.execute(command("guard-fault"), guard_store).code == "ALREADY_APPLIED" and counts == [4, 3, 1, 0], "recovered receipt prevents duplicated command effect and runtime install")
+	# Runtime ticket callbacks must have zero unbound arguments and an
+	# actual Boolean result, not a truthy Variant.
+	var signature_snapshot: Dictionary = guarded.get_snapshot()
+	var signature_primary := FileAccess.get_file_as_bytes(guard_store.path)
+	var signature_backup := FileAccess.get_file_as_bytes(guard_store.path + ".bak")
+	counts.fill(0)
+	var wrong_arity := func(_required):
+		counts[0] += 1
+		return true
+	for invalid_guard in [wrong_arity, true, null]:
+		guarded.runtime_preparer = func(_candidate, _reason):
+			return {"ok": true, "precommit_check": invalid_guard,
+				"discard": func(): counts[1] += 1,
+				"install": func():
+					counts[2] += 1
+					return true}
+		check(guarded.execute(command("signature"), guard_store).code == "UNAVAILABLE", "malformed guard rejects command")
+		check(guarded.load_checkpoint(guard_store).code == "UNAVAILABLE", "malformed guard rejects load")
+	check(counts == [0, 6, 0, 0] and guarded.get_snapshot() == signature_snapshot and not guarded.is_busy() and not guarded.pauses.is_paused(), "wrong arity is never invoked; malformed guards clean up and preserve RAM")
+	check(FileAccess.get_file_as_bytes(guard_store.path) == signature_primary and FileAccess.get_file_as_bytes(guard_store.path + ".bak") == signature_backup, "malformed guards preserve primary and backup")
+	guarded.runtime_preparer = func(_candidate, _reason):
+		return {"ok": true, "precommit_check": wrong_arity.bind(true),
+			"discard": func(): counts[1] += 1,
+			"install": func():
+				counts[2] += 1
+				return true}
+	check(guarded.execute(command("signature"), guard_store).ok and counts == [1, 6, 1, 1], "fully bound guard is a valid zero-argument callback")
+	check(guarded.execute(command("signature"), guard_store).code == "ALREADY_APPLIED" and counts == [1, 6, 1, 1], "bound guard approval remains replay safe")
 	guarded.runtime_preparer = Callable()
 	for suffix in ["", ".tmp", ".bak", ".bak.tmp", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(guard_store.path + suffix))
