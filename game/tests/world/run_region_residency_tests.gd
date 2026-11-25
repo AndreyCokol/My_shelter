@@ -187,6 +187,27 @@ func _run() -> void:
 	check(cache.acknowledge_durable(d.id, edit_d.revision, Callable(self, "_durable_check")).ok,
 		"second dirty chunk released only after its matching durable revision")
 	cache.clear_focus()
+	check(cache.statistics().pending_frees == 0,
+		"no deferred region frees remain after the previous engine frame")
+	# A hostile burst can request dozens of chunks in ONE physics frame.
+	# The residency cap must include queue_free() nodes still waiting for
+	# actual engine deletion, not only actively mounted Node2D children.
+	for burst_step in range(3):
+		var rapid: Dictionary = cache.acquire(601 + burst_step, 0, Callable(self, "_factory"))
+		check(rapid.ok and rapid.created
+			and cache.statistics().active == 3
+			and cache.statistics().pending_frees == burst_step + 1,
+			"same-frame burst %d has bounded active and deferred-free nodes" % burst_step)
+	var calls_before_flush: int = factory_calls
+	check(cache.acquire(610, 0, Callable(self, "_factory")).code == "EVICTION_FLUSH_REQUIRED"
+		and cache.statistics().pending_frees == 3
+		and factory_calls == calls_before_flush,
+		"same-frame fourth eviction is refused before running the factory")
+	check(cache.evict_clean(cache.active_region_ids()[0]).code == "EVICTION_FLUSH_REQUIRED",
+		"manual clean eviction also respects deferred-free memory budget")
+	await process_frame
+	check(cache.statistics().pending_frees == 0,
+		"next engine frame releases retired physics bodies and unblocks loads")
 	var old_ids := cache.active_region_ids()
 	var evicted_start: int = cache.statistics().evicted
 	# 150 distant world-region traversals without keeping old Node2Ds.
