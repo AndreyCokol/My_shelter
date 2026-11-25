@@ -15,11 +15,15 @@ var hospital_cache := {}
 var occlusion: Node2D
 var last_occlusion_position := Vector2.INF
 var collision_revision := 0
+# Optional authored water areas: legacy v4/v5 maps have none by default.
+var water_zone_layer: Node2D
+var water_zones_valid := true
 const DistrictEvents = preload("res://game/systems/world/district_events.gd")
 const Construction = preload("res://game/systems/shelter/construction.gd")
 const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 const Layout = preload("res://game/systems/world/world_layout.gd")
 const GameplayState = preload("res://game/state/gameplay_state.gd")
+const WaterZones = preload("res://game/systems/world/world_water_zones.gd")
 
 func configure_layout(nodes: Dictionary, id: String) -> void:
 	location_id = id
@@ -61,6 +65,28 @@ func _ready() -> void:
 	walls.append_array(layout.get("obstacles", []))
 	for rect in walls:
 		add_wall(rect)
+	if layout.has("water_zones"):
+		# The layout comes from a Variant dictionary (including loaded scene
+		# data). Passing a String/Dictionary/null to the typed Area2D
+		# configure(Array, Rect2) would throw before it can fail closed.
+		var water_data = layout["water_zones"]
+		if not water_data is Array:
+			water_zones_valid = false
+		else:
+			var anchor_points: Array = [layout.get("spawn", Vector2.INF)]
+			for portal in portals:
+				anchor_points.append(portal.get("arrival", Vector2.INF))
+			var dry_entries: bool = WaterZones.preserves_dry_entries(
+				water_data, anchor_points, 9.0)
+			var layer = WaterZones.new()
+			if dry_entries and layer.configure(water_data, floor):
+				layer.name = "WaterZones"
+				layer.z_index = -1
+				add_child(layer)
+				water_zone_layer = layer
+			else:
+				water_zones_valid = false
+				layer.free()
 	if not layout.get("obstacles", []).is_empty():
 		occlusion = Node2D.new()
 		occlusion.z_index = 21
@@ -111,6 +137,21 @@ func add_wall(rect: Rect2) -> StaticBody2D:
 # Live physics walls (including player-built shelter structures) are the
 # authoritative navigation obstacle set. Rebuilding after changes invalidates
 # the zombie chase path; no collision is bypassed by the pathfinder.
+# Source of non-solid hazards for A1 precommit shelter-return staging.
+# The current A1 SceneRouter does not consume this until its own integration.
+func water_hazard_rects() -> Array[Rect2]:
+	if is_instance_valid(water_zone_layer):
+		return water_zone_layer.hazard_rectangles()
+	return []
+
+# A1 must NOT interpret an invalid authored water layout as a dry scene.
+# The existing SceneRouter ignores this until its owner integrates a
+# precommit staging check; callers must require snapshot.ok.
+func water_hazard_snapshot() -> Dictionary:
+	if not water_zones_valid:
+		return {"ok": false, "code": "INVALID_WATER_LAYOUT", "rectangles": []}
+	return {"ok": true, "code": "OK", "rectangles": water_hazard_rects()}
+
 func collision_rects() -> Array[Rect2]:
 	var rects: Array[Rect2] = []
 	for child in get_children():

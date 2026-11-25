@@ -175,6 +175,10 @@ func _draw() -> void:
 	VisualSkin.panel(self, Rect2(6, 4, 206, 23), safe)
 	draw_texture_rect_region(SHEET, Rect2(8, 5, 200, 21), TITLE)
 	draw_rect(Rect2(6, 4, 206, 23), VisualSkin.trim(safe), false, 1)
+	var banner := scene_banner_rect()
+	if banner.size.x >= 24.0:
+		VisualSkin.panel(self, banner, safe)
+		caption(self, banner.position + Vector2(8, 16), scene_banner_text(), 10)
 	VisualSkin.panel(self, Rect2(7, 29, 208, 54), safe)
 	frame(self, Rect2(9, 31, 47, 49))
 	draw_texture_rect_region(SHEET, Rect2(10, 32, 45, 39), PORTRAIT)
@@ -202,6 +206,18 @@ func _draw() -> void:
 	draw_rect(footer, Color("111511", 0.79) if safe else Color("0e141a", 0.86))
 	draw_line(Vector2(0, footer.position.y), Vector2(size.x, footer.position.y), VisualSkin.trim(safe), 1.0)
 	caption(self, Vector2(9, size.y - 5), "ЛКМ Атака   ·   E Подобрать/взаимодействовать   ·   Space Уклонение   ·   Ctrl Круг   ·   Tab Меню   ·   G Убежище", 8)
+
+
+func scene_banner_rect() -> Rect2:
+	# Reserve the existing title and minimap areas; the logical viewport is 640x360.
+	var left := maxf(219.0, (size.x - 198.0) * 0.5)
+	var right := minf(left + 198.0, size.x - 110.0)
+	return Rect2(left, 4.0, maxf(0.0, right - left), 23.0)
+
+
+func scene_banner_text() -> String:
+	var title := location_text if not location_text.is_empty() else current_scene_id
+	return _fit("%s · День %d" % [title, current_day], maxf(0.0, scene_banner_rect().size.x - 18.0), 10)
 
 
 func _fit(value: String, max_width: float, font_size: int) -> String:
