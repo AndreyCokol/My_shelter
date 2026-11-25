@@ -186,6 +186,35 @@ func _run() -> void:
 	check(hero.movement_state == "run" and absf(hero.velocity.x - Mobility.RUN_SPEED) < 0.01,
 		"existing optional run speed works on dry v5 street")
 
+	# Unlike all the contact/overlap fixtures below, this is a true
+	# player-driven traversal through CharacterBody2D.move_and_slide().
+	# The Area2D signal must fire at the physical shoreline, not merely
+	# when a script teleports the actor into the water.
+	var reached_shore_by_motion := false
+	for movement_tick in range(65):
+		hero._physics_process(0.016)
+		await physics_frame
+		if hero.water_contact:
+			reached_shore_by_motion = true
+			break
+	check(reached_shore_by_motion and hero.position.x > WATER_ONE.position.x - 9.5,
+		"real CharacterBody2D movement enters actual water via physics contact")
+	hero._physics_process(0.016)
+	check(hero.movement_state == "swim" and absf(hero.velocity.x - Mobility.SWIM_SPEED) < 0.01,
+		"native shoreline crossing automatically slows running Player to swim speed")
+	var submerged_from: Vector2 = hero.position
+	for swim_tick in range(6):
+		hero._physics_process(0.016)
+		await physics_frame
+	check(hero.water_contact and hero.position.x > submerged_from.x
+		and hero.position.x - submerged_from.x < 10.0,
+		"real submerged Player moves at bounded swim speed without wall bypass")
+
+	# Reset this physics actor to dry land before independent overlap tests.
+	hero.position = Vector2(300, 645)
+	await at_next_physics()
+	check(not hero.water_contact, "returning to dry terrain clears native water contact")
+
 	# Enter first pool while a land dodge and VFX jump are already active.
 	hero.dodge_remaining = 0.14
 	hero.jump_remaining = 0.22
@@ -216,8 +245,17 @@ func _run() -> void:
 	await at_next_physics()
 	check(hero.water_contact,
 		"leaving first zone while still inside second cannot falsely end swimming")
-	hero.position = Vector2(600, 645)
-	await at_next_physics()
+	# Traverse out of the second zone without teleportation. A stale
+	# per-area occupancy record must never hold the Player in swim mode.
+	var left_water_by_motion := false
+	for exit_tick in range(100):
+		hero._physics_process(0.016)
+		await physics_frame
+		if not hero.water_contact:
+			left_water_by_motion = true
+			break
+	check(left_water_by_motion and hero.position.x > WATER_TWO.end.x,
+		"real CharacterBody2D movement exits second water zone, clears wet flag")
 	check(not hero.water_contact,
 		"leaving last water Area2D restores dry Player state")
 	hero._physics_process(0.016)
