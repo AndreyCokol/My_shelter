@@ -39,8 +39,8 @@ def main() -> int:
         run_godot(["--headless", "--path", ".", "--editor", "--import"], 120)
         output = run_godot(["--headless", "--path", ".", "--script", SUITE], 240)
         matches = MARKER.findall(output)
-        if len(matches) != 1 or int(matches[0]) < 50:
-            raise RuntimeError("Expected exactly one completion marker with at least 50 passing checks")
+        if len(matches) != 1 or int(matches[0]) < 60:
+            raise RuntimeError("Expected exactly one completion marker with at least 60 passing checks")
         print(f"A3 EXPEDITION SUPPLY ISOLATED QA: PASS ({matches[0]} checks on {version})")
         return 0
     except RuntimeError as exc:
