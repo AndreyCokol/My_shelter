@@ -10,6 +10,8 @@ var factory_calls := 0
 var durable: Dictionary = {}
 var active_cache
 var reentrant_result: Dictionary = {}
+var reentrant_mutations: Array = []
+var reentrant_durable_result: Dictionary = {}
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -43,7 +45,17 @@ func _bad_factory(_manifest: Dictionary):
 
 func _reentrant_factory(manifest: Dictionary) -> Node2D:
 	reentrant_result = active_cache.acquire(700, 80, Callable(self, "_factory"))
+	reentrant_mutations = [
+		active_cache.set_focus("region:8:8"),
+		active_cache.mark_dirty("region:8:8"),
+		active_cache.evict_clean("region:8:8"),
+		active_cache.clear_focus(),
+	]
 	return _factory(manifest)
+
+func _reentrant_verifier(id: String, revision: int) -> bool:
+	reentrant_durable_result = active_cache.clear_focus()
+	return _durable_check(id, revision)
 
 func _durable_check(id: String, revision: int) -> bool:
 	return int(durable.get(id, -1)) == revision
@@ -127,8 +139,9 @@ func _run() -> void:
 	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable(self, "_untrusted_ack")).code == "UNVERIFIED_CHECKPOINT",
 		"failed external durable verification cannot clear dirty bit")
 	durable[id_c] = edit_again.revision
-	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable(self, "_durable_check")).ok,
-		"trusted A1 durable revision acknowledgement releases only that chunk")
+	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable(self, "_reentrant_verifier")).ok
+		and reentrant_durable_result.code == "REENTRANT_ACCESS",
+		"trusted A1 verifier cannot mutate focused residency during acknowledgement")
 	check(cache.statistics().dirty == 1,
 		"staged transaction does not accidentally acknowledge other dirty regions")
 
@@ -162,6 +175,9 @@ func _run() -> void:
 	check(nested_entry.ok and reentrant_result.code == "REENTRANT_ACCESS"
 		and nested.statistics().active == 1,
 		"reentrant factory cannot over-allocate the same active cache")
+	check(reentrant_mutations.size() == 4
+		and reentrant_mutations.all(func(value): return value.code == "REENTRANT_ACCESS"),
+		"reentrant factory cannot focus, dirty, evict or clear focus during chunk allocation")
 	nested.queue_free()
 	await process_frame
 	active_cache = cache
