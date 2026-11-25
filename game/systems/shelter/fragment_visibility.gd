@@ -20,7 +20,12 @@ static func visible_window(occupied: Array[Vector2i], center: Vector2i) -> Array
         for dx in range(-1, 2):
             if dx == 0 and dy == 0:
                 continue
-            var neighbor := Vector2i(center.x + dx, center.y + dy)
+            # GDScript int is 64-bit; validate before narrowing to Vector2i.
+            var nx: int = int(center.x) + dx
+            var ny: int = int(center.y) + dy
+            if nx < -2147483648 or nx > 2147483647 or ny < -2147483648 or ny > 2147483647:
+                continue
+            var neighbor := Vector2i(nx, ny)
             if membership.has(neighbor):
                 result.append(neighbor)
     return result
