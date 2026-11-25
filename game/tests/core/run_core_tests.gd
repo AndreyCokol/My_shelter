@@ -107,6 +107,45 @@ func _initialize() -> void:
 	quick_view.counter = 999999
 	check(session.get_snapshot().counter == original_counter,
 		"CT-92 editing a lightweight combat snapshot does not mutate the authoritative core")
+	# Trusted runtime veto: a real checkpoint, not a mocked write.
+	var guarded = Session.new()
+	var guard_store = Store.new(store.path + ".guard.json")
+	check(guarded.execute(command("baseline"), guard_store).ok, "runtime veto baseline")
+	check(guarded.execute(command("baseline2"), guard_store).ok, "runtime veto backup baseline")
+	var baseline: Dictionary = guarded.get_snapshot()
+	var guard_primary := FileAccess.get_file_as_bytes(guard_store.path)
+	var guard_backup := FileAccess.get_file_as_bytes(guard_store.path + ".bak")
+	var counts: Array = [0, 0, 0, 0]
+	var decision: Array = [false]
+	guarded.committed.connect(func(_r): counts[3] += 1)
+	guarded.runtime_required = true
+	guarded.runtime_preparer = func(_candidate, _reason):
+		return {"ok": true, "precommit_check": func():
+			counts[0] += 1
+			return decision[0],
+			"discard": func(): counts[1] += 1,
+			"install": func():
+				counts[2] += 1
+				return true}
+	check(guarded.execute(command("veto"), guard_store).code == "UNAVAILABLE", "precommit runtime veto rejects command")
+	check(guarded.get_snapshot() == baseline and counts == [1, 1, 0, 0], "veto preserves RAM receipts and discards exactly once")
+	check(FileAccess.get_file_as_bytes(guard_store.path) == guard_primary and FileAccess.get_file_as_bytes(guard_store.path + ".bak") == guard_backup, "veto preserves both checkpoint byte sequences")
+	check(not guarded.is_busy() and not guarded.requires_recovery(), "veto leaves session available without recovery")
+	check(guarded.load_checkpoint(guard_store, true).code == "UNAVAILABLE", "veto rejects explicit backup restore")
+	check(guarded.get_snapshot() == baseline and counts == [2, 2, 0, 0] and not guarded.pauses.is_paused(), "load veto preserves RAM and releases load pause")
+	check(FileAccess.get_file_as_bytes(guard_store.path) == guard_primary and FileAccess.get_file_as_bytes(guard_store.path + ".bak") == guard_backup and not FileAccess.file_exists(guard_store.path + ".rejected"), "backup veto does not replace or archive primary")
+	decision[0] = "true"
+	check(guarded.execute(command("veto"), guard_store).code == "UNAVAILABLE" and counts == [3, 3, 0, 0], "non-bool guard answer fails closed")
+	decision[0] = true
+	check(guarded.execute(command("veto"), guard_store).ok and counts == [4, 3, 1, 1], "same rejected action can be retried once approved")
+	check(guarded.execute(command("veto"), guard_store).code == "ALREADY_APPLIED" and counts == [4, 3, 1, 1], "receipt replay bypasses runtime guard and install")
+	guarded.runtime_preparer = func(_candidate, _reason):
+		return {"ok": true, "precommit_check": Callable(), "discard": func(): counts[1] += 1}
+	var approved: Dictionary = guarded.get_snapshot()
+	check(guarded.execute(command("malformed-guard"), guard_store).code == "UNAVAILABLE" and guarded.get_snapshot() == approved and counts[1] == 4, "invalid callable fails closed and cleans up")
+	guarded.runtime_preparer = Callable()
+	for suffix in ["", ".tmp", ".bak", ".bak.tmp", ".rejected"]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(guard_store.path + suffix))
 	for suffix in ["", ".tmp", ".bak", ".rejected", ".rejected.1"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(store.path + suffix))
 	print("CORE TESTS: %d checks, %d failures" % [checks, failures])
