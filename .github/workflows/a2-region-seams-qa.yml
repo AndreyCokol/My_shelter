@@ -1,0 +1,72 @@
+name: A2 reciprocal canonical region seams QA
+
+on:
+  pull_request:
+    paths:
+      - 'game/systems/world/region_seams.gd'
+      - 'game/tests/world/run_region_seam_tests.gd'
+      - 'game/systems/world/region_crossing_geometry.gd'
+      - 'game/tests/world/run_region_crossing_tests.gd'
+      - 'game/systems/world/region_residency_cache.gd'
+      - 'game/tests/world/run_region_residency_tests.gd'
+      - 'tools/run_a2_region_seams_qa.py'
+      - '.github/workflows/a2-region-seams-qa.yml'
+  push:
+    branches: ['agent/a2/region-seams-prototype-*']
+
+concurrency:
+  group: a2-region-seams-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+
+jobs:
+  regions-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHELTER_REQUIRE_ASSETS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.7.2 stable
+        run: |
+          curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.7.2-stable_linux.x86_64
+          echo /tmp/godot >> "$GITHUB_PATH"
+          echo GODOT=Godot_v4.7.2-stable_linux.x86_64 >> "$GITHUB_ENV"
+      - name: Install reviewed UI resources
+        run: python3 tools/install_ui_assets.py --download-ui
+      - name: Execute actual region-seam GDScript test
+        run: python3 tools/run_a2_region_seams_qa.py
+
+  regions-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      SHELTER_REQUIRE_ASSETS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Godot 4.7.2 stable
+        shell: pwsh
+        run: |
+          $uri = 'https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip'
+          Invoke-WebRequest $uri -OutFile "$env:RUNNER_TEMP/engine.zip"
+          Expand-Archive "$env:RUNNER_TEMP/engine.zip" "$env:RUNNER_TEMP/engine"
+          $engine = (Get-ChildItem "$env:RUNNER_TEMP/engine" -Filter '*_console.exe').FullName
+          if (-not $engine) { throw 'Missing pinned Windows console binary' }
+          "GODOT=$engine" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install reviewed UI resources
+        shell: pwsh
+        run: |
+          python tools/install_ui_assets.py --download-ui
+          if ($LASTEXITCODE -ne 0) { throw 'Assets failed' }
+      - name: Execute actual region-seam GDScript test
+        shell: pwsh
+        run: |
+          python tools/run_a2_region_seams_qa.py
+          if ($LASTEXITCODE -ne 0) { throw 'A2 region seams failed' }
