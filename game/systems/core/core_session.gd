@@ -69,6 +69,31 @@ static func validate(state: Dictionary) -> bool:
 			return false
 	return true
 
+# Mount an already-authoritative snapshot without writing a checkpoint or
+# publishing domain events. Initial mount and remount share the same trusted
+# runtime veto and busy barrier as transactional load/execute.
+func mount_current_runtime() -> bool:
+	if _busy or _recovery_token != 0:
+		return false
+	_busy = true
+	var ticket := _prepare_runtime(_state, "load")
+	if not ticket.get("ok", false):
+		_busy = false
+		return false
+	var install = ticket.get("install")
+	if not install is Callable or not install.is_valid() or install.get_argument_count() != 0 or not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
+		_busy = false
+		return false
+	# Installation can affect scene ownership; if it fails, require explicit
+	# recovery instead of letting commands operate on a partially mounted world.
+	if not _install_runtime(ticket):
+		_ensure_recovery()
+		_busy = false
+		return false
+	_busy = false
+	return true
+
 func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 	if _busy:
 		return _result(false, "UNAVAILABLE", "")
