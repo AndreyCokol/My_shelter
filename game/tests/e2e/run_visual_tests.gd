@@ -1,6 +1,7 @@
 extends SceneTree
 
 const RadialMenu = preload("res://game/ui/radial_menu.gd")
+const WorldArt = preload("res://game/scenes/worlds/world_art.gd")
 
 var checks: int = 0
 var failures: int = 0
@@ -46,6 +47,7 @@ func run() -> void:
 	await capture_reference_candidate(app, "R3_hospital")
 	await measure_frames(app, "hospital", Vector2(120, 299))
 	var hospital = app.scene_router.current_world()
+	check_atmosphere("hospital", hospital.layout)
 	app.hero.position = hospital.layout.exits.hospital_0_2.position
 	await capture("stairs")
 	hospital.interact()
@@ -59,6 +61,7 @@ func run() -> void:
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/shelter-visual/shelter.png")
 	await capture_reference_candidate(app, "R1_shelter")
+	check_atmosphere("shelter", app.scene_router.current_world().layout)
 	var ctrl := InputEventKey.new()
 	ctrl.physical_keycode = KEY_CTRL
 	ctrl.keycode = KEY_CTRL
@@ -83,6 +86,7 @@ func run() -> void:
 	await capture_reference_candidate(app, "R2_street")
 	await measure_frames(app, "street", Vector2(780, 272))
 	var street = app.scene_router.current_world()
+	check_atmosphere("outside", street.layout)
 	app.hero.position = street.layout.exits.hospital.position
 	await capture("hospital_door")
 	street.interact()
@@ -102,6 +106,7 @@ func run() -> void:
 	check(app.snapshot().scene.current_scene_id == "house_0_2", "rendered residential stairs lead to an apartment floor")
 	interior = app.scene_router.current_world()
 	var plan: Dictionary = interior.layout.floor_plan
+	check_atmosphere("house", interior.layout)
 	var apartment: Dictionary = plan.units.apt_01
 	app.hero.position = plan.rooms[apartment.rooms[1]].rect.get_center()
 	await capture("apartment")
@@ -130,6 +135,25 @@ func run() -> void:
 # Automated software-rendered coverage of the second target desktop
 # resolution. It is NOT a replacement for the human Windows GUI smoke.
 # The viewport remains 640×360 while the rendered output scales 3×.
+func check_atmosphere(kind: String, layout: Dictionary) -> void:
+	var before: Dictionary = layout.duplicate(true)
+	var marks: Array[Dictionary] = WorldArt.atmosphere_marks(kind, layout)
+	check(not marks.is_empty(), kind + " has decorative ground marks")
+	check(marks == WorldArt.atmosphere_marks(kind, layout), kind + " decoration deterministic")
+	var bounded := true
+	for mark in marks:
+		var area: Rect2 = mark.area
+		var point: Vector2 = mark.point
+		var endpoint: Vector2 = mark.end
+		bounded = bounded and area.has_point(point) and area.has_point(endpoint)
+		if mark.style == "puddle":
+			bounded = bounded and area.encloses(Rect2(point - Vector2.ONE * 6.0, Vector2.ONE * 12.0))
+		elif mark.style == "flower":
+			bounded = bounded and area.encloses(Rect2(point - Vector2(2, 2), Vector2(4, 6)))
+	check(bounded, kind + " decoration stays inside its source geometry")
+	check(layout == before, kind + " decoration does not mutate world layout")
+
+
 func check_full_hd_interface(app) -> void:
 	var previous_window_size: Vector2i = DisplayServer.window_get_size()
 	DisplayServer.window_set_size(Vector2i(1920, 1080))

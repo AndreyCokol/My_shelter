@@ -24,9 +24,11 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 	var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
 	if layout.has("floor_plan"):
 		plan_ground(canvas, layout.floor_plan)
+		draw_atmosphere(canvas, kind, layout)
 		return
 	if layout.has("roadways"):
 		street_ground(canvas, bounds, layout.roadways, layout.aprons, variant)
+		draw_atmosphere(canvas, kind, layout)
 		return
 	match kind:
 		"hospital":
@@ -61,6 +63,59 @@ static func ground(canvas: CanvasItem, kind: String, variant: int, layout: Dicti
 
 	if layout.has("rooms"):
 		room_ground(canvas, kind, layout.rooms, variant)
+	draw_atmosphere(canvas, kind, layout)
+
+# A5 selective port of #154: paint-only marks on existing ground geometry.
+# Stable per-zone local RNG, no shared random state, scene nodes, physics or save writes.
+static func atmosphere_marks(kind: String, layout: Dictionary) -> Array[Dictionary]:
+	var marks: Array[Dictionary] = []
+	if layout.has("floor_plan"):
+		var plan: Dictionary = layout.floor_plan
+		for room in plan.rooms.values():
+			var rect: Rect2 = room.rect
+			_append_atmosphere_marks(marks, rect, 4, 12.0,
+				"hospital" if plan.kind == "hospital" else "house",
+				str(layout.get("segment", "")) + ":" + str(room.id))
+	elif layout.has("roadways"):
+		for road in layout.roadways:
+			_append_atmosphere_marks(marks, road, 12, 24.0, "road", str(layout.get("segment", "")))
+	elif kind == "shelter":
+		# The existing decorative flower bed, never the construction or farm grid.
+		var bounds: Rect2 = layout.get("bounds", Rect2(20, 85, 600, 260))
+		var flowers := Rect2(448, 211, 157, 116).intersection(bounds)
+		_append_atmosphere_marks(marks, flowers, 28, 6.0, "flower", str(layout.get("segment", "")))
+	return marks
+
+
+static func _append_atmosphere_marks(marks: Array[Dictionary], area: Rect2, count: int, inset: float, style: String, identity: String) -> void:
+	if area.size.x <= 2.0 * inset + 2.0 or area.size.y <= 2.0 * inset + 2.0:
+		return
+	var inside := area.grow(-inset)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(abs((identity + ":" + str(area) + ":" + style).hash())) + 1
+	for index in range(count):
+		var point := Vector2(rng.randf_range(inside.position.x, inside.end.x),
+			rng.randf_range(inside.position.y, inside.end.y))
+		var offset := Vector2(rng.randf_range(5.0, 17.0), rng.randf_range(-3.0, 3.0))
+		var endpoint := (point + offset).clamp(inside.position, inside.end)
+		var mark_style := "puddle" if style == "road" and index % 3 == 0 else style
+		marks.append({"area": area, "point": point, "end": endpoint, "style": mark_style})
+
+
+static func draw_atmosphere(canvas: CanvasItem, kind: String, layout: Dictionary) -> void:
+	for mark in atmosphere_marks(kind, layout):
+		var point: Vector2 = mark.point
+		match str(mark.style):
+			"puddle":
+				canvas.draw_circle(point, 6.0, Color(0.10, 0.18, 0.21, 0.39))
+				canvas.draw_line(point + Vector2(-4, 1), point + Vector2(4, 1), Color(0.53, 0.65, 0.69, 0.23), 1.0)
+			"flower":
+				canvas.draw_line(point + Vector2(0, 1), point + Vector2(0, 3), Color(0.26, 0.40, 0.23, 0.43), 1.0)
+				canvas.draw_circle(point, 1.2, Color(0.96, 0.85, 0.52, 0.57))
+			_:
+				var tint := Color(0.24, 0.18, 0.12, 0.28) if mark.style == "house" else Color(0.11, 0.18, 0.21, 0.32)
+				canvas.draw_line(point, mark.end, tint, 1.0)
+
 
 static func plan_ground(canvas: CanvasItem, plan: Dictionary) -> void:
 	for room in plan.rooms.values():
