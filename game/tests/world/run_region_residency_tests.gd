@@ -63,6 +63,18 @@ func _durable_check(id: String, revision: int) -> bool:
 func _untrusted_ack(_id: String, _revision: int) -> bool:
 	return false
 
+func _on_region_exit(id: String) -> void:
+	reentrant_mutations = [
+		active_cache.acquire(99, 99, Callable(self, "_factory")),
+		active_cache.mark_dirty(id),
+		active_cache.set_focus(id),
+		active_cache.evict_clean(id),
+		active_cache.clear_focus(),
+	]
+
+func _non_boolean_ack(_id: String, _revision: int) -> int:
+	return 1
+
 func _run() -> void:
 	var cache = Cache.new()
 	active_cache = cache
@@ -231,6 +243,42 @@ func _run() -> void:
 	check(cache.cached_manifest(touched).streams.geometry == Regions.manifest(42, 159, -3).streams.geometry,
 		"manifest RNG streams immutable despite external copies after 150 unload cycles")
 	cache.queue_free()
+	await process_frame
+
+	# A stale acknowledgement must not become valid after eviction and
+	# recreation of the same canonical region (ABA across residency epochs).
+	var reload_cache := Cache.new()
+	check(reload_cache.configure(42, 1).ok, "reload test uses one resident slot")
+	root.add_child(reload_cache)
+	active_cache = reload_cache
+	var first: Dictionary = reload_cache.acquire(44, 44, Callable(self, "_factory"))
+	var first_edit: Dictionary = reload_cache.mark_dirty(first.id)
+	durable[first.id] = first_edit.revision
+	check(reload_cache.acknowledge_durable(first.id, first_edit.revision, Callable(self, "_durable_check")).ok,
+		"initial revision has a valid durable acknowledgement")
+	first.node.tree_exiting.connect(Callable(self, "_on_region_exit").bind(first.id))
+	check(reload_cache.evict_clean(first.id).ok and reload_cache.statistics().active == 0,
+		"manual clean eviction completes despite synchronous tree-exit callback")
+	check(reentrant_mutations.size() == 5
+		and reentrant_mutations.all(func(value): return value.code == "REENTRANT_ACCESS"),
+		"tree-exit callback cannot allocate, edit, pin or recursively evict during removal")
+	await process_frame
+	var second: Dictionary = reload_cache.acquire(44, 44, Callable(self, "_factory"))
+	var second_edit: Dictionary = reload_cache.mark_dirty(second.id)
+	check(second.ok and second.created and second_edit.ok and second.id == first.id
+		and second_edit.revision > first_edit.revision,
+		"same canonical ID receives a fresh monotonic revision after recreation")
+	check(reload_cache.acknowledge_durable(second.id, first_edit.revision, Callable(self, "_durable_check")).code == "STALE_REVISION"
+		and reload_cache.statistics().dirty == 1,
+		"old matching durable receipt cannot clear new dirty state")
+	check(reload_cache.acknowledge_durable(second.id, second_edit.revision, Callable(self, "_non_boolean_ack")).code == "UNVERIFIED_CHECKPOINT"
+		and reload_cache.statistics().dirty == 1,
+		"non-boolean verifier response cannot acknowledge dirty state")
+	durable[second.id] = second_edit.revision
+	check(reload_cache.acknowledge_durable(second.id, second_edit.revision, Callable(self, "_durable_check")).ok
+		and reload_cache.statistics().dirty == 0,
+		"only current verified durable revision clears the new dirty state")
+	reload_cache.queue_free()
 	await process_frame
 
 	print("A2 REGION RESIDENCY TESTS: %d checks, %d failures" % [checks, failures])
