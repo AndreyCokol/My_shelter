@@ -57,6 +57,50 @@ func run() -> void:
 	check(router.mount_current() and host.get_child_count() == 2, "mount actual world with one actor")
 	actor.position = Vector2(32.25, 17.5)
 	check(router.save("save-position").ok, "save captures actual actor position")
+	# Initial/remount uses the same runtime veto and serialization boundary
+	# as command/load, but never writes or emits a domain commit.
+	var original_prepare: Callable = session.runtime_preparer
+	var mount_state: Dictionary = session.get_snapshot()
+	var mount_bytes := FileAccess.get_file_as_bytes(store.path)
+	var mount_world = router.current_world()
+	var mount_decision: Array = [false]
+	var mount_counts: Array = [0, 0, 0, 0]
+	var mount_events: Array = [0, 0]
+	var on_mount_commit := func(_r): mount_events[0] += 1
+	var on_mount_load := func(): mount_events[1] += 1
+	session.committed.connect(on_mount_commit)
+	session.state_loaded.connect(on_mount_load)
+	session.runtime_preparer = func(candidate, reason):
+		var ticket: Dictionary = original_prepare.call(candidate, reason)
+		if not ticket.get("ok", false):
+			return ticket
+		var discard: Callable = ticket.discard
+		var install: Callable = ticket.install
+		ticket.precommit_check = func():
+			mount_counts[0] += 1
+			if not router.mount_current() and router.save("mount-reentrant").code == "UNAVAILABLE":
+				mount_counts[3] += 1
+			return mount_decision[0]
+		ticket.discard = func():
+			mount_counts[1] += 1
+			discard.call()
+		ticket.install = func():
+			mount_counts[2] += 1
+			return install.call()
+		return ticket
+	check(not router.mount_current(), "mount veto rejects remount")
+	check(router.current_world() == mount_world and actor.position == Vector2(32.25, 17.5) and host.get_child_count() == 2, "mount veto preserves mounted scene and actor")
+	check(mount_counts == [1, 1, 0, 1] and not session.is_busy() and not session.requires_recovery(), "mount veto discards staged world and rejects callback reentry")
+	check(session.get_snapshot() == mount_state and FileAccess.get_file_as_bytes(store.path) == mount_bytes and mount_events == [0, 0], "mount veto preserves checkpoint and emits no domain events")
+	mount_decision[0] = true
+	check(router.mount_current() and mount_counts == [2, 1, 1, 2], "approved remount installs exactly once under busy barrier")
+	check(router.current_world() != mount_world and host.get_child_count() == 2 and actor.position == Vector2(32.25, 17.5), "approved remount replaces scene but retains actor and authoritative position")
+	check(session.get_snapshot() == mount_state and FileAccess.get_file_as_bytes(store.path) == mount_bytes and mount_events == [0, 0], "approved remount changes no durable data and emits no domain events")
+	session.runtime_preparer = original_prepare
+	session.committed.disconnect(on_mount_commit)
+	session.state_loaded.disconnect(on_mount_load)
+	await process_frame
+	check(not is_instance_valid(mount_world), "remount frees detached world")
 	var old := router.current_world()
 	check(router.try_transition("go-out", "outside", "default").ok, "actual world transition commits")
 	check(old.get_parent() == null and old.is_queued_for_deletion() and actor.position == Vector2(100, 200) and host.get_child_count() == 2, "old world detached and scheduled for deletion, actor reused, entry marker applied")
@@ -100,6 +144,7 @@ func run() -> void:
 	mounted = router.current_world()
 	check(router.try_transition("disk-crash", "shelter", "default").code == "UNAVAILABLE" and router.current_world() == mounted and session.pauses.is_paused(), "postcommit failure freezes old world for recovery")
 	store.fault = ""
+	check(not router.mount_current() and router.current_world() == mounted and session.requires_recovery(), "mount cannot bypass pending durable recovery")
 	check(router.load_saved().ok and session.get_snapshot().scene.current_scene_id == "shelter" and actor.position == Vector2(32.25, 17.5), "recovery restores committed target and position together")
 	mounted = router.current_world()
 	check(router.try_transition("disk-crash", "shelter", "default").code == "ALREADY_APPLIED" and router.current_world() == mounted, "recovered transition replay is effect-free")
