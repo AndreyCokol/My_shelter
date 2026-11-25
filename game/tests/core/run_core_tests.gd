@@ -143,6 +143,39 @@ func _initialize() -> void:
 		return {"ok": true, "precommit_check": Callable(), "discard": func(): counts[1] += 1}
 	var approved: Dictionary = guarded.get_snapshot()
 	check(guarded.execute(command("malformed-guard"), guard_store).code == "UNAVAILABLE" and guarded.get_snapshot() == approved and counts[1] == 4, "invalid callable fails closed and cleans up")
+	# Compose the new veto with the real store fault seams. Approval alone
+	# is not a commit; recovery must not replay effects or lose its pause.
+	counts.fill(0)
+	decision[0] = true
+	guarded.runtime_preparer = func(_candidate, _reason):
+		return {"ok": true, "precommit_check": func():
+			counts[0] += 1
+			return decision[0],
+			"discard": func(): counts[1] += 1,
+			"install": func():
+				counts[2] += 1
+				return true}
+	var fault_primary := FileAccess.get_file_as_bytes(guard_store.path)
+	var fault_backup := FileAccess.get_file_as_bytes(guard_store.path + ".bak")
+	guard_store.fault = "before_replace"
+	check(guarded.execute(command("guard-fault"), guard_store).code == "SAVE_FAILED", "approved guard cannot bypass pre-replace write failure")
+	check(guarded.get_snapshot() == approved and counts == [1, 1, 0, 0] and not guarded.is_busy() and not guarded.requires_recovery(), "pre-replace failure discards approved runtime without publishing")
+	check(FileAccess.get_file_as_bytes(guard_store.path) == fault_primary and FileAccess.get_file_as_bytes(guard_store.path + ".bak") == fault_backup, "approved guard with failed write preserves checkpoint bytes")
+	guard_store.fault = "after_replace"
+	check(guarded.execute(command("guard-fault"), guard_store).code == "UNAVAILABLE", "approved guard enters recovery after durable replacement")
+	check(guarded.get_snapshot() == approved and counts == [2, 2, 0, 0] and guarded.requires_recovery() and guarded.pauses.is_paused(), "post-replace failure does not install or emit and retains recovery pause")
+	guard_store.fault = ""
+	var durable_primary := FileAccess.get_file_as_bytes(guard_store.path)
+	var durable_backup := FileAccess.get_file_as_bytes(guard_store.path + ".bak")
+	check(durable_primary != fault_primary, "post-replace fault really changed durable primary")
+	decision[0] = false
+	check(guarded.load_checkpoint(guard_store).code == "UNAVAILABLE", "guard may reject primary reload during recovery")
+	check(guarded.get_snapshot() == approved and counts == [3, 3, 0, 0] and guarded.requires_recovery() and guarded.pauses.is_paused() and not guarded.is_busy(), "veto releases load pause but preserves recovery barrier")
+	check(FileAccess.get_file_as_bytes(guard_store.path) == durable_primary and FileAccess.get_file_as_bytes(guard_store.path + ".bak") == durable_backup, "recovery veto leaves durable files intact")
+	check(guarded.execute(command("guard-fault"), guard_store).code == "UNAVAILABLE" and counts == [3, 3, 0, 0], "recovery barrier blocks retry before runtime preparation")
+	decision[0] = true
+	check(guarded.load_checkpoint(guard_store).ok and counts == [4, 3, 1, 0] and not guarded.requires_recovery() and not guarded.pauses.is_paused(), "approved reload installs durable state and clears recovery")
+	check(guarded.get_snapshot().counter == approved.counter + 1 and guarded.execute(command("guard-fault"), guard_store).code == "ALREADY_APPLIED" and counts == [4, 3, 1, 0], "recovered receipt prevents duplicated command effect and runtime install")
 	guarded.runtime_preparer = Callable()
 	for suffix in ["", ".tmp", ".bak", ".bak.tmp", ".rejected"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(guard_store.path + suffix))
