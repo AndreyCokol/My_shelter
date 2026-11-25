@@ -346,5 +346,63 @@ func _run() -> void:
 	ready_cache.queue_free()
 	await process_frame
 
+	# Speculation is bounded by free slots and a caller-provided budget.
+	var warm := Cache.new()
+	check(warm.configure(42, 3).ok, "prefetch cache configured")
+	root.add_child(warm)
+	var center: Dictionary = warm.acquire(0, 0, Callable(self, "_factory"))
+	var before_warm: int = factory_calls
+	check(warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory")).code == "FOCUS_REQUIRED"
+		and factory_calls == before_warm, "prefetch requires current focus before allocation")
+	check(warm.set_focus(center.id).ok and warm.mark_dirty(center.id).ok,
+		"prefetch source is focused and dirty")
+	check(warm.prefetch_neighbors(center.id, ["east", "east"], Callable(self, "_factory")).code == "INVALID_ARGUMENT"
+		and warm.prefetch_neighbors(center.id, ["east", 1], Callable(self, "_factory")).code == "INVALID_ARGUMENT"
+		and warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory"), 0).code == "INVALID_ARGUMENT"
+		and factory_calls == before_warm, "invalid priorities and budget reject the entire request")
+	var first_warm: Dictionary = warm.prefetch_neighbors(center.id, ["east", "south", "west"], Callable(self, "_factory"), 1)
+	check(first_warm.ok and first_warm.loaded == ["region:1:0"]
+		and first_warm.deferred == ["region:0:1", "region:-1:0"]
+		and first_warm.attempts == 1 and factory_calls == before_warm + 1,
+		"priority order and per-call factory budget respected")
+	check(warm.statistics().focus == center.id and warm.statistics().dirty == 1
+		and warm.statistics().evicted == 0, "speculation never changes focus or dirty state")
+	var east_before: Array[String] = warm.active_region_ids()
+	var second_warm: Dictionary = warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory"))
+	check(second_warm.ok and second_warm.existing == ["region:1:0"] and second_warm.attempts == 0
+		and warm.active_region_ids() == east_before, "resident neighbor reused without allocation or LRU refresh")
+	var third_warm: Dictionary = warm.prefetch_neighbors(center.id, ["south", "west"], Callable(self, "_factory"), 4)
+	check(third_warm.ok and third_warm.loaded == ["region:0:1"] and third_warm.deferred == ["region:-1:0"]
+		and warm.get_child_count() == 3 and third_warm.attempts == 1,
+		"prefetch stops at capacity even with remaining attempt budget")
+	var full_before: int = factory_calls
+	var full_warm: Dictionary = warm.prefetch_neighbors(center.id, ["west", "north"], Callable(self, "_factory"), 4)
+	check(full_warm.ok and full_warm.loaded.is_empty() and full_warm.deferred == ["region:-1:0", "region:0:-1"]
+		and full_warm.attempts == 0 and factory_calls == full_before and warm.statistics().evicted == 0,
+		"full cache performs no speculative eviction or factory call")
+	check(Regions.seams_match(center.manifest, warm.cached_manifest("region:1:0"), "east")
+		and Regions.seams_match(center.manifest, warm.cached_manifest("region:0:1"), "south"),
+		"prefetched nodes carry reciprocal canonical manifests")
+	warm.queue_free()
+	await process_frame
+
+	var edge := Cache.new()
+	check(edge.configure(42, 3).ok, "edge prefetch cache configured")
+	root.add_child(edge)
+	var edge_center: Dictionary = edge.acquire(Regions.MAX_REGION_COORD, Regions.MAX_REGION_COORD, Callable(self, "_factory"))
+	check(edge.set_focus(edge_center.id).ok, "boundary region focused")
+	var edge_calls: int = factory_calls
+	var edge_warm: Dictionary = edge.prefetch_neighbors(edge_center.id, ["east", "south", "west"], Callable(self, "_factory"), 1)
+	check(edge_warm.ok and edge_warm.out_of_bounds.size() == 2 and edge_warm.loaded.size() == 1
+		and edge_warm.attempts == 1 and factory_calls == edge_calls + 1,
+		"out-of-bounds neighbors do not consume allocation budget")
+	var bad_warm: Dictionary = edge.prefetch_neighbors(edge_center.id, ["north"], Callable(self, "_bad_factory"), 1)
+	check(not bad_warm.ok and bad_warm.code == "INVALID_FACTORY_RESULT"
+		and bad_warm.failed_id == Regions.region_id(Regions.MAX_REGION_COORD, Regions.MAX_REGION_COORD - 1)
+		and bad_warm.attempts == 1 and edge.statistics().active == 2 and edge.statistics().evicted == 0,
+		"failed speculative mount preserves current residents and reports failed ID")
+	edge.queue_free()
+	await process_frame
+
 	print("A2 REGION RESIDENCY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
