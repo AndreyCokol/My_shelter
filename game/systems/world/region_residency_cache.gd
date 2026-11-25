@@ -16,6 +16,9 @@ var _lru: Array[String] = []
 var _protected_focus := ""
 var _busy := false
 var _evictions := 0
+# queue_free() defers actual destruction until the end of the frame.
+# WeakRef tracking bounds *pending* physics objects as well as live nodes.
+var _retiring: Array[WeakRef] = []
 
 func configure(seed: int, capacity: int = 9) -> Dictionary:
 	if _configured or is_inside_tree() or get_child_count() != 0:
@@ -55,6 +58,8 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 				break
 		if victim.is_empty():
 			return _error("DURABLE_CHECKPOINT_REQUIRED")
+		if _pending_free_count() >= _capacity:
+			return _error("EVICTION_FLUSH_REQUIRED")
 	_busy = true
 	var node = factory.call(manifest.duplicate(true))
 	if not node is Node2D or not is_instance_valid(node) \
@@ -70,6 +75,7 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 		# Detach immediately to bound active PhysicsServer2D objects.
 		# Actual free is deferred to preserve Godot lifecycle safety.
 		remove_child(removed.node)
+		_retiring.append(weakref(removed.node))
 		removed.node.queue_free()
 		_entries.erase(victim)
 		_lru.erase(victim)
@@ -145,10 +151,13 @@ func evict_clean(id: String) -> Dictionary:
 		return _error("UNKNOWN_REGION")
 	if _entries[id].dirty or id == _protected_focus:
 		return _error("DURABLE_CHECKPOINT_REQUIRED")
+	if _pending_free_count() >= _capacity:
+		return _error("EVICTION_FLUSH_REQUIRED")
 	var entry: Dictionary = _entries[id]
 	if not is_instance_valid(entry.node):
 		return _error("CORRUPT_RESIDENCY")
 	remove_child(entry.node)
+	_retiring.append(weakref(entry.node))
 	entry.node.queue_free()
 	_entries.erase(id)
 	_lru.erase(id)
@@ -169,7 +178,18 @@ func statistics() -> Dictionary:
 		if entry.dirty:
 			dirty_count += 1
 	return {"active": _entries.size(), "capacity": _capacity,
-		"dirty": dirty_count, "evicted": _evictions, "focus": _protected_focus}
+		"dirty": dirty_count, "evicted": _evictions,
+		"pending_frees": _pending_free_count(), "focus": _protected_focus}
+
+func _pending_free_count() -> int:
+	# Keep only weak refs to objects that are still awaiting deferred free.
+	# A future engine frame releases them without retaining ghost regions.
+	var pending: Array[WeakRef] = []
+	for weak_node in _retiring:
+		if is_instance_valid(weak_node.get_ref()):
+			pending.append(weak_node)
+	_retiring = pending
+	return pending.size()
 
 func _touch(id: String) -> void:
 	_lru.erase(id)
