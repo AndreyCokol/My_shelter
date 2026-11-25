@@ -145,14 +145,18 @@ func run() -> void:
 
 	# A3 quote-shaped fixtures; integration with the real A3 producer is pending.
 	var ctx := {"action_id": "act-1", "expedition_proposal_id": "exp-1",
-		"destination_id": "region-1", "slot_key": "slot-1", "policy_version": "test-v1",
+		"destination_id": "region-1", "slot_key": "slot-1", "save_id": "save-1",
+		"actor_id": "player-1", "ruleset_version": "rules-1", "policy_version": "test-v2",
 		"resident_ids": ["traveller-01", "traveller-02"], "minute": 12,
+		"source_containers": ["storage", "player"],
 		"requested_departure_minute": 20, "valid_until_minute": 18,
 		"revisions": {"inventory:player": 1, "inventory:storage": 2, "residents": 3, "world": 4}}
-	var quote := {"ok": true, "code": "SUPPLY_QUOTE_READY", "quote_version": 1,
+	var quote := {"ok": true, "code": "SUPPLY_QUOTE_READY", "quote_version": 2,
 		"action_id": "act-1", "expedition_proposal_id": "exp-1",
-		"destination_id": "region-1", "slot_key": "slot-1", "policy_version": "test-v1",
+		"destination_id": "region-1", "slot_key": "slot-1", "save_id": "save-1",
+		"actor_id": "player-1", "ruleset_version": "rules-1", "policy_version": "test-v2",
 		"resident_ids": ["traveller-01", "traveller-02"], "quoted_at_minute": 10,
+		"source_containers": ["player", "storage"],
 		"requested_departure_minute": 20, "valid_until_minute": 18,
 		"inventory_revisions_snapshot": ctx.revisions.duplicate(true)}
 	var before_ctx := ctx.duplicate(true)
@@ -166,7 +170,7 @@ func run() -> void:
 	check(NPC.check_expedition_quote(party, false, 2, ctx, quote).code == "PERMISSION_REQUIRED", "quote cannot grant player permission")
 	check(NPC.check_expedition_quote([first, unavailable], true, 2, ctx, quote).code == "UNAVAILABLE_PARTICIPANT", "quote cannot force unavailable NPC")
 	check(NPC.check_expedition_quote([first, first], true, 2, ctx, quote).code == "DUPLICATE_PARTICIPANT", "quote cannot duplicate NPC")
-	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "policy_version"]:
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "save_id", "actor_id", "ruleset_version", "policy_version"]:
 		var changed := quote.duplicate(true)
 		changed[key] = "other"
 		check(NPC.check_expedition_quote(party, true, 2, ctx, changed).code == "QUOTE_CONTEXT_MISMATCH", "foreign quote rejected: " + key)
@@ -182,8 +186,8 @@ func run() -> void:
 	changed_quote.ok = false
 	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "SUPPLY_QUOTE_REQUIRED", "failed quote cannot advance")
 	changed_quote = quote.duplicate(true)
-	changed_quote.quote_version = 2
-	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "UNSUPPORTED_QUOTE_VERSION", "unknown quote format rejected")
+	changed_quote.quote_version = 1
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "UNSUPPORTED_QUOTE_VERSION", "obsolete quote v1 rejected")
 	changed_ctx = ctx.duplicate(true)
 	changed_ctx.minute = 19
 	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "STALE_QUOTE", "expired quote rejected")
@@ -206,5 +210,24 @@ func run() -> void:
 	changed_quote = quote.duplicate(true)
 	changed_quote.inventory_revisions_snapshot["extra"] = 0
 	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "STALE_QUOTE", "extra quoted revision rejected")
+
+	changed_quote = quote.duplicate(true)
+	changed_quote.quote_version = 3
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "UNSUPPORTED_QUOTE_VERSION", "future version rejected")
+	changed_ctx = ctx.duplicate(true)
+	changed_ctx.source_containers.reverse()
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).ok, "source order canonicalized")
+	changed_ctx.source_containers = ["player"]
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "QUOTE_CONTEXT_MISMATCH", "trusted source policy changed")
+	changed_ctx.source_containers = ["player", "player"]
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "INVALID_CONTEXT", "duplicate source rejected")
+	changed_ctx.source_containers = ["player", "remote"]
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "INVALID_CONTEXT", "source without revision rejected")
+	changed_ctx = ctx.duplicate(true)
+	changed_ctx.erase("save_id")
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "INVALID_CONTEXT", "missing trusted save identity rejected")
+	changed_quote = quote.duplicate(true)
+	changed_quote.source_containers.reverse()
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "QUOTE_CONTEXT_MISMATCH", "noncanonical quote source order rejected")
 	print("A4 NPC POLICY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
