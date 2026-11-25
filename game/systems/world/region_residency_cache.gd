@@ -84,6 +84,8 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 	return _view(id, record, true)
 
 func set_focus(id: String) -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	if not is_instance_valid(_entries[id].node):
@@ -92,10 +94,15 @@ func set_focus(id: String) -> Dictionary:
 	_touch(id)
 	return {"ok": true, "code": "OK"}
 
-func clear_focus() -> void:
+func clear_focus() -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
 	_protected_focus = ""
+	return {"ok": true, "code": "OK"}
 
 func mark_dirty(id: String) -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	var record: Dictionary = _entries[id]
@@ -109,12 +116,21 @@ func mark_dirty(id: String) -> Dictionary:
 	return {"ok": true, "code": "OK", "revision": record.revision}
 
 func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	var record: Dictionary = _entries[id]
 	if not record.dirty or revision < 1 or record.revision != revision:
 		return _error("STALE_REVISION")
-	if not a1_verifier.is_valid() or a1_verifier.call(id, revision) != true:
+	if not a1_verifier.is_valid():
+		return _error("UNVERIFIED_CHECKPOINT")
+	# A callback must not be able to mutate or evict the same cache while
+	# the authoritative save receipt is being checked.
+	_busy = true
+	var durable_response = a1_verifier.call(id, revision)
+	_busy = false
+	if durable_response != true:
 		return _error("UNVERIFIED_CHECKPOINT")
 	# Trust boundary: A2 cannot independently attest that bytes were
 	# fsynced. A1 must supply a trusted durable-checkpoint verifier.
@@ -123,6 +139,8 @@ func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Di
 	return {"ok": true, "code": "OK"}
 
 func evict_clean(id: String) -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	if _entries[id].dirty or id == _protected_focus:
