@@ -99,5 +99,47 @@ func run() -> void:
 	reject(Quote.quote(c, no_storage, items, rows), "INSUFFICIENT_RESOURCES", "excluded container unavailable")
 	c.revisions.world = 1
 	check(q.get("inventory_revisions_snapshot", {}).get("world") == 0, "quote evidence deep copied")
+
+	c.revisions.world = 0
+	var live := c.duplicate(true)
+	var accepted := {"ok": true, "code": "SUPPLY_QUOTE_CURRENT", "requires_atomic_dispatch_preflight": true}
+	check(Quote.revalidate(q, live, p, items, rows) == accepted, "fresh quote remains advisory")
+	live.minute = 15
+	check(Quote.revalidate(q, live, p, items, rows) == accepted, "inclusive deadline")
+	live.minute = 16
+	reject(Quote.revalidate(q, live, p, items, rows), "INVALID_TIME", "expired prior cannot proceed")
+	live.minute = 9
+	reject(Quote.revalidate(q, live, p, items, rows), "STALE_SUPPLY_QUOTE", "clock rollback")
+	live.minute = 11
+	live.revisions.world = 1
+	reject(Quote.revalidate(q, live, p, items, rows), "STALE_SUPPLY_QUOTE", "changed trusted revision")
+	live.revisions.world = 0
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key"]:
+		var changed := live.duplicate(true)
+		changed[key] = "other"
+		reject(Quote.revalidate(q, changed, p, items, rows), "STALE_SUPPLY_QUOTE", "changed identity " + key)
+	var changed_group := live.duplicate(true)
+	changed_group.resident_ids = ["r1", "r3"]
+	reject(Quote.revalidate(q, changed_group, p, items, rows), "STALE_SUPPLY_QUOTE", "changed residents")
+	var changed_deadline := live.duplicate(true)
+	changed_deadline.valid_until_minute = 16
+	reject(Quote.revalidate(q, changed_deadline, p, items, rows), "STALE_SUPPLY_QUOTE", "deadline cannot be extended")
+	var changed_policy := p.duplicate(true)
+	changed_policy.per_resident["crop.potato"] = 1
+	reject(Quote.revalidate(q, live, changed_policy, items, rows), "STALE_SUPPLY_QUOTE", "changed policy amounts")
+	var changed_rows := rows.duplicate(true)
+	changed_rows[0].quantity = 1
+	reject(Quote.revalidate(q, live, p, items, changed_rows), "STALE_SUPPLY_QUOTE", "changed exact allocation despite unchanged revision")
+	reject(Quote.revalidate(q, live, p, items, short_rows), "INSUFFICIENT_RESOURCES", "new reservation prevents reuse")
+	var tampered := q.duplicate(true)
+	tampered.selected_item_instances[0].quantity = 2
+	reject(Quote.revalidate(tampered, live, p, items, rows), "STALE_SUPPLY_QUOTE", "altered allocation")
+	reject(Quote.revalidate({}, live, p, items, rows), "INVALID_PRIOR_QUOTE", "missing prior")
+	var live_permuted := live.duplicate(true)
+	live_permuted.resident_ids.reverse()
+	var prior_snapshot := q.duplicate(true)
+	var live_snapshot := live_permuted.duplicate(true)
+	check(Quote.revalidate(q, live_permuted, p, reversed_items, reversed_rows) == accepted, "canonical revalidation")
+	check(q == prior_snapshot and live_permuted == live_snapshot and [c, p, items, rows] == before, "revalidation is nonmutating")
 	print("A3 EXPEDITION SUPPLY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
