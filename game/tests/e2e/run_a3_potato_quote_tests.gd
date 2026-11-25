@@ -17,7 +17,7 @@ func check(ok: bool, label: String) -> void:
 
 func snapshot(seed_value: int) -> Dictionary:
 	return {"minute": Camp.OPEN, "seed": seed_value, "scene_id": "louvre",
-		"actor_id": "player", "slot_key": "test-slot", "ruleset_version": "synthetic-qa-v2", "action_id": "qa-1",
+		"actor_id": "player", "slot_key": "test-slot", "save_id": "test-save", "ruleset_version": "synthetic-qa-v2", "action_id": "qa-1",
 		"network": Camp.empty_state(),
 		"free_quantity_by_type": {"crop.potato": 20, "material.salvage": 20},
 		"revisions": {"inventory:player": 0, "inventory:storage": 0, "residents": 0, "world": 0, "scene": 0, "wallet": 0}}
@@ -57,10 +57,19 @@ func stale_cases(seed_value: int) -> void:
 	var price := r.duplicate(true)
 	price.factions[faction].buy_cost_potato += 1
 	rejected(Quote.revalidate(q, "buy", faction, 0, s, price), "STALE_QUOTE", "same version changed price")
-	for field in ["slot_key", "action_id", "actor_id", "ruleset_version", "scene_id"]:
+	for field in ["slot_key", "save_id", "action_id", "actor_id", "ruleset_version", "scene_id"]:
 		var changed := s.duplicate(true)
 		changed[field] = "different"
 		rejected(Quote.revalidate(q, "buy", faction, 0, changed, r), "STALE_QUOTE", "identity changed: " + field)
+	var missing_save := s.duplicate(true)
+	missing_save.erase("save_id")
+	rejected(Quote.quote("buy", faction, 0, missing_save, r), "INVALID_SNAPSHOT", "missing trusted save identity")
+	var padded_save := s.duplicate(true)
+	padded_save.save_id = " test-save "
+	rejected(Quote.quote("buy", faction, 0, padded_save, r), "INVALID_SNAPSHOT", "noncanonical save identity")
+	var legacy := q.duplicate(true)
+	legacy.quote_version = 2
+	rejected(Quote.revalidate(legacy, "buy", faction, 0, s, r), "INVALID_QUOTE", "old candidate schema rejected")
 	var clock := s.duplicate(true)
 	clock.minute += 1
 	rejected(Quote.revalidate(q, "buy", faction, 0, clock, r), "STALE_QUOTE", "clock advanced")
