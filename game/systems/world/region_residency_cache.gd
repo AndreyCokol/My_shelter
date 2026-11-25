@@ -38,6 +38,8 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 		return _error("UNMOUNTED")
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	var manifest: Dictionary = Regions.manifest(_seed, x, y)
 	if manifest.is_empty() or not Regions.valid_canonical_manifest(manifest):
 		return _error("INVALID_REGION_ID")
@@ -66,9 +68,15 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 	_busy = true
 	var node = factory.call(manifest.duplicate(true))
 	if not node is Node2D or not is_instance_valid(node) \
-			or node.get_parent() != null or node.is_inside_tree() or node == self:
+			or node.get_parent() != null or node.is_inside_tree() or node == self \
+			or node.is_queued_for_deletion():
 		_busy = false
 		return _error("INVALID_FACTORY_RESULT")
+	# Factory code may synchronously affect the scene tree outside this API.
+	if not _residency_intact():
+		node.free()
+		_busy = false
+		return _error("CORRUPT_RESIDENCY")
 	if not victim.is_empty():
 		var removed: Dictionary = _entries[victim]
 		if not is_instance_valid(removed.node):
@@ -90,11 +98,17 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 	_entries[id] = record
 	_lru.append(id)
 	_busy = false
+	# A factory scene must not detach or queue itself for deletion in _ready.
+	# Keep the record for diagnosis, never advertise it as a usable region.
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	return _view(id, record, true)
 
 func set_focus(id: String) -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	if not is_instance_valid(_entries[id].node):
@@ -106,12 +120,16 @@ func set_focus(id: String) -> Dictionary:
 func clear_focus() -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	_protected_focus = ""
 	return {"ok": true, "code": "OK"}
 
 func mark_dirty(id: String) -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	var record: Dictionary = _entries[id]
@@ -130,6 +148,8 @@ func mark_dirty(id: String) -> Dictionary:
 func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	var record: Dictionary = _entries[id]
@@ -142,6 +162,8 @@ func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Di
 	_busy = true
 	var durable_response = a1_verifier.call(id, revision)
 	_busy = false
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	if typeof(durable_response) != TYPE_BOOL or not durable_response:
 		return _error("UNVERIFIED_CHECKPOINT")
 	# Trust boundary: A2 cannot independently attest that bytes were
@@ -153,6 +175,8 @@ func acknowledge_durable(id: String, revision: int, a1_verifier: Callable) -> Di
 func evict_clean(id: String) -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
 	if not _entries.has(id):
 		return _error("UNKNOWN_REGION")
 	if _entries[id].dirty or id == _protected_focus:
@@ -189,6 +213,20 @@ func statistics() -> Dictionary:
 	return {"active": _entries.size(), "capacity": _capacity,
 		"dirty": dirty_count, "evicted": _evictions,
 		"pending_frees": _pending_free_count(), "focus": _protected_focus}
+
+## Only the cache owns region mounting/unmounting. Detect external mutation
+## before reporting success; never reconstruct dirty state from a missing node.
+func _residency_intact() -> bool:
+	if not _configured or not is_inside_tree() or is_queued_for_deletion():
+		return false
+	if get_child_count() != _entries.size() or _entries.size() != _lru.size():
+		return false
+	for entry in _entries.values():
+		var node = entry.node
+		if not is_instance_valid(node) or node.get_parent() != self \
+				or not node.is_inside_tree() or node.is_queued_for_deletion():
+			return false
+	return true
 
 func _pending_free_count() -> int:
 	# Keep only weak refs to objects that are still awaiting deferred free.
