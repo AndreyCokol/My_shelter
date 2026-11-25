@@ -100,3 +100,25 @@ static func quote(context: Dictionary, policy: Dictionary, items: Array, reserva
 		"inventory_revisions_snapshot": revisions.duplicate(true),
 		"item_requirements": requirements, "selected_item_instances": selected,
 		"reserved_food_excluded": true, "requires_atomic_dispatch_preflight": true}
+
+# Advisory freshness check, not an atomic lock, reservation, permission or receipt.
+# prior must be the server-held quote; current_context and all snapshots must
+# be independently resolved from trusted state. A1 must repeat validation
+# within its commit boundary and own idempotency / durable reservation.
+static func revalidate(prior: Dictionary, current_context: Dictionary, policy: Dictionary, items: Array, reservation_rows: Array) -> Dictionary:
+	if prior.get("ok") != true or not _count(prior.get("quoted_at_minute"), 0):
+		return _fail("INVALID_PRIOR_QUOTE")
+	var quoted_at: int = prior.quoted_at_minute
+	if not _count(current_context.get("minute"), 0):
+		return _fail("INVALID_CONTEXT")
+	if current_context.minute < quoted_at:
+		return _fail("STALE_SUPPLY_QUOTE")
+	var current := quote(current_context, policy, items, reservation_rows)
+	if not current.ok:
+		return _fail(str(current.code))
+	# Only the observation minute may advance; all identity, revision,
+	# deadline, requirements and exact allocation evidence must still match.
+	current["quoted_at_minute"] = quoted_at
+	if current != prior:
+		return _fail("STALE_SUPPLY_QUOTE")
+	return {"ok": true, "code": "SUPPLY_QUOTE_CURRENT", "requires_atomic_dispatch_preflight": true}
