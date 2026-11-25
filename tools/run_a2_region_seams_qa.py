@@ -11,6 +11,7 @@ GODOT = os.environ.get("GODOT", "godot")
 SUITES = [
     ("game/tests/world/run_region_seam_tests.gd", "A2 REGION SEAM TESTS"),
     ("game/tests/world/run_region_crossing_tests.gd", "A2 REGION CROSSING TESTS"),
+    ("game/tests/world/run_region_residency_tests.gd", "A2 REGION RESIDENCY TESTS"),
 ]
 
 def run(args, timeout=100):
