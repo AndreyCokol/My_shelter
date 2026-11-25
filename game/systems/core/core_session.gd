@@ -69,6 +69,31 @@ static func validate(state: Dictionary) -> bool:
 			return false
 	return true
 
+# Mount an already-authoritative snapshot without writing a checkpoint or
+# publishing domain events. Initial mount and remount share the same trusted
+# runtime veto and busy barrier as transactional load/execute.
+func mount_current_runtime() -> bool:
+	if _busy or _recovery_token != 0:
+		return false
+	_busy = true
+	var ticket := _prepare_runtime(_state, "load")
+	if not ticket.get("ok", false):
+		_busy = false
+		return false
+	var install = ticket.get("install")
+	if not install is Callable or not install.is_valid() or install.get_argument_count() != 0 or not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
+		_busy = false
+		return false
+	# Installation can affect scene ownership; if it fails, require explicit
+	# recovery instead of letting commands operate on a partially mounted world.
+	if not _install_runtime(ticket):
+		_ensure_recovery()
+		_busy = false
+		return false
+	_busy = false
+	return true
+
 func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 	if _busy:
 		return _result(false, "UNAVAILABLE", "")
@@ -81,6 +106,11 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 		return _result(false, "INVALID_STATE", "")
 	var ticket := _prepare_runtime(loaded.state, "load")
 	if not ticket.get("ok", false):
+		pauses.release_pause(token)
+		_busy = false
+		return _result(false, "UNAVAILABLE", "")
+	if not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
 		pauses.release_pause(token)
 		_busy = false
 		return _result(false, "UNAVAILABLE", "")
@@ -165,6 +195,12 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if not ticket.get("ok", false):
 		_busy = false
 		return _result(false, "UNAVAILABLE", action_id)
+	# The trusted runtime adapter may veto just before the durable write.
+	# This hook is synchronous: no await, mutation, or player-supplied callable.
+	if not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
+		_busy = false
+		return _result(false, "UNAVAILABLE", action_id)
 	var written: Dictionary = store.write_checkpoint(tentative, _state_validator)
 	if not written.get("committed", false):
 		_discard_runtime(ticket)
@@ -235,6 +271,20 @@ func _prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	if runtime_required:
 		return {"ok": false}
 	return {"ok": true}
+
+# Existing runtime tickets without a veto remain compatible. A present but
+# invalid callable or non-boolean answer is a rejection, not implicit success.
+static func _runtime_precommit_ok(ticket: Dictionary) -> bool:
+	if not ticket.has("precommit_check"):
+		return true
+	var guard = ticket["precommit_check"]
+	if not guard is Callable or not guard.is_valid():
+		return false
+	# Contract: zero unbound arguments; never invoke a wrong-signature guard.
+	if guard.get_argument_count() != 0:
+		return false
+	var decision = guard.call()
+	return decision is bool and decision == true
 
 static func _discard_runtime(ticket: Dictionary) -> void:
 	var discard: Callable = ticket.get("discard", Callable())
