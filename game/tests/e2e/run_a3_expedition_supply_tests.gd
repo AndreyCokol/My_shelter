@@ -19,7 +19,8 @@ func reject(result: Dictionary, code: String, label: String) -> void:
 
 func run() -> void:
 	var c := {"action_id": "qa-1", "expedition_proposal_id": "proposal-1",
-		"destination_id": "qa-target", "slot_key": "qa-slot", "policy_version": "qa-only",
+		"destination_id": "qa-target", "slot_key": "qa-slot", "save_id": "qa-save",
+		"actor_id": "player", "ruleset_version": "qa-rules", "policy_version": "qa-only",
 		"resident_ids": ["r2", "r1"], "minute": 10, "requested_departure_minute": 20, "valid_until_minute": 15,
 		"revisions": {"inventory:player": 0, "inventory:storage": 0, "residents": 0, "world": 0}}
 	# Synthetic amounts, not adopted economy.
@@ -114,7 +115,7 @@ func run() -> void:
 	live.revisions.world = 1
 	reject(Quote.revalidate(q, live, p, items, rows), "STALE_SUPPLY_QUOTE", "changed trusted revision")
 	live.revisions.world = 0
-	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key"]:
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "save_id", "actor_id", "ruleset_version"]:
 		var changed := live.duplicate(true)
 		changed[key] = "other"
 		reject(Quote.revalidate(q, changed, p, items, rows), "STALE_SUPPLY_QUOTE", "changed identity " + key)
@@ -141,5 +142,22 @@ func run() -> void:
 	var live_snapshot := live_permuted.duplicate(true)
 	check(Quote.revalidate(q, live_permuted, p, reversed_items, reversed_rows) == accepted, "canonical revalidation")
 	check(q == prior_snapshot and live_permuted == live_snapshot and [c, p, items, rows] == before, "revalidation is nonmutating")
+	for key in ["save_id", "actor_id", "ruleset_version"]:
+		var missing := live.duplicate(true)
+		missing.erase(key)
+		reject(Quote.quote(missing, p, items, rows), "INVALID_CONTEXT", "missing trusted identity " + key)
+	var expanded_policy := p.duplicate(true)
+	expanded_policy.source_containers.append("empty")
+	reject(Quote.quote(live, expanded_policy, items, rows), "INVALID_CONTEXT", "eligible source needs inventory revision")
+	var expanded_context := live.duplicate(true)
+	expanded_context.revisions["inventory:empty"] = 0
+	var baseline_expanded := Quote.quote(expanded_context, p, items, rows)
+	reject(Quote.revalidate(baseline_expanded, expanded_context, expanded_policy, items, rows), "STALE_SUPPLY_QUOTE", "source policy changed even with same allocation and revisions")
+	var reversed_policy := p.duplicate(true)
+	reversed_policy.source_containers.reverse()
+	check(Quote.revalidate(q, live, reversed_policy, items, rows) == accepted, "source policy set is canonical")
+	var old_quote := q.duplicate(true)
+	old_quote.quote_version = 1
+	reject(Quote.revalidate(old_quote, live, p, items, rows), "INVALID_PRIOR_QUOTE", "legacy candidate quote cannot be silently reused")
 	print("A3 EXPEDITION SUPPLY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
