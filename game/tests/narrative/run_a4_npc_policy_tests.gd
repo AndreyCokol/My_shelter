@@ -142,5 +142,69 @@ func run() -> void:
 	check(not NPC.valid_npc(bad), "joined NPC without consent is invalid")
 	check(NPC.plan_group_expedition(party, true, true, 1).code == "INVALID_ARGUMENT",
 		"invalid minimum party size is rejected")
+
+	# A3 quote-shaped fixtures; integration with the real A3 producer is pending.
+	var ctx := {"action_id": "act-1", "expedition_proposal_id": "exp-1",
+		"destination_id": "region-1", "slot_key": "slot-1", "policy_version": "test-v1",
+		"resident_ids": ["traveller-01", "traveller-02"], "minute": 12,
+		"requested_departure_minute": 20, "valid_until_minute": 18,
+		"revisions": {"inventory:player": 1, "inventory:storage": 2, "residents": 3, "world": 4}}
+	var quote := {"ok": true, "code": "SUPPLY_QUOTE_READY", "quote_version": 1,
+		"action_id": "act-1", "expedition_proposal_id": "exp-1",
+		"destination_id": "region-1", "slot_key": "slot-1", "policy_version": "test-v1",
+		"resident_ids": ["traveller-01", "traveller-02"], "quoted_at_minute": 10,
+		"requested_departure_minute": 20, "valid_until_minute": 18,
+		"inventory_revisions_snapshot": ctx.revisions.duplicate(true)}
+	var before_ctx := ctx.duplicate(true)
+	var before_quote := quote.duplicate(true)
+	var match_result := NPC.check_expedition_quote(party, true, 2, ctx, quote)
+	check(match_result.ok and match_result.code == "EXPEDITION_QUOTE_MATCHED"
+		and match_result.requires_atomic_dispatch_preflight, "quote matches trusted proposal but never authorizes dispatch")
+	check(NPC.check_expedition_quote(reversed, true, 2, ctx, quote) == match_result,
+		"party ordering does not alter quote binding")
+	check(ctx == before_ctx and quote == before_quote and party == before_party, "binding leaves all inputs intact")
+	check(NPC.check_expedition_quote(party, false, 2, ctx, quote).code == "PERMISSION_REQUIRED", "quote cannot grant player permission")
+	check(NPC.check_expedition_quote([first, unavailable], true, 2, ctx, quote).code == "UNAVAILABLE_PARTICIPANT", "quote cannot force unavailable NPC")
+	check(NPC.check_expedition_quote([first, first], true, 2, ctx, quote).code == "DUPLICATE_PARTICIPANT", "quote cannot duplicate NPC")
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "policy_version"]:
+		var changed := quote.duplicate(true)
+		changed[key] = "other"
+		check(NPC.check_expedition_quote(party, true, 2, ctx, changed).code == "QUOTE_CONTEXT_MISMATCH", "foreign quote rejected: " + key)
+	var changed_quote := quote.duplicate(true)
+	changed_quote.resident_ids = ["traveller-01", "foreign"]
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "PARTICIPANT_MISMATCH", "foreign resident quote rejected")
+	changed_quote.resident_ids = ["traveller-01", "traveller-01"]
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "PARTICIPANT_MISMATCH", "duplicate resident quote rejected")
+	var changed_ctx := ctx.duplicate(true)
+	changed_ctx.resident_ids = ["traveller-01", "foreign"]
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "PARTICIPANT_MISMATCH", "context cannot replace authoritative party")
+	changed_quote = quote.duplicate(true)
+	changed_quote.ok = false
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "SUPPLY_QUOTE_REQUIRED", "failed quote cannot advance")
+	changed_quote = quote.duplicate(true)
+	changed_quote.quote_version = 2
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "UNSUPPORTED_QUOTE_VERSION", "unknown quote format rejected")
+	changed_ctx = ctx.duplicate(true)
+	changed_ctx.minute = 19
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "STALE_QUOTE", "expired quote rejected")
+	changed_ctx.minute = 18
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).ok, "inclusive expiration boundary")
+	changed_quote = quote.duplicate(true)
+	changed_quote.quoted_at_minute = 13
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "INVALID_QUOTE_TIME", "future quote rejected")
+	for key in ["requested_departure_minute", "valid_until_minute"]:
+		changed_quote = quote.duplicate(true)
+		changed_quote[key] = 17
+		check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "QUOTE_CONTEXT_MISMATCH", "changed quote time rejected: " + key)
+	for key in ctx.revisions:
+		changed_ctx = ctx.duplicate(true)
+		changed_ctx.revisions[key] += 1
+		check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "STALE_QUOTE", "revision drift rejected: " + key)
+	changed_ctx = ctx.duplicate(true)
+	changed_ctx.revisions.erase("world")
+	check(NPC.check_expedition_quote(party, true, 2, changed_ctx, quote).code == "INVALID_CONTEXT", "missing current revision rejected")
+	changed_quote = quote.duplicate(true)
+	changed_quote.inventory_revisions_snapshot["extra"] = 0
+	check(NPC.check_expedition_quote(party, true, 2, ctx, changed_quote).code == "STALE_QUOTE", "extra quoted revision rejected")
 	print("A4 NPC POLICY TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
