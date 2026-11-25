@@ -84,6 +84,11 @@ func load_checkpoint(store, use_backup: bool = false) -> Dictionary:
 		pauses.release_pause(token)
 		_busy = false
 		return _result(false, "UNAVAILABLE", "")
+	if not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
+		pauses.release_pause(token)
+		_busy = false
+		return _result(false, "UNAVAILABLE", "")
 	# Explicit recovery preserves damaged primary and restores selected backup.
 	if use_backup and not store.restore_checkpoint(loaded.state):
 		_discard_runtime(ticket)
@@ -165,6 +170,12 @@ func execute(request: Dictionary, store) -> Dictionary:
 	if not ticket.get("ok", false):
 		_busy = false
 		return _result(false, "UNAVAILABLE", action_id)
+	# The trusted runtime adapter may veto just before the durable write.
+	# This hook is synchronous: no await, mutation, or player-supplied callable.
+	if not _runtime_precommit_ok(ticket):
+		_discard_runtime(ticket)
+		_busy = false
+		return _result(false, "UNAVAILABLE", action_id)
 	var written: Dictionary = store.write_checkpoint(tentative, _state_validator)
 	if not written.get("committed", false):
 		_discard_runtime(ticket)
@@ -235,6 +246,17 @@ func _prepare_runtime(candidate: Dictionary, reason: String) -> Dictionary:
 	if runtime_required:
 		return {"ok": false}
 	return {"ok": true}
+
+# Existing runtime tickets without a veto remain compatible. A present but
+# invalid callable or non-boolean answer is a rejection, not implicit success.
+static func _runtime_precommit_ok(ticket: Dictionary) -> bool:
+	if not ticket.has("precommit_check"):
+		return true
+	var guard = ticket["precommit_check"]
+	if not guard is Callable or not guard.is_valid():
+		return false
+	var decision = guard.call()
+	return decision is bool and decision == true
 
 static func _discard_runtime(ticket: Dictionary) -> void:
 	var discard: Callable = ticket.get("discard", Callable())
