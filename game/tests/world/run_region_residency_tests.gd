@@ -1,0 +1,408 @@
+extends SceneTree
+## A2-04 actual Node2D residency, bounded LRU, dirty-checkpoint gate.
+## Tests region-scene object lifecycles; DOES NOT claim A1 save integration.
+const Cache = preload("res://game/systems/world/region_residency_cache.gd")
+const Regions = preload("res://game/systems/world/region_seams.gd")
+
+var checks := 0
+var failures := 0
+var factory_calls := 0
+var durable: Dictionary = {}
+var active_cache
+var reentrant_result: Dictionary = {}
+var reentrant_mutations: Array = []
+var reentrant_durable_result: Dictionary = {}
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+func check(ok: bool, label: String) -> void:
+	checks += 1
+	if not ok:
+		failures += 1
+	print(("PASS " if ok else "FAIL ") + label)
+
+func _factory(manifest: Dictionary) -> Node2D:
+	factory_calls += 1
+	var node := Node2D.new()
+	node.name = "AuthoredRegion"
+	node.position = Vector2(float(manifest.x) * Regions.REGION_SIZE.x,
+		float(manifest.y) * Regions.REGION_SIZE.y)
+	var body := StaticBody2D.new()
+	body.position = Vector2(120, 90)
+	var collider := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(28, 28)
+	collider.shape = rect
+	body.add_child(collider)
+	node.add_child(body)
+	node.set_meta("canonical_manifest", manifest.duplicate(true))
+	return node
+
+func _bad_factory(_manifest: Dictionary):
+	factory_calls += 1
+	return null
+
+func _reentrant_factory(manifest: Dictionary) -> Node2D:
+	reentrant_result = active_cache.acquire(700, 80, Callable(self, "_factory"))
+	reentrant_mutations = [
+		active_cache.set_focus("region:8:8"),
+		active_cache.mark_dirty("region:8:8"),
+		active_cache.evict_clean("region:8:8"),
+		active_cache.clear_focus(),
+	]
+	return _factory(manifest)
+
+func _reentrant_verifier(id: String, revision: int) -> bool:
+	reentrant_durable_result = active_cache.clear_focus()
+	return _durable_check(id, revision)
+
+func _durable_check(id: String, revision: int) -> bool:
+	return int(durable.get(id, -1)) == revision
+
+func _untrusted_ack(_id: String, _revision: int) -> bool:
+	return false
+
+func _on_region_exit(id: String) -> void:
+	reentrant_mutations = [
+		active_cache.acquire(99, 99, Callable(self, "_factory")),
+		active_cache.mark_dirty(id),
+		active_cache.set_focus(id),
+		active_cache.evict_clean(id),
+		active_cache.clear_focus(),
+	]
+
+func _non_boolean_ack(_id: String, _revision: int) -> int:
+	return 1
+
+func _queued_factory(manifest: Dictionary) -> Node2D:
+	var node := _factory(manifest)
+	node.queue_free()
+	return node
+
+func _self_retiring_factory(manifest: Dictionary) -> Node2D:
+	var node := _factory(manifest)
+	node.ready.connect(node.queue_free)
+	return node
+
+func _invalidate_during_ack(_id: String, _revision: int, node: Node2D) -> bool:
+	node.queue_free()
+	return true
+
+func _run() -> void:
+	var cache = Cache.new()
+	active_cache = cache
+	check(cache.acquire(0, 0, Callable(self, "_factory")).code == "UNMOUNTED",
+		"factory cannot allocate an unmounted physical chunk")
+	check(not cache.configure(-1, 3).ok
+		and not cache.configure(42, 0).ok
+		and not cache.configure(42, 26).ok,
+		"invalid seed and capacity are rejected without state mutation")
+	check(cache.configure(42, 3).ok and cache.statistics().capacity == 3,
+		"configured cache owns a strict three-Node2D residency limit")
+	check(cache.configure(42, 3).code == "INVALID_STATE",
+		"cache seed and memory budget cannot be changed after first config")
+	root.add_child(cache)
+	await process_frame
+
+	var a: Dictionary = cache.acquire(0, 0, Callable(self, "_factory"))
+	var b: Dictionary = cache.acquire(1, 0, Callable(self, "_factory"))
+	var c: Dictionary = cache.acquire(2, 0, Callable(self, "_factory"))
+	check(a.ok and b.ok and c.ok and a.created and b.created and c.created,
+		"three canonical region scenes load with a real Node2D factory")
+	check(cache.get_child_count() == 3 and cache.statistics().active == 3,
+		"actual scene tree contains exactly the configured number of regions")
+	check(a.node.is_inside_tree() and b.node.is_inside_tree()
+		and c.node.is_inside_tree(),
+		"all three Node2D chunks are physically mounted in active SceneTree")
+	check(PhysicsServer2D.body_get_space(a.node.get_child(0).get_rid()).is_valid()
+		and PhysicsServer2D.body_get_space(b.node.get_child(0).get_rid()).is_valid(),
+		"two real chunk StaticBody2D colliders are registered in physics space")
+	check(a.manifest == Regions.manifest(42, 0, 0)
+		and b.manifest == Regions.manifest(42, 1, 0),
+		"cached manifests match canonical seed42 region generator")
+	var id_a: String = a.id
+	var id_b: String = b.id
+	var id_c: String = c.id
+	var reused: Dictionary = cache.acquire(0, 0, Callable(self, "_factory"))
+	check(reused.ok and not reused.created and reused.node == a.node and factory_calls == 3,
+		"hot region reuse never allocates duplicate scene nodes")
+	check(cache.active_region_ids() == [id_b, id_c, id_a],
+		"LRU refresh is deterministic and ordered oldest to newest")
+
+	var d: Dictionary = cache.acquire(3, 0, Callable(self, "_factory"))
+	check(d.ok and d.created and cache.statistics().active == 3
+		and not cache.active_region_ids().has(id_b),
+		"loading fourth region evicts oldest clean B, not recently touched A")
+	check(cache.get_child_count() == 3 and b.node.get_parent() == null,
+		"evicted physical Node2D is immediately detached from WorldHost")
+	await process_frame
+	check(not is_instance_valid(b.node), "evicted Node2D is freed by next scene-tree frame")
+
+	check(cache.set_focus(id_a).ok and cache.statistics().focus == id_a,
+		"current hero region is protected from LRU eviction")
+	check(cache.evict_clean(id_a).code == "DURABLE_CHECKPOINT_REQUIRED",
+		"focused hero scene cannot be evicted even if clean")
+	var edit_c: Dictionary = cache.mark_dirty(id_c)
+	var edit_again: Dictionary = cache.mark_dirty(id_c)
+	var edit_d: Dictionary = cache.mark_dirty(d.id)
+	check(edit_c.ok and edit_again.ok and edit_d.ok
+		and edit_again.revision == edit_c.revision + 1
+		and cache.statistics().dirty == 2,
+		"successive world-delta edits increment revision without duplicate dirty records")
+	var calls_before: int = factory_calls
+	var no_room: Dictionary = cache.acquire(4, 0, Callable(self, "_factory"))
+	check(no_room.code == "DURABLE_CHECKPOINT_REQUIRED"
+		and cache.statistics().active == 3 and factory_calls == calls_before,
+		"all chunks focused/dirty: refuse BEFORE generating another scene")
+	check(cache.evict_clean(id_c).code == "DURABLE_CHECKPOINT_REQUIRED"
+		and cache.evict_clean(d.id).code == "DURABLE_CHECKPOINT_REQUIRED",
+		"dirty world deltas cannot be discarded by manual LRU eviction")
+	check(cache.acknowledge_durable(id_c, edit_c.revision, Callable(self, "_durable_check")).code == "STALE_REVISION",
+		"stale A1 checkpoint version cannot unpin newer world edits")
+	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable()).code == "UNVERIFIED_CHECKPOINT",
+		"missing authoritative persistence verifier cannot clear dirty bit")
+	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable(self, "_untrusted_ack")).code == "UNVERIFIED_CHECKPOINT",
+		"failed external durable verification cannot clear dirty bit")
+	durable[id_c] = edit_again.revision
+	check(cache.acknowledge_durable(id_c, edit_again.revision, Callable(self, "_reentrant_verifier")).ok
+		and reentrant_durable_result.code == "REENTRANT_ACCESS",
+		"trusted A1 verifier cannot mutate focused residency during acknowledgement")
+	check(cache.statistics().dirty == 1,
+		"staged transaction does not accidentally acknowledge other dirty regions")
+
+	var e: Dictionary = cache.acquire(4, 0, Callable(self, "_factory"))
+	check(e.ok and not cache.active_region_ids().has(id_c)
+		and cache.active_region_ids().has(id_a)
+		and cache.active_region_ids().has(d.id)
+		and cache.get_child_count() == 3,
+		"after acknowledgement, evict only verified-clean C, preserve focused A and dirty D")
+	var saved_manifest: Dictionary = cache.cached_manifest(id_a)
+	saved_manifest.gates["west"] = Vector2.INF
+	check(cache.cached_manifest(id_a).gates["west"].is_finite(),
+		"cache returns defensive copies; clients cannot corrupt canonical border geometry")
+
+	var before_bad_factory: Array[String] = cache.active_region_ids()
+	var bad: Dictionary = cache.acquire(5, 0, Callable(self, "_bad_factory"))
+	check(bad.code == "INVALID_FACTORY_RESULT"
+		and cache.active_region_ids() == before_bad_factory
+		and cache.get_child_count() == 3,
+		"failing region factory leaves old physics nodes and LRU intact")
+	check(cache.acquire(Regions.MAX_REGION_COORD + 1, 0, Callable(self, "_factory")).code == "INVALID_REGION_ID",
+		"out-of-bounds signed region ID rejected before creating scene")
+
+	# A fresh mini-cache permits the factory to attempt a nested acquire.
+	# Guard against reentrant callbacks that would otherwise race capacity.
+	var nested := Cache.new()
+	check(nested.configure(7, 2).ok, "independent world seed creates another isolated cache")
+	root.add_child(nested)
+	active_cache = nested
+	var nested_entry: Dictionary = nested.acquire(8, 8, Callable(self, "_reentrant_factory"))
+	check(nested_entry.ok and reentrant_result.code == "REENTRANT_ACCESS"
+		and nested.statistics().active == 1,
+		"reentrant factory cannot over-allocate the same active cache")
+	check(reentrant_mutations.size() == 4
+		and reentrant_mutations.all(func(value): return value.code == "REENTRANT_ACCESS"),
+		"reentrant factory cannot focus, dirty, evict or clear focus during chunk allocation")
+	nested.queue_free()
+	await process_frame
+	active_cache = cache
+
+	# After the A1 checkpoint is trusted, no pinned delta remains.
+	durable[d.id] = edit_d.revision
+	check(cache.acknowledge_durable(d.id, edit_d.revision, Callable(self, "_durable_check")).ok,
+		"second dirty chunk released only after its matching durable revision")
+	cache.clear_focus()
+	check(cache.statistics().pending_frees == 0,
+		"no deferred region frees remain after the previous engine frame")
+	# A hostile burst can request dozens of chunks in ONE physics frame.
+	# The residency cap must include queue_free() nodes still waiting for
+	# actual engine deletion, not only actively mounted Node2D children.
+	for burst_step in range(3):
+		var rapid: Dictionary = cache.acquire(601 + burst_step, 0, Callable(self, "_factory"))
+		check(rapid.ok and rapid.created
+			and cache.statistics().active == 3
+			and cache.statistics().pending_frees == burst_step + 1,
+			"same-frame burst %d has bounded active and deferred-free nodes" % burst_step)
+	var calls_before_flush: int = factory_calls
+	check(cache.acquire(610, 0, Callable(self, "_factory")).code == "EVICTION_FLUSH_REQUIRED"
+		and cache.statistics().pending_frees == 3
+		and factory_calls == calls_before_flush,
+		"same-frame fourth eviction is refused before running the factory")
+	check(cache.evict_clean(cache.active_region_ids()[0]).code == "EVICTION_FLUSH_REQUIRED",
+		"manual clean eviction also respects deferred-free memory budget")
+	await process_frame
+	check(cache.statistics().pending_frees == 0,
+		"next engine frame releases retired physics bodies and unblocks loads")
+	var old_ids := cache.active_region_ids()
+	var evicted_start: int = cache.statistics().evicted
+	# 150 distant world-region traversals without keeping old Node2Ds.
+	# Yield per step so queued deletes really release engine resources.
+	for k in range(150):
+		var streamed: Dictionary = cache.acquire(k + 10, -3, Callable(self, "_factory"))
+		check(streamed.ok and streamed.created
+			and cache.statistics().active <= 3 and cache.get_child_count() <= 3,
+			"bounded live chunk %d has at most three active PhysicsServer2D scene nodes" % k)
+		await process_frame
+	check(cache.statistics().evicted >= evicted_start + 149,
+		"150 actual region loads trigger repeated clean eviction, not unbounded resident growth")
+	check(cache.statistics().dirty == 0 and cache.statistics().active == 3,
+		"after sustained traversal cache stays bounded and clean")
+	for region_id in old_ids:
+		check(not cache.active_region_ids().has(region_id),
+			"old region %s released after long excursion" % region_id)
+	var touched: String = cache.active_region_ids().back()
+	var too_old: Dictionary = cache.cached_manifest(touched)
+	too_old.streams.geometry = 0
+	check(cache.cached_manifest(touched).streams.geometry == Regions.manifest(42, 159, -3).streams.geometry,
+		"manifest RNG streams immutable despite external copies after 150 unload cycles")
+	cache.queue_free()
+	await process_frame
+
+	# A stale acknowledgement must not become valid after eviction and
+	# recreation of the same canonical region (ABA across residency epochs).
+	var reload_cache := Cache.new()
+	check(reload_cache.configure(42, 1).ok, "reload test uses one resident slot")
+	root.add_child(reload_cache)
+	active_cache = reload_cache
+	var first: Dictionary = reload_cache.acquire(44, 44, Callable(self, "_factory"))
+	var first_edit: Dictionary = reload_cache.mark_dirty(first.id)
+	durable[first.id] = first_edit.revision
+	check(reload_cache.acknowledge_durable(first.id, first_edit.revision, Callable(self, "_durable_check")).ok,
+		"initial revision has a valid durable acknowledgement")
+	first.node.tree_exiting.connect(Callable(self, "_on_region_exit").bind(first.id))
+	check(reload_cache.evict_clean(first.id).ok and reload_cache.statistics().active == 0,
+		"manual clean eviction completes despite synchronous tree-exit callback")
+	check(reentrant_mutations.size() == 5
+		and reentrant_mutations.all(func(value): return value.code == "REENTRANT_ACCESS"),
+		"tree-exit callback cannot allocate, edit, pin or recursively evict during removal")
+	await process_frame
+	var second: Dictionary = reload_cache.acquire(44, 44, Callable(self, "_factory"))
+	var second_edit: Dictionary = reload_cache.mark_dirty(second.id)
+	check(second.ok and second.created and second_edit.ok and second.id == first.id
+		and second_edit.revision > first_edit.revision,
+		"same canonical ID receives a fresh monotonic revision after recreation")
+	check(reload_cache.acknowledge_durable(second.id, first_edit.revision, Callable(self, "_durable_check")).code == "STALE_REVISION"
+		and reload_cache.statistics().dirty == 1,
+		"old matching durable receipt cannot clear new dirty state")
+	check(reload_cache.acknowledge_durable(second.id, second_edit.revision, Callable(self, "_non_boolean_ack")).code == "UNVERIFIED_CHECKPOINT"
+		and reload_cache.statistics().dirty == 1,
+		"non-boolean verifier response cannot acknowledge dirty state")
+	durable[second.id] = second_edit.revision
+	check(reload_cache.acknowledge_durable(second.id, second_edit.revision, Callable(self, "_durable_check")).ok
+		and reload_cache.statistics().dirty == 0,
+		"only current verified durable revision clears the new dirty state")
+	reload_cache.queue_free()
+	await process_frame
+
+	# Reject doomed factory results BEFORE evicting a healthy region.
+	var integrity_cache := Cache.new()
+	check(integrity_cache.configure(42, 1).ok, "integrity cache configured")
+	root.add_child(integrity_cache)
+	var healthy: Dictionary = integrity_cache.acquire(0, 0, Callable(self, "_factory"))
+	var rejected: Dictionary = integrity_cache.acquire(1, 0, Callable(self, "_queued_factory"))
+	check(rejected.code == "INVALID_FACTORY_RESULT"
+		and integrity_cache.active_region_ids() == [healthy.id]
+		and healthy.node.get_parent() == integrity_cache
+		and integrity_cache.statistics().evicted == 0,
+		"queued factory node rejected before evicting healthy region")
+	await process_frame
+	var dirty: Dictionary = integrity_cache.mark_dirty(healthy.id)
+	# Simulate external violation of the exclusive scene ownership contract.
+	integrity_cache.remove_child(healthy.node)
+	var calls_before_corrupt: int = factory_calls
+	check(integrity_cache.acquire(0, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.acquire(1, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY"
+		and factory_calls == calls_before_corrupt,
+		"detached region blocks reuse and new allocation before factory")
+	check(integrity_cache.set_focus(healthy.id).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.mark_dirty(healthy.id).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.evict_clean(healthy.id).code == "CORRUPT_RESIDENCY",
+		"detached region cannot be pinned, edited or silently evicted")
+	durable[healthy.id] = dirty.revision
+	check(integrity_cache.acknowledge_durable(healthy.id, dirty.revision, Callable(self, "_durable_check")).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.statistics().dirty == 1,
+		"detached dirty region cannot be acknowledged even with valid revision")
+	# Restore the test-owned node, then violate the lifecycle inside verifier.
+	integrity_cache.add_child(healthy.node)
+	check(integrity_cache.acknowledge_durable(healthy.id, dirty.revision,
+		Callable(self, "_invalidate_during_ack").bind(healthy.node)).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.statistics().dirty == 1,
+		"verifier that queues region deletion cannot clear dirty state")
+	await process_frame
+	check(integrity_cache.acquire(0, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY",
+		"deleted region never silently recreates lost dirty state")
+	integrity_cache.queue_free()
+	await process_frame
+
+	var ready_cache := Cache.new()
+	check(ready_cache.configure(42, 1).ok, "ready callback test cache configured")
+	root.add_child(ready_cache)
+	check(ready_cache.acquire(3, 3, Callable(self, "_self_retiring_factory")).code == "CORRUPT_RESIDENCY",
+		"region that queues itself in ready never reports successful mount")
+	await process_frame
+	check(ready_cache.acquire(4, 4, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY",
+		"invalid ready callback remains fail-closed after deletion")
+	ready_cache.queue_free()
+	await process_frame
+
+	# Speculation is bounded by free slots and a caller-provided budget.
+	var warm := Cache.new()
+	check(warm.configure(42, 3).ok, "prefetch cache configured")
+	root.add_child(warm)
+	var center: Dictionary = warm.acquire(0, 0, Callable(self, "_factory"))
+	var before_warm: int = factory_calls
+	check(warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory")).code == "FOCUS_REQUIRED"
+		and factory_calls == before_warm, "prefetch requires current focus before allocation")
+	check(warm.set_focus(center.id).ok and warm.mark_dirty(center.id).ok,
+		"prefetch source is focused and dirty")
+	check(warm.prefetch_neighbors(center.id, ["east", "east"], Callable(self, "_factory")).code == "INVALID_ARGUMENT"
+		and warm.prefetch_neighbors(center.id, ["east", 1], Callable(self, "_factory")).code == "INVALID_ARGUMENT"
+		and warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory"), 0).code == "INVALID_ARGUMENT"
+		and factory_calls == before_warm, "invalid priorities and budget reject the entire request")
+	var first_warm: Dictionary = warm.prefetch_neighbors(center.id, ["east", "south", "west"], Callable(self, "_factory"), 1)
+	check(first_warm.ok and first_warm.loaded == ["region:1:0"]
+		and first_warm.deferred == ["region:0:1", "region:-1:0"]
+		and first_warm.attempts == 1 and factory_calls == before_warm + 1,
+		"priority order and per-call factory budget respected")
+	check(warm.statistics().focus == center.id and warm.statistics().dirty == 1
+		and warm.statistics().evicted == 0, "speculation never changes focus or dirty state")
+	var east_before: Array[String] = warm.active_region_ids()
+	var second_warm: Dictionary = warm.prefetch_neighbors(center.id, ["east"], Callable(self, "_factory"))
+	check(second_warm.ok and second_warm.existing == ["region:1:0"] and second_warm.attempts == 0
+		and warm.active_region_ids() == east_before, "resident neighbor reused without allocation or LRU refresh")
+	var third_warm: Dictionary = warm.prefetch_neighbors(center.id, ["south", "west"], Callable(self, "_factory"), 4)
+	check(third_warm.ok and third_warm.loaded == ["region:0:1"] and third_warm.deferred == ["region:-1:0"]
+		and warm.get_child_count() == 3 and third_warm.attempts == 1,
+		"prefetch stops at capacity even with remaining attempt budget")
+	var full_before: int = factory_calls
+	var full_warm: Dictionary = warm.prefetch_neighbors(center.id, ["west", "north"], Callable(self, "_factory"), 4)
+	check(full_warm.ok and full_warm.loaded.is_empty() and full_warm.deferred == ["region:-1:0", "region:0:-1"]
+		and full_warm.attempts == 0 and factory_calls == full_before and warm.statistics().evicted == 0,
+		"full cache performs no speculative eviction or factory call")
+	check(Regions.seams_match(center.manifest, warm.cached_manifest("region:1:0"), "east")
+		and Regions.seams_match(center.manifest, warm.cached_manifest("region:0:1"), "south"),
+		"prefetched nodes carry reciprocal canonical manifests")
+	warm.queue_free()
+	await process_frame
+
+	var edge := Cache.new()
+	check(edge.configure(42, 3).ok, "edge prefetch cache configured")
+	root.add_child(edge)
+	var edge_center: Dictionary = edge.acquire(Regions.MAX_REGION_COORD, Regions.MAX_REGION_COORD, Callable(self, "_factory"))
+	check(edge.set_focus(edge_center.id).ok, "boundary region focused")
+	var edge_calls: int = factory_calls
+	var edge_warm: Dictionary = edge.prefetch_neighbors(edge_center.id, ["east", "south", "west"], Callable(self, "_factory"), 1)
+	check(edge_warm.ok and edge_warm.out_of_bounds.size() == 2 and edge_warm.loaded.size() == 1
+		and edge_warm.attempts == 1 and factory_calls == edge_calls + 1,
+		"out-of-bounds neighbors do not consume allocation budget")
+	var bad_warm: Dictionary = edge.prefetch_neighbors(edge_center.id, ["north"], Callable(self, "_bad_factory"), 1)
+	check(not bad_warm.ok and bad_warm.code == "INVALID_FACTORY_RESULT"
+		and bad_warm.failed_id == Regions.region_id(Regions.MAX_REGION_COORD, Regions.MAX_REGION_COORD - 1)
+		and bad_warm.attempts == 1 and edge.statistics().active == 2 and edge.statistics().evicted == 0,
+		"failed speculative mount preserves current residents and reports failed ID")
+	edge.queue_free()
+	await process_frame
+
+	print("A2 REGION RESIDENCY TESTS: %d checks, %d failures" % [checks, failures])
+	quit(0 if failures == 0 else 1)
