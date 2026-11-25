@@ -209,6 +209,26 @@ func verify_historical_npc_corruption(config: Dictionary,
 	# backup staging file to verify no automatic, unapproved resurrection.
 	check(store_bytes(archive_path + ".bak", original),
 		"valid historical v4 NPC backup restored for recovery exercise")
+	# Valid JSON with corrupted *domain semantics* is a different threat
+	# from a malformed JSON file. A joined NPC must retain consent.
+	var semantic_invalid: Dictionary = JSON.parse_string(original.get_string_from_utf8())
+	semantic_invalid.residents.records[0].consent = false
+	var valid_json_bad_state: PackedByteArray = JSON.stringify(
+		semantic_invalid, "", true, true).to_utf8_buffer()
+	check(store_bytes(archive_path, valid_json_bad_state),
+		"isolated v4 NPC file remains valid JSON but has contradictory joined consent")
+	var parsed_bad: Dictionary = archive_store.read_checkpoint()
+	check(parsed_bad.ok and not Model.validate(parsed_bad.state, config),
+		"JSON parser accepts syntax but trusted game-domain validation rejects tampered NPC consent")
+	var before_invalid: Dictionary = session.get_snapshot()
+	check(session.load_checkpoint(archive_store).code == "INVALID_STATE"
+		and session.get_snapshot() == before_invalid,
+		"semantic corruption cannot install unconsented old NPC or mutate resident state")
+	check(FileAccess.get_file_as_bytes(archive_path) == valid_json_bad_state
+		and FileAccess.get_file_as_bytes(archive_path + ".bak") == original,
+		"rejected semantic corruption never auto-repairs or overwrites either file")
+	check(store_bytes(archive_path, original),
+		"restore unmodified original in disposable primary before torn-file scenario")
 	var damaged_primary: PackedByteArray = "{TORN_OR_INVALID_PRIMARY".to_utf8_buffer()
 	var stale_temp: PackedByteArray = "{STALE_BAK_STAGE".to_utf8_buffer()
 	check(store_bytes(archive_path, damaged_primary)
