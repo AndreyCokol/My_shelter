@@ -3,6 +3,7 @@ name: A3 fragment Godot QA (isolated)
 on:
   pull_request:
     paths:
+      - 'game/systems/shelter/fragment_visibility.gd'
       - 'game/tests/e2e/run_a3_fragment_visibility_tests.gd'
       - 'tools/run_a3_fragment_qa.py'
       - '.github/workflows/a3-fragment-qa.yml'
