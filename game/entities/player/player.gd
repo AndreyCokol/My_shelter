@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 const DODGE_COOLDOWN := 0.85
 const Combat = preload("res://game/systems/combat/combat_loadout.gd")
+const Mobility = preload("res://game/systems/world/topdown_mobility.gd")
 const PixelActors = preload("res://game/entities/characters/pixel_actor_frames.gd")
 
 var app
@@ -13,6 +14,10 @@ var dodge_remaining: float = 0.0
 var hurt_remaining: float = 0.0
 var swing_remaining: float = 0.0
 var defeated: bool = false
+# A2-01: optional movement states, not mapped to physical keys by A2.
+var jump_remaining := 0.0
+var movement_state := "idle"
+var water_contact := false
 var pixel_sprite: AnimatedSprite2D
 
 func _ready() -> void:
@@ -67,7 +72,23 @@ func _physics_process(delta: float) -> void:
 		facing = direction.normalized()
 	if Input.is_action_just_pressed("dodge"):
 		try_dodge()
-	velocity = facing * 320 if dodge_remaining > 0 else direction * 115
+	# Existing baseline is unchanged with no run/jump/water action: 115px/s.
+	var want_run := InputMap.has_action("run") and Input.is_action_pressed("run")
+	var want_jump := InputMap.has_action("jump") and Input.is_action_just_pressed("jump")
+	var movement: Dictionary = Mobility.step(
+		direction, facing, want_run, want_jump,
+		water_contact, dodge_remaining, jump_remaining, delta)
+	if not movement.get("ok", false):
+		velocity = Vector2.ZERO
+		jump_remaining = 0.0
+		movement_state = "idle"
+	else:
+		velocity = movement.velocity
+		jump_remaining = movement.jump_remaining
+		movement_state = movement.mode
+		if is_instance_valid(pixel_sprite):
+			# VFX ONLY: collider stays grounded and cannot cross walls.
+			pixel_sprite.position.y = -float(movement.visual_height)
 	move_and_slide()
 	var world = app.scene_router.current_world()
 	if is_instance_valid(world):
@@ -76,11 +97,23 @@ func _physics_process(delta: float) -> void:
 	_update_pixel_animation(direction.length() > 0.1)
 	queue_redraw()
 
+# Future water Area2D zones may call this. No water is generated here.
+func set_water_contact(value: bool) -> void:
+	if value == water_contact:
+		return
+	water_contact = value
+	if water_contact:
+		# Never carry a land dodge or a visual jump into water.
+		dodge_remaining = 0.0
+		jump_remaining = 0.0
+		if is_instance_valid(pixel_sprite):
+			pixel_sprite.position.y = 0.0
+
 func dodge_readiness() -> float:
 	return 1.0 - clampf(dodge_cooldown / DODGE_COOLDOWN, 0.0, 1.0)
 
 func try_dodge() -> bool:
-	if defeated or dodge_cooldown > 0 or app == null or not app.running():
+	if defeated or water_contact or dodge_cooldown > 0 or app == null or not app.running():
 		return false
 	dodge_remaining = 0.22
 	dodge_cooldown = DODGE_COOLDOWN
@@ -112,6 +145,12 @@ func take_damage(amount: int) -> bool:
 	# lethal hit leaves a permanently red "hurt" frame while physics stops.
 	if health == 0:
 		defeated = true
+		# Lethal hit while the sprite is visually airborne must reset its
+		# offset: physics processing stops immediately on defeat.
+		jump_remaining = 0.0
+		movement_state = "idle"
+		if is_instance_valid(pixel_sprite):
+			pixel_sprite.position.y = 0.0
 	hurt_remaining = 0.45
 	_update_pixel_animation(false)
 	queue_redraw()
@@ -129,6 +168,11 @@ func restore(hp: int) -> void:
 	attack_cooldown = 0
 	hurt_remaining = 0
 	swing_remaining = 0
+	jump_remaining = 0.0
+	movement_state = "idle"
+	water_contact = false
+	if is_instance_valid(pixel_sprite):
+		pixel_sprite.position.y = 0.0
 	_update_pixel_animation(false)
 	queue_redraw()
 
