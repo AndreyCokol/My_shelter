@@ -62,6 +62,20 @@ func _initialize() -> void:
         and not Visibility.contains_coordinate(shifted_visible, shifted_center + Vector2i(2, 0)),
         "negative and nonzero grid coordinates work without hardcoded origin")
 
+    # Vector2i stores signed 32-bit components. An edge must not wrap into
+    # the opposite end of the world, including diagonal neighbors.
+    var hi := Vector2i(2147483647, 2147483647)
+    var lo := Vector2i(-2147483648, -2147483648)
+    var extremes: Array[Vector2i] = [hi, lo, Vector2i(2147483646, 2147483647), Vector2i(-2147483648, 2147483647), Vector2i(2147483647, -2147483648), Vector2i(-2147483647, -2147483648)]
+    var hi_view: Array[Vector2i] = Visibility.visible_window(extremes, hi)
+    var lo_view: Array[Vector2i] = Visibility.visible_window(extremes, lo)
+    check(hi_view.size() == 2 and hi_view.has(Vector2i(2147483646, 2147483647)) and not hi_view.has(lo),
+        "maximum coordinates retain valid inward neighbor without wrapping")
+    check(lo_view.size() == 2 and lo_view.has(Vector2i(-2147483647, -2147483648)) and not lo_view.has(hi),
+        "minimum coordinates retain valid inward neighbor without wrapping")
+    check(not hi_view.has(Vector2i(-2147483648, 2147483647)) and not hi_view.has(Vector2i(2147483647, -2147483648)),
+        "neither axis wraps independently at a world boundary")
+
     var empty: Array[Vector2i] = []
     check(Visibility.visible_window(empty, center).is_empty(),
         "empty shelter occupancy yields empty render set")
