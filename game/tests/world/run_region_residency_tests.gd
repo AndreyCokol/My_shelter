@@ -75,6 +75,20 @@ func _on_region_exit(id: String) -> void:
 func _non_boolean_ack(_id: String, _revision: int) -> int:
 	return 1
 
+func _queued_factory(manifest: Dictionary) -> Node2D:
+	var node := _factory(manifest)
+	node.queue_free()
+	return node
+
+func _self_retiring_factory(manifest: Dictionary) -> Node2D:
+	var node := _factory(manifest)
+	node.ready.connect(node.queue_free)
+	return node
+
+func _invalidate_during_ack(_id: String, _revision: int, node: Node2D) -> bool:
+	node.queue_free()
+	return true
+
 func _run() -> void:
 	var cache = Cache.new()
 	active_cache = cache
@@ -279,6 +293,57 @@ func _run() -> void:
 		and reload_cache.statistics().dirty == 0,
 		"only current verified durable revision clears the new dirty state")
 	reload_cache.queue_free()
+	await process_frame
+
+	# Reject doomed factory results BEFORE evicting a healthy region.
+	var integrity_cache := Cache.new()
+	check(integrity_cache.configure(42, 1).ok, "integrity cache configured")
+	root.add_child(integrity_cache)
+	var healthy: Dictionary = integrity_cache.acquire(0, 0, Callable(self, "_factory"))
+	var rejected: Dictionary = integrity_cache.acquire(1, 0, Callable(self, "_queued_factory"))
+	check(rejected.code == "INVALID_FACTORY_RESULT"
+		and integrity_cache.active_region_ids() == [healthy.id]
+		and healthy.node.get_parent() == integrity_cache
+		and integrity_cache.statistics().evicted == 0,
+		"queued factory node rejected before evicting healthy region")
+	await process_frame
+	var dirty: Dictionary = integrity_cache.mark_dirty(healthy.id)
+	# Simulate external violation of the exclusive scene ownership contract.
+	integrity_cache.remove_child(healthy.node)
+	var calls_before_corrupt: int = factory_calls
+	check(integrity_cache.acquire(0, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.acquire(1, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY"
+		and factory_calls == calls_before_corrupt,
+		"detached region blocks reuse and new allocation before factory")
+	check(integrity_cache.set_focus(healthy.id).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.mark_dirty(healthy.id).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.evict_clean(healthy.id).code == "CORRUPT_RESIDENCY",
+		"detached region cannot be pinned, edited or silently evicted")
+	durable[healthy.id] = dirty.revision
+	check(integrity_cache.acknowledge_durable(healthy.id, dirty.revision, Callable(self, "_durable_check")).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.statistics().dirty == 1,
+		"detached dirty region cannot be acknowledged even with valid revision")
+	# Restore the test-owned node, then violate the lifecycle inside verifier.
+	integrity_cache.add_child(healthy.node)
+	check(integrity_cache.acknowledge_durable(healthy.id, dirty.revision,
+		Callable(self, "_invalidate_during_ack").bind(healthy.node)).code == "CORRUPT_RESIDENCY"
+		and integrity_cache.statistics().dirty == 1,
+		"verifier that queues region deletion cannot clear dirty state")
+	await process_frame
+	check(integrity_cache.acquire(0, 0, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY",
+		"deleted region never silently recreates lost dirty state")
+	integrity_cache.queue_free()
+	await process_frame
+
+	var ready_cache := Cache.new()
+	check(ready_cache.configure(42, 1).ok, "ready callback test cache configured")
+	root.add_child(ready_cache)
+	check(ready_cache.acquire(3, 3, Callable(self, "_self_retiring_factory")).code == "CORRUPT_RESIDENCY",
+		"region that queues itself in ready never reports successful mount")
+	await process_frame
+	check(ready_cache.acquire(4, 4, Callable(self, "_factory")).code == "CORRUPT_RESIDENCY",
+		"invalid ready callback remains fail-closed after deletion")
+	ready_cache.queue_free()
 	await process_frame
 
 	print("A2 REGION RESIDENCY TESTS: %d checks, %d failures" % [checks, failures])
