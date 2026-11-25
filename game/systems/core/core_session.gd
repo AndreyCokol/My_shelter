@@ -255,6 +255,9 @@ static func _runtime_precommit_ok(ticket: Dictionary) -> bool:
 	var guard = ticket["precommit_check"]
 	if not guard is Callable or not guard.is_valid():
 		return false
+	# Contract: zero unbound arguments; never invoke a wrong-signature guard.
+	if guard.get_argument_count() != 0:
+		return false
 	var decision = guard.call()
 	return decision is bool and decision == true
 
