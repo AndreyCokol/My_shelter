@@ -104,6 +104,56 @@ func acquire(x: int, y: int, factory: Callable) -> Dictionary:
 		return _error("CORRUPT_RESIDENCY")
 	return _view(id, record, true)
 
+## Main-thread, caller-driven prefetch of canonical neighbors of the focused
+## region. Speculation uses free slots only: it must not evict anything,
+## change focus, clear dirty state, or refresh the LRU of existing regions.
+## Order is a caller-supplied priority, not a movement/trajectory prediction.
+## Each call makes at most max_new factory attempts and is not atomic as a
+## batch: earlier successful mounts remain if a later factory fails.
+func prefetch_neighbors(focus_id: String, sides: Array, factory: Callable, max_new: int = 1) -> Dictionary:
+	if _busy:
+		return _error("REENTRANT_ACCESS")
+	if not _residency_intact():
+		return _error("CORRUPT_RESIDENCY")
+	if focus_id.is_empty() or focus_id != _protected_focus or not _entries.has(focus_id):
+		return _error("FOCUS_REQUIRED")
+	if max_new < 1 or max_new > 4 or sides.is_empty() or sides.size() > 4:
+		return _error("INVALID_ARGUMENT")
+	var seen: Dictionary = {}
+	for side in sides:
+		if not side is String or side not in ["west", "east", "north", "south"] or seen.has(side):
+			return _error("INVALID_ARGUMENT")
+		seen[side] = true
+	if not factory.is_valid():
+		return _error("INVALID_FACTORY")
+	var source: Dictionary = _entries[focus_id].manifest
+	var loaded: Array[String] = []
+	var existing: Array[String] = []
+	var out_of_bounds: Array[String] = []
+	var deferred: Array[String] = []
+	var attempts := 0
+	for side in sides:
+		var target_id: String = source.neighbors[side]
+		var coords: Dictionary = Regions.parse_region_id(target_id)
+		if not coords.ok:
+			out_of_bounds.append(target_id)
+			continue
+		if _entries.has(target_id):
+			existing.append(target_id)
+			continue
+		if attempts >= max_new or _entries.size() >= _capacity:
+			deferred.append(target_id)
+			continue
+		attempts += 1
+		var result: Dictionary = acquire(coords.x, coords.y, factory)
+		if not result.ok:
+			return {"ok": false, "code": result.code, "loaded": loaded,
+				"existing": existing, "out_of_bounds": out_of_bounds,
+				"deferred": deferred, "failed_id": target_id, "attempts": attempts}
+		loaded.append(target_id)
+	return {"ok": true, "code": "OK", "loaded": loaded, "existing": existing,
+		"out_of_bounds": out_of_bounds, "deferred": deferred, "attempts": attempts}
+
 func set_focus(id: String) -> Dictionary:
 	if _busy:
 		return _error("REENTRANT_ACCESS")
