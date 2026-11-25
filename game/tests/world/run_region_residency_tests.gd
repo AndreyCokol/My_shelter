@@ -188,8 +188,8 @@ func _run() -> void:
 	for region_id in old_ids:
 		check(not cache.active_region_ids().has(region_id),
 			"old region %s released after long excursion" % region_id)
-	var touched := cache.active_region_ids().back()
-	var too_old := cache.cached_manifest(touched)
+	var touched: String = cache.active_region_ids().back()
+	var too_old: Dictionary = cache.cached_manifest(touched)
 	too_old.streams.geometry = 0
 	check(cache.cached_manifest(touched).streams.geometry == Regions.manifest(42, 159, -3).streams.geometry,
 		"manifest RNG streams immutable despite external copies after 150 unload cycles")
