@@ -27,7 +27,7 @@ static func _ids(values: Variant, minimum: int, maximum: int) -> bool:
 	return true
 
 static func quote(context: Dictionary, policy: Dictionary, items: Array, reservation_rows: Array) -> Dictionary:
-	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "policy_version"]:
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "save_id", "actor_id", "ruleset_version", "policy_version"]:
 		if not _id(context.get(key)):
 			return _fail("INVALID_CONTEXT")
 	var residents: Variant = context.get("resident_ids")
@@ -53,6 +53,11 @@ static func quote(context: Dictionary, policy: Dictionary, items: Array, reserva
 	var sources: Variant = policy.get("source_containers")
 	if not per_resident is Dictionary or per_resident.is_empty() or not _ids(sources, 1, 1024):
 		return _fail("NEEDS_SUPPLY_POLICY")
+	for source in sources:
+		if not revisions.has("inventory:" + source):
+			return _fail("INVALID_CONTEXT")
+	var canonical_sources: Array = sources.duplicate()
+	canonical_sources.sort()
 	var type_ids: Array = per_resident.keys()
 	var requirements: Array = []
 	for type_id in type_ids:
@@ -91,10 +96,11 @@ static func quote(context: Dictionary, policy: Dictionary, items: Array, reserva
 			return _fail("INSUFFICIENT_RESOURCES")
 	var ordered: Array = residents.duplicate()
 	ordered.sort()
-	return {"ok": true, "code": "SUPPLY_QUOTE_READY", "quote_version": 1,
+	return {"ok": true, "code": "SUPPLY_QUOTE_READY", "quote_version": 2,
 		"action_id": context.action_id, "expedition_proposal_id": context.expedition_proposal_id,
 		"destination_id": context.destination_id, "slot_key": context.slot_key,
-		"policy_version": context.policy_version, "resident_ids": ordered,
+		"save_id": context.save_id, "actor_id": context.actor_id, "ruleset_version": context.ruleset_version,
+		"policy_version": context.policy_version, "source_containers": canonical_sources, "resident_ids": ordered,
 		"requested_departure_minute": context.requested_departure_minute,
 		"valid_until_minute": context.valid_until_minute, "quoted_at_minute": context.minute,
 		"inventory_revisions_snapshot": revisions.duplicate(true),
@@ -106,7 +112,7 @@ static func quote(context: Dictionary, policy: Dictionary, items: Array, reserva
 # be independently resolved from trusted state. A1 must repeat validation
 # within its commit boundary and own idempotency / durable reservation.
 static func revalidate(prior: Dictionary, current_context: Dictionary, policy: Dictionary, items: Array, reservation_rows: Array) -> Dictionary:
-	if prior.get("ok") != true or not _count(prior.get("quoted_at_minute"), 0):
+	if prior.get("ok") != true or prior.get("quote_version") != 2 or not _count(prior.get("quoted_at_minute"), 0):
 		return _fail("INVALID_PRIOR_QUOTE")
 	var quoted_at: int = prior.quoted_at_minute
 	if not _count(current_context.get("minute"), 0):
