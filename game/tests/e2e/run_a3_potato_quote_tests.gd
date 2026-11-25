@@ -17,7 +17,7 @@ func check(ok: bool, label: String) -> void:
 
 func snapshot(seed_value: int) -> Dictionary:
 	return {"minute": Camp.OPEN, "seed": seed_value, "scene_id": "louvre",
-		"slot_key": "test-slot", "ruleset_version": "synthetic-qa-v2", "action_id": "qa-1",
+		"actor_id": "player", "slot_key": "test-slot", "ruleset_version": "synthetic-qa-v2", "action_id": "qa-1",
 		"network": Camp.empty_state(),
 		"free_quantity_by_type": {"crop.potato": 20, "material.salvage": 20},
 		"revisions": {"inventory:player": 0, "inventory:storage": 0, "residents": 0, "world": 0, "scene": 0, "wallet": 0}}
@@ -30,6 +30,68 @@ func rates() -> Dictionary:
 
 func rejected(result: Dictionary, code: String, label: String) -> void:
 	check(result.get("ok") == false and result.get("code") == code and result.size() == 2, label)
+
+
+func stale_cases(seed_value: int) -> void:
+	var s := snapshot(seed_value)
+	var r := rates()
+	var faction: String = Camp.schedule(s.minute, seed_value).faction
+	s.network.last_contract_day = 0
+	s.network.reputation[faction] = 1
+	var q := Quote.quote("buy", faction, 0, s, r)
+	var saved := q.duplicate(true)
+	var original := s.duplicate(true)
+	var original_rates := r.duplicate(true)
+	check(q.get("ok") == true, "stale fixture quote valid")
+	check(Quote.revalidate(q, "buy", faction, 0, s, r) == q, "same trusted state revalidates")
+	check(s == original and r == original_rates and q == saved, "revalidation does not mutate inputs")
+	for key in s.revisions:
+		var changed := s.duplicate(true)
+		changed.revisions[key] += 1
+		rejected(Quote.revalidate(q, "buy", faction, 0, changed, r), "STALE_QUOTE", "revision changed: " + key)
+	var stock := s.duplicate(true)
+	stock.free_quantity_by_type["crop.potato"] -= 1
+	rejected(Quote.revalidate(q, "buy", faction, 0, stock, r), "STALE_QUOTE", "free stock changed but still sufficient")
+	stock.free_quantity_by_type["crop.potato"] = 0
+	rejected(Quote.revalidate(q, "buy", faction, 0, stock, r), "STALE_QUOTE", "reserved or missing stock")
+	var price := r.duplicate(true)
+	price.factions[faction].buy_cost_potato += 1
+	rejected(Quote.revalidate(q, "buy", faction, 0, s, price), "STALE_QUOTE", "same version changed price")
+	for field in ["slot_key", "action_id", "actor_id", "ruleset_version", "scene_id"]:
+		var changed := s.duplicate(true)
+		changed[field] = "different"
+		rejected(Quote.revalidate(q, "buy", faction, 0, changed, r), "STALE_QUOTE", "identity changed: " + field)
+	var clock := s.duplicate(true)
+	clock.minute += 1
+	rejected(Quote.revalidate(q, "buy", faction, 0, clock, r), "STALE_QUOTE", "clock advanced")
+	clock.minute += Camp.DAY
+	rejected(Quote.revalidate(q, "buy", faction, 1, clock, r), "STALE_QUOTE", "day advanced")
+	var traded := s.duplicate(true)
+	traded.network.last_trade[faction] = 0
+	rejected(Quote.revalidate(q, "buy", faction, 0, traded, r), "STALE_QUOTE", "daily limit consumed")
+	var rep := s.duplicate(true)
+	rep.minute += Camp.DAY
+	rep.network.last_contract_day = 1
+	rep.network.reputation[faction] = 2
+	var next_q := Quote.quote("buy", faction, 1, rep, r)
+	check(next_q.get("ok") == true, "valid later-day reputation fixture")
+	rep.network.reputation[faction] = 1
+	rejected(Quote.revalidate(next_q, "buy", faction, 1, rep, r), "STALE_QUOTE", "network changed without revision change")
+	var forged := q.duplicate(true)
+	forged.credit.quantity += 1
+	rejected(Quote.revalidate(forged, "buy", faction, 0, s, r), "STALE_QUOTE", "tampered credit")
+	forged = q.duplicate(true)
+	forged.debit.quantity -= 1
+	rejected(Quote.revalidate(forged, "buy", faction, 0, s, r), "STALE_QUOTE", "tampered debit")
+	rejected(Quote.revalidate({}, "buy", faction, 0, s, r), "INVALID_QUOTE", "missing prior quote")
+	rejected(Quote.revalidate(q, "contract", faction, 0, s, r), "STALE_QUOTE", "original command mismatch")
+	var invalid := s.duplicate(true)
+	invalid.revisions["extra"] = []
+	rejected(Quote.quote("buy", faction, 0, invalid, r), "INVALID_SNAPSHOT", "malformed extra revision")
+	s.free_quantity_by_type["crop.potato"] = 0
+	s.network.last_trade[faction] = 0
+	s.revisions.world += 1
+	check(q == saved, "quote owns deep copies of snapshot evidence")
 
 func run() -> void:
 	for seed_value in [54, 127]:
@@ -103,5 +165,6 @@ func run() -> void:
 		check(Quote.quote("buy", faction, 1, s, r).get("ok") == true, "buy next day")
 		if faction == "settlers":
 			check(contract.get("debit", {}).get("type_id") == contract.get("credit", {}).get("type_id"), "same-type contract preserves gross legs")
+		stale_cases(seed_value)
 	print("A3 POTATO QUOTE TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
