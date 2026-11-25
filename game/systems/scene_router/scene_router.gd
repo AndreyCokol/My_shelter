@@ -27,10 +27,9 @@ func _init(host: Node2D, actor: Node2D, session, store, registry: Dictionary) ->
 # World scenes are trusted project resources, never paths loaded from save data.
 # Retain this router in the composition root for the lifetime of the session.
 func mount_current() -> bool:
-	if _session.is_busy():
+	if _transitioning:
 		return false
-	var ticket := prepare_runtime(_session.get_snapshot(), "load")
-	return ticket.get("ok", false) and bool(ticket.install.call())
+	return _session.mount_current_runtime()
 
 func try_transition(action_id: String, destination_scene_id: String, entry_point_id: String, actor_health: int = -1, enemy_health: int = -1, enemy_runtime: Dictionary = {}) -> Dictionary:
 	if _transitioning or _session.is_busy():
