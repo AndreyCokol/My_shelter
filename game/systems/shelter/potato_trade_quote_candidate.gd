@@ -24,7 +24,7 @@ static func quote(kind: String, faction_id: String, requested_day: int, snapshot
 		return _fail("INVALID_ARGUMENT")
 	if not _whole(snapshot.get("minute"), 0, MAX_MINUTE) or not _whole(snapshot.get("seed"), 0, MAX_UNITS):
 		return _fail("INVALID_SNAPSHOT")
-	if snapshot.get("actor_id") != "player" or not _id(snapshot.get("slot_key")) or not _id(snapshot.get("ruleset_version")) or not _id(snapshot.get("action_id")):
+	if snapshot.get("actor_id") != "player" or not _id(snapshot.get("slot_key")) or not _id(snapshot.get("save_id")) or not _id(snapshot.get("ruleset_version")) or not _id(snapshot.get("action_id")):
 		return _fail("INVALID_SNAPSHOT")
 	if snapshot.get("scene_id") != "louvre":
 		return _fail("UNAVAILABLE")
@@ -78,10 +78,10 @@ static func quote(kind: String, faction_id: String, requested_day: int, snapshot
 			return _fail("INVALID_SNAPSHOT")
 	# Even potato-for-potato contracts return two gross legs; never net away
 	# the debit (reserved stacks and actual receipt allocation still matter).
-	return {"ok": true, "quote_version": 2, "currency_domain": "potato",
+	return {"ok": true, "quote_version": 3, "currency_domain": "potato",
 		"kind": kind, "faction_id": faction_id, "day": day,
 		"minute": minute, "seed": int(snapshot.seed), "scene_id": snapshot.scene_id,
-		"slot_key": snapshot.slot_key, "ruleset_version": snapshot.ruleset_version,
+		"slot_key": snapshot.slot_key, "save_id": snapshot.save_id, "ruleset_version": snapshot.ruleset_version,
 		"action_id": snapshot.action_id, "actor_id": snapshot.actor_id,
 		"revisions": revisions.duplicate(true), "free_quantity_by_type": free.duplicate(true),
 		"network": network.duplicate(true),
@@ -95,7 +95,7 @@ static func quote(kind: String, faction_id: String, requested_day: int, snapshot
 # Never accept a UI-supplied quote as authorization; A1 must revalidate and
 # commit within the same transaction, including exact instance allocation.
 static func revalidate(previous: Dictionary, kind: String, faction_id: String, requested_day: int, snapshot: Dictionary, ratebook: Dictionary) -> Dictionary:
-	if previous.get("ok") != true or previous.get("quote_version") != 2:
+	if previous.get("ok") != true or previous.get("quote_version") != 3:
 		return _fail("INVALID_QUOTE")
 	var fresh := quote(kind, faction_id, requested_day, snapshot, ratebook)
 	if not fresh.ok or fresh != previous:
