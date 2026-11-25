@@ -26,7 +26,9 @@ func run() -> void:
 	var plan := NPC.plan_group_expedition(party, true, true, 2)
 	check(plan.ok and plan.resident_ids == ["r1", "r2"], "A4 canonical trusted group")
 	var c := {"action_id": "qa-1", "expedition_proposal_id": "proposal-1",
-		"destination_id": "qa-target", "slot_key": "qa-slot", "policy_version": "qa-only",
+		"destination_id": "qa-target", "slot_key": "qa-slot", "save_id": "qa-save",
+		"actor_id": "qa-player", "ruleset_version": "qa-rules", "policy_version": "qa-only",
+		"source_containers": ["storage", "player"],
 		"resident_ids": plan.get("resident_ids", []), "minute": 10,
 		"requested_departure_minute": 20, "valid_until_minute": 15,
 		"revisions": {"inventory:player": 0, "inventory:storage": 0, "residents": 0, "world": 0}}
@@ -65,7 +67,7 @@ func run() -> void:
 	check(not NPC.check_expedition_quote(party, true, 2, live, q).ok, "A4 rejects clock rollback")
 	check(not Supply.revalidate(q, live, p, items, rows).ok, "A3 rejects clock rollback")
 	live.minute = 11
-	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key"]:
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "save_id", "actor_id", "ruleset_version"]:
 		var changed := live.duplicate(true)
 		changed[key] = "foreign"
 		check(not NPC.check_expedition_quote(party, true, 2, changed, q).ok, "A4 rejects changed " + key)
@@ -96,6 +98,23 @@ func run() -> void:
 	var changed_policy := p.duplicate(true)
 	changed_policy.per_resident["crop.potato"] = 1
 	check(not Supply.revalidate(q, live, changed_policy, items, rows).ok, "A3 detects changed rates without new policy ID")
+
+	var obsolete := q.duplicate(true)
+	obsolete.quote_version = 1
+	check(not NPC.check_expedition_quote(party, true, 2, live, obsolete).ok, "A4 rejects obsolete v1")
+	check(not Supply.revalidate(obsolete, live, p, items, rows).ok, "A3 rejects obsolete v1")
+	var altered_sources := live.duplicate(true)
+	altered_sources.source_containers = ["player"]
+	var altered_source_policy := p.duplicate(true)
+	altered_source_policy.source_containers = ["player"]
+	check(not NPC.check_expedition_quote(party, true, 2, altered_sources, q).ok, "A4 rejects changed allowed sources")
+	check(not Supply.revalidate(q, altered_sources, altered_source_policy, items, rows).ok, "A3 rejects changed allowed sources")
+	var permuted := live.duplicate(true)
+	permuted.source_containers.reverse()
+	var permuted_policy := p.duplicate(true)
+	permuted_policy.source_containers.reverse()
+	check(NPC.check_expedition_quote(party, true, 2, permuted, q).ok, "A4 accepts canonical source permutation")
+	check(Supply.revalidate(q, permuted, permuted_policy, items, rows).ok, "A3 accepts canonical source permutation")
 	check([party, c, p, items, rows] == before and q == q_before, "all source inputs remain unmodified")
 	print("A4 A3 EXPEDITION CONTRACT TESTS: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
