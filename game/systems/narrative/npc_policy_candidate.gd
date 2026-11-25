@@ -137,7 +137,10 @@ static func check_expedition_quote(participants, player_permission: bool, minimu
 		return party
 	if party.resident_ids.size() > 1024:
 		return {"ok": false, "code": "INVALID_GROUP"}
-	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "policy_version"]:
+	# V1 has no persistent save/actor/ruleset identity; deliberately reject it.
+	if not supply_quote.get("quote_version") is int or supply_quote.quote_version != 2:
+		return {"ok": false, "code": "UNSUPPORTED_QUOTE_VERSION"}
+	for key in ["action_id", "expedition_proposal_id", "destination_id", "slot_key", "save_id", "actor_id", "ruleset_version", "policy_version"]:
 		var value: Variant = context.get(key)
 		if not value is String or value.is_empty() or value != value.strip_edges():
 			return {"ok": false, "code": "INVALID_CONTEXT"}
@@ -149,8 +152,6 @@ static func check_expedition_quote(participants, player_permission: bool, minimu
 		return {"ok": false, "code": "PARTICIPANT_MISMATCH"}
 	if not supply_quote.get("ok") is bool or not supply_quote.ok or supply_quote.get("code") != "SUPPLY_QUOTE_READY":
 		return {"ok": false, "code": "SUPPLY_QUOTE_REQUIRED"}
-	if not supply_quote.get("quote_version") is int or supply_quote.quote_version != 1:
-		return {"ok": false, "code": "UNSUPPORTED_QUOTE_VERSION"}
 	for key in ["minute", "requested_departure_minute", "valid_until_minute"]:
 		if not context.get(key) is int or context[key] < 0 or context[key] > 2147483647:
 			return {"ok": false, "code": "INVALID_CONTEXT"}
@@ -171,6 +172,22 @@ static func check_expedition_quote(participants, player_permission: bool, minimu
 	for key in revisions:
 		if not key is String or key.is_empty() or key != key.strip_edges() or not revisions[key] is int or revisions[key] < 0 or revisions[key] > 2147483647:
 			return {"ok": false, "code": "INVALID_CONTEXT"}
+	# A1 adds source_containers to this context from the trusted current A3
+	# policy, not from the quote or client. A3 quote() accepts the extra field.
+	var sources: Variant = context.get("source_containers")
+	if not sources is Array or sources.is_empty() or sources.size() > 1024:
+		return {"ok": false, "code": "INVALID_CONTEXT"}
+	var seen_sources: Dictionary = {}
+	for source in sources:
+		if not source is String or source.is_empty() or source != source.strip_edges() or seen_sources.has(source):
+			return {"ok": false, "code": "INVALID_CONTEXT"}
+		if not revisions.has("inventory:" + source):
+			return {"ok": false, "code": "INVALID_CONTEXT"}
+		seen_sources[source] = true
+	var canonical_sources: Array = sources.duplicate()
+	canonical_sources.sort()
+	if supply_quote.get("source_containers") != canonical_sources:
+		return {"ok": false, "code": "QUOTE_CONTEXT_MISMATCH"}
 	var quoted_revisions: Variant = supply_quote.get("inventory_revisions_snapshot")
 	if not quoted_revisions is Dictionary or quoted_revisions.size() != revisions.size():
 		return {"ok": false, "code": "STALE_QUOTE"}
